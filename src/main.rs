@@ -1,6 +1,6 @@
 use std::{
-    borrow::{Borrow, Cow},
-    ffi::{c_char, c_void, CStr, CString},
+    borrow::Cow,
+    ffi::{c_void, CStr, CString},
 };
 
 use winit::{
@@ -9,7 +9,7 @@ use winit::{
     keyboard::KeyCode,
     platform::scancode::PhysicalKeyExtScancode,
     raw_window_handle::{
-        HasDisplayHandle, HasRawDisplayHandle, HasWindowHandle, RawWindowHandle, WindowHandle,
+        HasWindowHandle, RawWindowHandle,
     },
     window::{Window, WindowBuilder},
 };
@@ -20,7 +20,9 @@ use ash::{
         khr::{self, Surface, Swapchain},
     },
     prelude::VkResult,
-    vk::{Handle, PresentModeKHR, Queue, QueueFlags, SurfaceFormatKHR, SurfaceKHR, SwapchainKHR},
+    vk::{
+        DeviceMemory, Extent2D, PresentModeKHR, QueueFlags, SurfaceFormatKHR, SurfaceKHR, SwapchainKHR
+    },
     Instance,
 };
 use ash::{vk, Entry};
@@ -105,7 +107,7 @@ fn create_swapchain(
     instance: &ash::Instance,
     surface: SurfaceKHR,
     queue_family_index: u32,
-) -> (SwapchainKHR, SurfaceFormatKHR, Surface, Swapchain) {
+) -> (SwapchainKHR, SurfaceFormatKHR, Extent2D, Surface, Swapchain) {
     let surface_loader = Surface::new(&entry, instance);
     let surface_caps = unsafe {
         surface_loader.get_physical_device_surface_capabilities(physical_device, surface)
@@ -171,9 +173,206 @@ fn create_swapchain(
         unsafe { swapchain_loader.create_swapchain(&create_info, None) }
             .expect("Could not create swapchain"),
         chosen_image_format,
+        chosen_extent,
         surface_loader,
         swapchain_loader,
     )
+}
+
+fn create_render_pass(
+    logical_device: &ash::Device,
+    swapchain_format: vk::Format,
+) -> vk::RenderPass {
+    let color_attachment = vk::AttachmentDescription {
+        flags: vk::AttachmentDescriptionFlags::empty(),
+        format: swapchain_format,
+        samples: vk::SampleCountFlags::TYPE_8,
+        load_op: vk::AttachmentLoadOp::CLEAR,
+        store_op: vk::AttachmentStoreOp::STORE,
+        stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
+        stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
+        initial_layout: vk::ImageLayout::UNDEFINED,
+        final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+    };
+
+    let color_resolve_attachment = vk::AttachmentDescription {
+        flags: vk::AttachmentDescriptionFlags::empty(),
+        format: swapchain_format,
+        samples: vk::SampleCountFlags::TYPE_1,
+        load_op: vk::AttachmentLoadOp::DONT_CARE,
+        store_op: vk::AttachmentStoreOp::STORE,
+        stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
+        stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
+        initial_layout: vk::ImageLayout::UNDEFINED,
+        final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+    };
+
+    let color_attachment_reference = vk::AttachmentReference {
+        attachment: 0,
+        layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+    };
+
+    let resolve_attachment_reference = vk::AttachmentReference {
+        attachment: 1,
+        layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+    };
+
+    let subpass = vk::SubpassDescription::builder()
+        .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+        .color_attachments(&[color_attachment_reference])
+        .resolve_attachments(&[resolve_attachment_reference])
+        .build();
+
+    let subpass_dependencies = [vk::SubpassDependency {
+        src_subpass: vk::SUBPASS_EXTERNAL,
+        dst_subpass: 0,
+        src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+        dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+        src_access_mask: vk::AccessFlags::empty(),
+        dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+        dependency_flags: vk::DependencyFlags::empty(),
+    }];
+
+    let render_pass_create_info = vk::RenderPassCreateInfo::builder()
+        .attachments(&[color_attachment, color_resolve_attachment])
+        .subpasses(&[subpass])
+        .dependencies(&subpass_dependencies)
+        .build();
+
+    let render_pass = unsafe { logical_device.create_render_pass(&render_pass_create_info, None) }
+        .expect("Could not create render pass");
+
+    render_pass
+}
+
+fn create_framebuffers(
+    logical_device: &ash::Device,
+    render_pass: &vk::RenderPass,
+    color_image_view: &vk::ImageView,
+    swapchain_image_views: &[vk::ImageView],
+    extent: &vk::Extent2D,
+) -> Vec<vk::Framebuffer> {
+    swapchain_image_views
+        .iter()
+        .map(|view| {
+            let create_info = vk::FramebufferCreateInfo::builder()
+                .render_pass(*render_pass)
+                .attachments(&[*color_image_view, *view])
+                .width(extent.width)
+                .height(extent.height)
+                .layers(1)
+                .build();
+
+            unsafe {
+                logical_device
+                    .create_framebuffer(&create_info, None)
+                    .expect("Could not create framebuffer")
+            }
+        })
+        .collect::<Vec<_>>()
+}
+
+fn find_memory_type(
+    memory_props: &vk::PhysicalDeviceMemoryProperties,
+    memory_type_requirements: u32,
+    memory_property_flags: vk::MemoryPropertyFlags,
+) -> u32 {
+    for i in 0..memory_props.memory_type_count {
+        let memory_type = memory_props.memory_types[i as usize];
+
+        if (memory_type_requirements & (1 << i)) > 0
+            && (memory_type.property_flags & memory_property_flags) == memory_property_flags
+        {
+            return i;
+        }
+    }
+
+    panic!("Could not find memory type.");
+}
+
+fn allocate_memory(
+    device: &ash::Device,
+    memory_requirements: &vk::MemoryRequirements,
+    memory_props: &vk::PhysicalDeviceMemoryProperties,
+    memory_property_flags: vk::MemoryPropertyFlags,
+) -> DeviceMemory {
+    let memory_type_index = find_memory_type(
+        memory_props,
+        memory_requirements.memory_type_bits,
+        memory_property_flags,
+    );
+
+    let allocate_info = vk::MemoryAllocateInfo {
+        allocation_size: memory_requirements.size,
+        memory_type_index,
+        ..Default::default()
+    };
+
+    unsafe { device.allocate_memory(&allocate_info, None) }.expect("Could not allocate memory")
+}
+
+fn create_color_image_view(device: &ash::Device, image: vk::Image, format: vk::Format) -> vk::ImageView {
+
+    let create_info = vk::ImageViewCreateInfo {
+    image,
+    view_type: vk::ImageViewType::TYPE_2D,
+    format,
+    components: vk::ComponentMapping {
+        r: vk::ComponentSwizzle::IDENTITY,
+        g: vk::ComponentSwizzle::IDENTITY,
+        b: vk::ComponentSwizzle::IDENTITY,
+        a: vk::ComponentSwizzle::IDENTITY,
+    },
+    subresource_range: vk::ImageSubresourceRange {
+        aspect_mask: vk::ImageAspectFlags::COLOR,
+    base_mip_level: 0,
+    level_count: 1,
+    base_array_layer: 0,
+    layer_count: 1,
+
+    },
+..Default::default()
+    };
+
+    unsafe { device.create_image_view(&create_info, None) }.expect("Could not create image")
+}
+
+fn create_color_image(
+    device: &ash::Device,
+    memory_props: &vk::PhysicalDeviceMemoryProperties,
+    format: vk::Format,
+    extent: &vk::Extent2D,
+    memory_property_flags: vk::MemoryPropertyFlags
+) -> (vk::Image, vk::ImageView, vk::DeviceMemory) {
+    let create_info = vk::ImageCreateInfo {
+        flags: vk::ImageCreateFlags::empty(),
+        image_type: vk::ImageType::TYPE_2D,
+        format,
+        extent: vk::Extent3D {
+            width: extent.width,
+            height: extent.height,
+            depth: 1,
+        },
+        mip_levels: 1,
+        array_layers: 1,
+        samples: vk::SampleCountFlags::TYPE_8,
+        tiling: vk::ImageTiling::OPTIMAL,
+        usage: vk::ImageUsageFlags::COLOR_ATTACHMENT,
+        sharing_mode: vk::SharingMode::EXCLUSIVE,
+        initial_layout: vk::ImageLayout::UNDEFINED,
+        ..Default::default()
+    };
+
+    let image =
+        unsafe { device.create_image(&create_info, None) }.expect("Could not create color image");
+    let memory_requirements = unsafe { device.get_image_memory_requirements(image) };
+    let memory = allocate_memory(device, &memory_requirements, &memory_props, memory_property_flags);
+
+    unsafe { device.bind_image_memory(image, memory, 0) }.expect("Could not bind memory to image");
+
+    let view = create_color_image_view(device, image, format);
+
+    return (image, view, memory);
 }
 
 fn main() {
@@ -253,15 +452,20 @@ fn main() {
             .expect("Could not create logical device");
     let present_queue = unsafe { device.get_device_queue(graphics_queue_family_index, 0) };
 
-    let (swapchain, surface_format, surface_loader, swapchain_loader) = create_swapchain(
-        &window,
-        &entry,
-        &device,
-        physical_device,
-        &instance,
-        surface,
-        graphics_queue_family_index,
-    );
+    let (swapchain, surface_format, window_extent, surface_loader, swapchain_loader) =
+        create_swapchain(
+            &window,
+            &entry,
+            &device,
+            physical_device,
+            &instance,
+            surface,
+            graphics_queue_family_index,
+        );
+
+    let memory_props = unsafe { instance.get_physical_device_memory_properties(physical_device) };
+
+    let (color_image, color_image_view, device_memory) = create_color_image(&device, &memory_props, surface_format.format, &window_extent, vk::MemoryPropertyFlags::DEVICE_LOCAL);
 
     let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain) }
         .expect("Could not get swapchain images");
@@ -294,6 +498,15 @@ fn main() {
                 .expect("Could not create swapchain image view")
         })
         .collect::<Vec<_>>();
+
+    let render_pass = create_render_pass(&device, surface_format.format);
+    let framebuffers = create_framebuffers(
+        &device,
+        &render_pass,
+        &color_image_view,
+        &swapchain_images_views,
+        &window_extent,
+    );
 
     let command_pool_create_info = vk::CommandPoolCreateInfo {
         flags: vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER,
@@ -365,21 +578,26 @@ fn main() {
             let clear_color = vk::ClearColorValue {
                 float32: [0.5, 1., 0.5, 1.0],
             };
-            let subresource_range = [vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                level_count: 1,
-                layer_count: 1,
-                ..Default::default()
-            }];
+
+            let render_pass_begin = vk::RenderPassBeginInfo::builder()
+                .render_pass(render_pass)
+                .framebuffer(framebuffers[image_index as usize])
+                .render_area(vk::Rect2D {
+                    extent: window_extent,
+                    offset: vk::Offset2D { x: 0, y: 0 },
+                })
+                .clear_values(&[vk::ClearValue { color: clear_color }])
+                .build();
+
             unsafe {
-                device.cmd_clear_color_image(
+                device.cmd_begin_render_pass(
                     *command_buffer,
-                    swapchain_images[image_index as usize],
-                    vk::ImageLayout::GENERAL,
-                    &clear_color,
-                    &subresource_range,
+                    &render_pass_begin,
+                    vk::SubpassContents::INLINE,
                 )
             };
+
+            unsafe { device.cmd_end_render_pass(*command_buffer) };
             unsafe { device.end_command_buffer(*command_buffer) }
                 .expect("Failed to end command buffer???");
 
