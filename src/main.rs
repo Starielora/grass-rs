@@ -1,6 +1,5 @@
 use std::{
-    borrow::Cow,
-    ffi::{c_void, CStr, CString},
+    borrow::Cow, ffi::{c_void, CStr, CString}
 };
 
 use winit::{
