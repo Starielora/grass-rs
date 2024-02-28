@@ -1,5 +1,6 @@
 use std::{
-    borrow::Cow, ffi::{c_void, CStr, CString}
+    borrow::Cow,
+    ffi::{c_void, CStr, CString},
 };
 
 use winit::{
@@ -7,9 +8,7 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     keyboard::KeyCode,
     platform::scancode::PhysicalKeyExtScancode,
-    raw_window_handle::{
-        HasWindowHandle, RawWindowHandle,
-    },
+    raw_window_handle::{HasWindowHandle, RawWindowHandle},
     window::{Window, WindowBuilder},
 };
 
@@ -20,7 +19,8 @@ use ash::{
     },
     prelude::VkResult,
     vk::{
-        DeviceMemory, Extent2D, PresentModeKHR, QueueFlags, SurfaceFormatKHR, SurfaceKHR, SwapchainKHR
+        DeviceMemory, Extent2D, PresentModeKHR, QueueFlags, SurfaceFormatKHR, SurfaceKHR,
+        SwapchainKHR,
     },
     Instance,
 };
@@ -310,27 +310,29 @@ fn allocate_memory(
     unsafe { device.allocate_memory(&allocate_info, None) }.expect("Could not allocate memory")
 }
 
-fn create_color_image_view(device: &ash::Device, image: vk::Image, format: vk::Format) -> vk::ImageView {
-
+fn create_color_image_view(
+    device: &ash::Device,
+    image: vk::Image,
+    format: vk::Format,
+) -> vk::ImageView {
     let create_info = vk::ImageViewCreateInfo {
-    image,
-    view_type: vk::ImageViewType::TYPE_2D,
-    format,
-    components: vk::ComponentMapping {
-        r: vk::ComponentSwizzle::IDENTITY,
-        g: vk::ComponentSwizzle::IDENTITY,
-        b: vk::ComponentSwizzle::IDENTITY,
-        a: vk::ComponentSwizzle::IDENTITY,
-    },
-    subresource_range: vk::ImageSubresourceRange {
-        aspect_mask: vk::ImageAspectFlags::COLOR,
-    base_mip_level: 0,
-    level_count: 1,
-    base_array_layer: 0,
-    layer_count: 1,
-
-    },
-..Default::default()
+        image,
+        view_type: vk::ImageViewType::TYPE_2D,
+        format,
+        components: vk::ComponentMapping {
+            r: vk::ComponentSwizzle::IDENTITY,
+            g: vk::ComponentSwizzle::IDENTITY,
+            b: vk::ComponentSwizzle::IDENTITY,
+            a: vk::ComponentSwizzle::IDENTITY,
+        },
+        subresource_range: vk::ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: 1,
+        },
+        ..Default::default()
     };
 
     unsafe { device.create_image_view(&create_info, None) }.expect("Could not create image")
@@ -341,7 +343,7 @@ fn create_color_image(
     memory_props: &vk::PhysicalDeviceMemoryProperties,
     format: vk::Format,
     extent: &vk::Extent2D,
-    memory_property_flags: vk::MemoryPropertyFlags
+    memory_property_flags: vk::MemoryPropertyFlags,
 ) -> (vk::Image, vk::ImageView, vk::DeviceMemory) {
     let create_info = vk::ImageCreateInfo {
         flags: vk::ImageCreateFlags::empty(),
@@ -365,13 +367,150 @@ fn create_color_image(
     let image =
         unsafe { device.create_image(&create_info, None) }.expect("Could not create color image");
     let memory_requirements = unsafe { device.get_image_memory_requirements(image) };
-    let memory = allocate_memory(device, &memory_requirements, &memory_props, memory_property_flags);
+    let memory = allocate_memory(
+        device,
+        &memory_requirements,
+        &memory_props,
+        memory_property_flags,
+    );
 
     unsafe { device.bind_image_memory(image, memory, 0) }.expect("Could not bind memory to image");
 
     let view = create_color_image_view(device, image, format);
 
     return (image, view, memory);
+}
+
+fn create_graphics_pipeline_layout(device: &ash::Device) -> vk::PipelineLayout {
+    let create_info = vk::PipelineLayoutCreateInfo {
+        ..Default::default()
+    };
+    unsafe { device.create_pipeline_layout(&create_info, None).unwrap() }
+}
+
+fn create_graphics_pipeline(
+    device: &ash::Device,
+    window_extent: &vk::Extent2D,
+    pipeline_layout: &vk::PipelineLayout,
+    render_pass: &vk::RenderPass,
+) -> vk::Pipeline {
+    // todo path lol
+    let mut vs_spv_file = std::fs::File::open("target/debug/triangle.vert.spv").unwrap();
+    let vs_spv = ash::util::read_spv(&mut vs_spv_file).unwrap();
+    let vs_shader_module_create_info = vk::ShaderModuleCreateInfo::builder().code(&vs_spv).build();
+    let vs_module = unsafe {
+        device
+            .create_shader_module(&vs_shader_module_create_info, None)
+            .unwrap()
+    };
+    let shader_main = unsafe { CStr::from_bytes_with_nul_unchecked(b"main\0") };
+
+    let mut fs_spv_file = std::fs::File::open("target/debug/triangle.frag.spv").unwrap();
+    let fs_spv = ash::util::read_spv(&mut fs_spv_file).unwrap();
+    let fs_shader_module_create_info = vk::ShaderModuleCreateInfo::builder().code(&fs_spv).build();
+    let fs_module = unsafe {
+        device
+            .create_shader_module(&fs_shader_module_create_info, None)
+            .unwrap()
+    };
+
+    let shader_stages = [
+        vk::PipelineShaderStageCreateInfo {
+            stage: vk::ShaderStageFlags::VERTEX,
+            module: vs_module,
+            p_name: shader_main.as_ptr(),
+            ..Default::default()
+        },
+        vk::PipelineShaderStageCreateInfo {
+            stage: vk::ShaderStageFlags::FRAGMENT,
+            module: fs_module,
+            p_name: shader_main.as_ptr(),
+            ..Default::default()
+        },
+    ];
+
+    let vertex_input_state = vk::PipelineVertexInputStateCreateInfo {
+        ..Default::default()
+    };
+
+    let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo {
+        topology: vk::PrimitiveTopology::TRIANGLE_STRIP,
+        ..Default::default()
+    };
+
+    let viewport = vk::Viewport {
+        width: window_extent.width as f32,
+        height: window_extent.height as f32,
+        max_depth: 1.0,
+        ..Default::default()
+    };
+
+    let scissors = vk::Rect2D {
+        extent: *window_extent,
+        ..Default::default()
+    };
+
+    let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
+        .viewports(&[viewport])
+        .scissors(&[scissors])
+        .build();
+
+    let rasterization_state = vk::PipelineRasterizationStateCreateInfo {
+        depth_clamp_enable: vk::FALSE,
+        rasterizer_discard_enable: vk::FALSE,
+        polygon_mode: vk::PolygonMode::FILL,
+        cull_mode: vk::CullModeFlags::BACK,
+        front_face: vk::FrontFace::CLOCKWISE,
+        depth_bias_enable: vk::FALSE,
+        line_width: 1.0,
+        ..Default::default()
+    };
+
+    let multisample_state = vk::PipelineMultisampleStateCreateInfo {
+        rasterization_samples: vk::SampleCountFlags::TYPE_8,
+        sample_shading_enable: vk::FALSE,
+        min_sample_shading: 1.0,
+        alpha_to_coverage_enable: vk::FALSE,
+        alpha_to_one_enable: vk::FALSE,
+        ..Default::default()
+    };
+
+    let color_blend_attachment_state = vk::PipelineColorBlendAttachmentState {
+        blend_enable: vk::TRUE,
+        src_color_blend_factor: vk::BlendFactor::SRC_ALPHA,
+        dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
+        color_blend_op: vk::BlendOp::ADD,
+        src_alpha_blend_factor: vk::BlendFactor::ONE,
+        dst_alpha_blend_factor: vk::BlendFactor::ZERO,
+        alpha_blend_op: vk::BlendOp::ADD,
+        color_write_mask: vk::ColorComponentFlags::RGBA,
+    };
+
+    let color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()
+        .logic_op_enable(false)
+        .logic_op(vk::LogicOp::COPY)
+        .attachments(&[color_blend_attachment_state])
+        .blend_constants([0.0, 0.0, 0.0, 0.0])
+        .build();
+
+    let create_info = vk::GraphicsPipelineCreateInfo::builder()
+        .stages(&shader_stages)
+        .vertex_input_state(&vertex_input_state)
+        .input_assembly_state(&input_assembly_state)
+        .viewport_state(&viewport_state)
+        .rasterization_state(&rasterization_state)
+        .multisample_state(&multisample_state)
+        .color_blend_state(&color_blend_state)
+        .layout(*pipeline_layout)
+        .render_pass(*render_pass)
+        .build();
+
+    let pipelines = unsafe {
+        device
+            .create_graphics_pipelines(vk::PipelineCache::null(), &[create_info], None)
+            .unwrap()
+    };
+    pipelines[0]
 }
 
 fn main() {
@@ -464,7 +603,13 @@ fn main() {
 
     let memory_props = unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
-    let (color_image, color_image_view, device_memory) = create_color_image(&device, &memory_props, surface_format.format, &window_extent, vk::MemoryPropertyFlags::DEVICE_LOCAL);
+    let (color_image, color_image_view, device_memory) = create_color_image(
+        &device,
+        &memory_props,
+        surface_format.format,
+        &window_extent,
+        vk::MemoryPropertyFlags::DEVICE_LOCAL,
+    );
 
     let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain) }
         .expect("Could not get swapchain images");
@@ -505,6 +650,14 @@ fn main() {
         &color_image_view,
         &swapchain_images_views,
         &window_extent,
+    );
+
+    let graphics_pipeline_layout = create_graphics_pipeline_layout(&device);
+    let graphics_pipeline = create_graphics_pipeline(
+        &device,
+        &window_extent,
+        &graphics_pipeline_layout,
+        &render_pass,
     );
 
     let command_pool_create_info = vk::CommandPoolCreateInfo {
@@ -595,6 +748,15 @@ fn main() {
                     vk::SubpassContents::INLINE,
                 )
             };
+
+            unsafe {
+                device.cmd_bind_pipeline(
+                    *command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    graphics_pipeline,
+                )
+            };
+            unsafe { device.cmd_draw(*command_buffer, 3, 1, 0, 0) };
 
             unsafe { device.cmd_end_render_pass(*command_buffer) };
             unsafe { device.end_command_buffer(*command_buffer) }
