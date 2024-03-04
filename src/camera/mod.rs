@@ -16,6 +16,8 @@ pub struct Camera {
     move_right: bool,
     move_fw: bool,
     move_bw: bool,
+    move_up: bool,
+    move_down: bool,
 }
 
 #[repr(C)]
@@ -40,6 +42,8 @@ impl Camera {
             move_bw: false,
             move_fw: false,
             move_right: false,
+            move_up: false,
+            move_down: false,
         }
     }
 
@@ -62,6 +66,14 @@ impl Camera {
             delta -= self.speed * self.dir;
         }
 
+        if self.move_up {
+            delta += vec3(0.0, self.speed, 0.0);
+        }
+
+        if self.move_down {
+            delta += vec3(0.0, -self.speed, 0.0);
+        }
+
         self.pos += self.speed * delta;
     }
 
@@ -79,6 +91,14 @@ impl Camera {
 
     pub fn set_move_right(&mut self, toggle: bool) {
         self.move_right = toggle;
+    }
+
+    pub fn set_move_up(&mut self, toggle: bool) {
+        self.move_up = toggle;
+    }
+
+    pub fn set_move_down(&mut self, toggle: bool) {
+        self.move_down = toggle;
     }
 
     pub fn look_around(&mut self, mut delta_x: f32, mut delta_y: f32) {

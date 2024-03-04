@@ -1,5 +1,6 @@
 use std::{
     borrow::Cow,
+    error::Error,
     ffi::{c_void, CStr, CString},
     mem::{self, size_of},
     ops::Index,
@@ -396,6 +397,122 @@ fn create_graphics_pipeline_layout(
         .set_layouts(&[layout])
         .build();
     unsafe { device.create_pipeline_layout(&create_info, None).unwrap() }
+}
+
+// todo probably static enum error would be sufficient instead of dyn error
+fn create_grid_graphics_pipeline(
+    device: &ash::Device,
+    window_extent: &vk::Extent2D,
+    pipeline_layout: &vk::PipelineLayout,
+    render_pass: &vk::RenderPass,
+) -> Result<vk::Pipeline, Box<dyn Error>> {
+    let shader_main = CStr::from_bytes_with_nul(b"main\0")?;
+
+    let mut vs_spv_file = std::fs::File::open("target/debug/grid.vert.spv")?;
+    let vs_spv = ash::util::read_spv(&mut vs_spv_file)?;
+    let vs_shader_module_create_info = vk::ShaderModuleCreateInfo::builder().code(&vs_spv).build();
+    let vs_module = unsafe { device.create_shader_module(&vs_shader_module_create_info, None) }?;
+
+    let mut fs_spv_file = std::fs::File::open("target/debug/grid.frag.spv")?;
+    let fs_spv = ash::util::read_spv(&mut fs_spv_file)?;
+    let fs_shader_module_create_info = vk::ShaderModuleCreateInfo::builder().code(&fs_spv).build();
+    let fs_module = unsafe { device.create_shader_module(&fs_shader_module_create_info, None) }?;
+
+    let shader_stages = [
+        vk::PipelineShaderStageCreateInfo {
+            stage: vk::ShaderStageFlags::VERTEX,
+            module: vs_module,
+            p_name: shader_main.as_ptr(),
+            ..Default::default()
+        },
+        vk::PipelineShaderStageCreateInfo {
+            stage: vk::ShaderStageFlags::FRAGMENT,
+            module: fs_module,
+            p_name: shader_main.as_ptr(),
+            ..Default::default()
+        },
+    ];
+
+    let vertex_input_state = vk::PipelineVertexInputStateCreateInfo {
+        ..Default::default()
+    };
+
+    let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo {
+        topology: vk::PrimitiveTopology::TRIANGLE_LIST,
+        ..Default::default()
+    };
+
+    let viewport = vk::Viewport {
+        width: window_extent.width as f32,
+        height: window_extent.height as f32,
+        max_depth: 1.0,
+        ..Default::default()
+    };
+
+    let scissors = vk::Rect2D {
+        extent: *window_extent,
+        ..Default::default()
+    };
+
+    let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
+        .viewports(&[viewport])
+        .scissors(&[scissors])
+        .build();
+
+    let rasterization_state = vk::PipelineRasterizationStateCreateInfo {
+        polygon_mode: vk::PolygonMode::FILL,
+        cull_mode: vk::CullModeFlags::NONE,
+        front_face: vk::FrontFace::CLOCKWISE,
+        line_width: 1.0,
+        ..Default::default()
+    };
+
+    let multisample_state = vk::PipelineMultisampleStateCreateInfo {
+        rasterization_samples: vk::SampleCountFlags::TYPE_8,
+        sample_shading_enable: vk::FALSE,
+        min_sample_shading: 1.0,
+        alpha_to_coverage_enable: vk::FALSE,
+        alpha_to_one_enable: vk::FALSE,
+        ..Default::default()
+    };
+
+    let color_blend_attachment_state = vk::PipelineColorBlendAttachmentState {
+        blend_enable: vk::TRUE,
+        src_color_blend_factor: vk::BlendFactor::SRC_ALPHA,
+        dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
+        color_blend_op: vk::BlendOp::ADD,
+        src_alpha_blend_factor: vk::BlendFactor::ONE,
+        dst_alpha_blend_factor: vk::BlendFactor::ZERO,
+        alpha_blend_op: vk::BlendOp::ADD,
+        color_write_mask: vk::ColorComponentFlags::RGBA,
+    };
+
+    let color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()
+        .logic_op_enable(false)
+        .logic_op(vk::LogicOp::COPY)
+        .attachments(&[color_blend_attachment_state])
+        .blend_constants([0.0, 0.0, 0.0, 0.0])
+        .build();
+
+    let create_info = vk::GraphicsPipelineCreateInfo::builder()
+        .stages(&shader_stages)
+        .vertex_input_state(&vertex_input_state)
+        .input_assembly_state(&input_assembly_state)
+        .viewport_state(&viewport_state)
+        .rasterization_state(&rasterization_state)
+        .multisample_state(&multisample_state)
+        .color_blend_state(&color_blend_state)
+        .layout(*pipeline_layout)
+        .render_pass(*render_pass)
+        .build();
+
+    let pipelines = unsafe {
+        device
+            .create_graphics_pipelines(vk::PipelineCache::null(), &[create_info], None)
+            .unwrap()
+    };
+
+    Ok(pipelines[0])
 }
 
 fn create_graphics_pipeline(
@@ -806,6 +923,13 @@ fn main() {
         &render_pass,
     );
 
+    let grid_graphics_pipeline = create_grid_graphics_pipeline(
+        &device,
+        &window_extent,
+        &graphics_pipeline_layout,
+        &render_pass,
+    ).expect("Could not create grid graphics pipeline");
+
     let descriptor_pool = create_descriptor_pool(&device);
     let graphics_pipeline_descriptor_set = allocate_descriptor_set(
         &device,
@@ -886,6 +1010,9 @@ fn main() {
                     (KeyCode::KeyD, _) => camera.set_move_right(state == ElementState::Pressed),
                     (KeyCode::KeyW, _) => camera.set_move_forward(state == ElementState::Pressed),
                     (KeyCode::KeyS, _) => camera.set_move_backward(state == ElementState::Pressed),
+                    (KeyCode::KeyF, _) => window.set_cursor_visible(state == ElementState::Pressed),
+                    (KeyCode::KeyQ, _) => camera.set_move_down(state == ElementState::Pressed),
+                    (KeyCode::KeyE, _) => camera.set_move_up(state == ElementState::Pressed),
                     _ => {
                         if let PhysicalKey::Code(key) = key {
                             println!("Key {:?}: {}", state, key.to_scancode().unwrap())
@@ -948,7 +1075,7 @@ fn main() {
             unsafe { device.begin_command_buffer(*command_buffer, &begin_info) }
                 .expect("Failed to begin command buffer");
             let clear_color = vk::ClearColorValue {
-                float32: [0.5, 1., 0.5, 1.0],
+                float32: [119.0/255.0, 107.0/255.0, 93.0/255.0, 1.0],
             };
 
             unsafe {
@@ -988,6 +1115,16 @@ fn main() {
                 )
             };
             unsafe { device.cmd_draw(*command_buffer, 3, 1, 0, 0) };
+
+            unsafe {
+                device.cmd_bind_pipeline(
+                    *command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    grid_graphics_pipeline,
+                )
+            };
+
+            unsafe { device.cmd_draw(*command_buffer, 6, 1, 0, 0) };
 
             unsafe { device.cmd_end_render_pass(*command_buffer) };
             unsafe { device.end_command_buffer(*command_buffer) }
