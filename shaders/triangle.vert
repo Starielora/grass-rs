@@ -13,9 +13,14 @@ vec3 colors[3] = vec3[](
 );
 
 layout(location = 0) out vec3 fragColor;
+layout(set = 0, binding = 0) uniform CameraData
+{
+    vec4 position;
+    mat4 projview;
+} camera_data;
 
 void main()
 {
-    gl_Position = vec4(positions[gl_VertexIndex], 0.0, 1.0);
+    gl_Position = camera_data.projview * vec4(positions[gl_VertexIndex], 0.0, 1.0);
     fragColor = colors[gl_VertexIndex];
 }

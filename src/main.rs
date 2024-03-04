@@ -1,12 +1,15 @@
 use std::{
     borrow::Cow,
     ffi::{c_void, CStr, CString},
+    mem::{self, size_of},
+    ops::Index,
 };
 
+use cgmath::{Matrix4, SquareMatrix, Vector4};
 use winit::{
-    event::{Event, WindowEvent},
+    event::{ElementState, Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    keyboard::KeyCode,
+    keyboard::{KeyCode, PhysicalKey},
     platform::scancode::PhysicalKeyExtScancode,
     raw_window_handle::{HasWindowHandle, RawWindowHandle},
     window::{Window, WindowBuilder},
@@ -25,6 +28,10 @@ use ash::{
     Instance,
 };
 use ash::{vk, Entry};
+
+use crate::camera::{Camera, CameraData};
+
+mod camera;
 
 unsafe extern "system" fn debug_callback(
     message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
@@ -381,10 +388,13 @@ fn create_color_image(
     return (image, view, memory);
 }
 
-fn create_graphics_pipeline_layout(device: &ash::Device) -> vk::PipelineLayout {
-    let create_info = vk::PipelineLayoutCreateInfo {
-        ..Default::default()
-    };
+fn create_graphics_pipeline_layout(
+    device: &ash::Device,
+    layout: vk::DescriptorSetLayout,
+) -> vk::PipelineLayout {
+    let create_info = vk::PipelineLayoutCreateInfo::builder()
+        .set_layouts(&[layout])
+        .build();
     unsafe { device.create_pipeline_layout(&create_info, None).unwrap() }
 }
 
@@ -513,7 +523,140 @@ fn create_graphics_pipeline(
     pipelines[0]
 }
 
+fn create_descriptor_set_layout(device: &ash::Device) -> vk::DescriptorSetLayout {
+    let bindings = [vk::DescriptorSetLayoutBinding {
+        binding: 0u32,
+        descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
+        descriptor_count: 1,
+        stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+        p_immutable_samplers: std::ptr::null(),
+    }];
+
+    let create_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+    unsafe {
+        device
+            .create_descriptor_set_layout(&create_info, None)
+            .unwrap()
+    }
+}
+
+fn create_descriptor_pool(device: &ash::Device) -> vk::DescriptorPool {
+    let create_info = vk::DescriptorPoolCreateInfo::builder()
+        .flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND)
+        .max_sets(16)
+        .pool_sizes(&[vk::DescriptorPoolSize {
+            ty: vk::DescriptorType::UNIFORM_BUFFER,
+            descriptor_count: 1,
+        }]);
+
+    unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
+}
+
+fn allocate_descriptor_set(
+    device: &ash::Device,
+    pool: vk::DescriptorPool,
+    layout: vk::DescriptorSetLayout,
+) -> vk::DescriptorSet {
+    let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+        .descriptor_pool(pool)
+        .set_layouts(&[layout])
+        .build();
+
+    let set = unsafe { device.allocate_descriptor_sets(&allocate_info).unwrap() };
+
+    set[0]
+}
+
+fn uniform_buffer_padded_size(
+    size: u64,
+    physical_device_props: &vk::PhysicalDeviceProperties,
+) -> u64 {
+    let min_buffer_alignment = physical_device_props
+        .limits
+        .min_uniform_buffer_offset_alignment;
+
+    let mut aligned_size = size;
+
+    if min_buffer_alignment > 0 {
+        aligned_size = (aligned_size + min_buffer_alignment - 1) & !(min_buffer_alignment - 1);
+    }
+
+    aligned_size
+}
+
+fn find_memory_type_index(
+    memory_props: &vk::PhysicalDeviceMemoryProperties,
+    memory_type_requirements: u32,
+    memory_property_flags: vk::MemoryPropertyFlags,
+) -> u32 {
+    for i in 0..memory_props.memory_type_count {
+        let memory_type = memory_props.memory_types[i as usize];
+        if (memory_type_requirements & (1 << i) > 0)
+            && (memory_type.property_flags & memory_property_flags) == memory_property_flags
+        {
+            return i;
+        }
+    }
+
+    panic!("Could not find memory type");
+}
+
+fn allocate_buffer_memory(
+    device: &ash::Device,
+    memory_props: &vk::PhysicalDeviceMemoryProperties,
+    memory_property_flags: vk::MemoryPropertyFlags,
+    buffer: vk::Buffer,
+) -> (vk::DeviceMemory, u64) {
+    let memory_requirements = unsafe { device.get_buffer_memory_requirements(buffer) };
+    let memory_type_index = find_memory_type_index(
+        memory_props,
+        memory_requirements.memory_type_bits,
+        memory_property_flags,
+    );
+
+    let allocate_info = vk::MemoryAllocateInfo {
+        allocation_size: memory_requirements.size,
+        memory_type_index,
+        ..Default::default()
+    };
+
+    (
+        unsafe { device.allocate_memory(&allocate_info, None).unwrap() },
+        memory_requirements.size,
+    )
+}
+
+fn create_uniform_buffer(
+    device: &ash::Device,
+    size: u64,
+    usage: vk::BufferUsageFlags,
+    memory_property_flags: vk::MemoryPropertyFlags,
+    physical_device_props: &vk::PhysicalDeviceProperties,
+    memory_props: &vk::PhysicalDeviceMemoryProperties,
+) -> (vk::Buffer, vk::DeviceMemory, u64) {
+    let aligned_size = uniform_buffer_padded_size(size, physical_device_props);
+
+    let create_info = vk::BufferCreateInfo {
+        flags: vk::BufferCreateFlags::empty(),
+        size: aligned_size,
+        usage,
+        sharing_mode: vk::SharingMode::EXCLUSIVE,
+        ..Default::default()
+    };
+
+    let buffer = unsafe { device.create_buffer(&create_info, None).unwrap() };
+
+    let (memory, allocation_size) =
+        allocate_buffer_memory(device, memory_props, memory_property_flags, buffer);
+
+    unsafe { device.bind_buffer_memory(buffer, memory, 0).unwrap() };
+
+    (buffer, memory, allocation_size)
+}
+
 fn main() {
+    let mut camera = Camera::new();
+    camera.look_around(0.0, 0.0);
     let event_loop = EventLoop::new().expect("Error creating event loop.");
     event_loop.set_control_flow(ControlFlow::Poll);
 
@@ -602,6 +745,7 @@ fn main() {
         );
 
     let memory_props = unsafe { instance.get_physical_device_memory_properties(physical_device) };
+    let physical_device_props = unsafe { instance.get_physical_device_properties(physical_device) };
 
     let (color_image, color_image_view, device_memory) = create_color_image(
         &device,
@@ -652,13 +796,49 @@ fn main() {
         &window_extent,
     );
 
-    let graphics_pipeline_layout = create_graphics_pipeline_layout(&device);
+    let graphics_pipeline_descriptor_set_layout = create_descriptor_set_layout(&device);
+    let graphics_pipeline_layout =
+        create_graphics_pipeline_layout(&device, graphics_pipeline_descriptor_set_layout);
     let graphics_pipeline = create_graphics_pipeline(
         &device,
         &window_extent,
         &graphics_pipeline_layout,
         &render_pass,
     );
+
+    let descriptor_pool = create_descriptor_pool(&device);
+    let graphics_pipeline_descriptor_set = allocate_descriptor_set(
+        &device,
+        descriptor_pool,
+        graphics_pipeline_descriptor_set_layout,
+    );
+
+    let (camera_data_buffer, camera_data_memory, camera_data_allocation_size) =
+        create_uniform_buffer(
+            &device,
+            size_of::<CameraData>() as u64,
+            vk::BufferUsageFlags::UNIFORM_BUFFER,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            &physical_device_props,
+            &memory_props,
+        );
+    let camera_data_ptr = unsafe {
+        device
+            .map_memory(
+                camera_data_memory,
+                0,
+                vk::WHOLE_SIZE,
+                vk::MemoryMapFlags::empty(),
+            )
+            .unwrap()
+    };
+    let mut camera_data_slice = unsafe {
+        ash::util::Align::new(
+            camera_data_ptr,
+            mem::align_of::<CameraData>() as u64,
+            camera_data_allocation_size,
+        )
+    };
 
     let command_pool_create_info = vk::CommandPoolCreateInfo {
         flags: vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER,
@@ -697,14 +877,33 @@ fn main() {
         Event::WindowEvent {
             window_id: _,
             event: WindowEvent::KeyboardInput { event, .. },
-        } => match event.physical_key {
-            winit::keyboard::PhysicalKey::Code(KeyCode::Escape) => window_target.exit(),
-            winit::keyboard::PhysicalKey::Code(key) => {
-                println!("Key pressed: {}", key.to_scancode().unwrap())
+        } => {
+            let (key, state) = (event.physical_key, event.state);
+            match key {
+                PhysicalKey::Code(key_code) => match (key_code, state) {
+                    (KeyCode::Escape, ElementState::Pressed) => window_target.exit(),
+                    (KeyCode::KeyA, _) => camera.set_move_left(state == ElementState::Pressed),
+                    (KeyCode::KeyD, _) => camera.set_move_right(state == ElementState::Pressed),
+                    (KeyCode::KeyW, _) => camera.set_move_forward(state == ElementState::Pressed),
+                    (KeyCode::KeyS, _) => camera.set_move_backward(state == ElementState::Pressed),
+                    _ => {
+                        if let PhysicalKey::Code(key) = key {
+                            println!("Key {:?}: {}", state, key.to_scancode().unwrap())
+                        }
+                    }
+                },
+                PhysicalKey::Unidentified(_) => todo!(),
             }
-            winit::keyboard::PhysicalKey::Unidentified(_) => todo!(),
+        }
+        Event::DeviceEvent { device_id, event } => match event {
+            winit::event::DeviceEvent::MouseMotion { delta } => {
+                camera.look_around(delta.0 as f32, delta.1 as f32);
+            }
+            _ => {}
         },
         Event::AboutToWait => {
+            camera.update_pos();
+
             let (image_index, success) = unsafe {
                 swapchain_loader.acquire_next_image(
                     swapchain,
@@ -720,6 +919,27 @@ fn main() {
             }
             .expect("Failed to reset command buffer");
 
+            camera_data_slice.copy_from_slice(&[camera::CameraData {
+                pos: Vector4::new(0.0, 0.0, 0.0, 0.0),
+                projview: camera
+                    .get_projection_view(window_extent.width as f32, window_extent.height as f32),
+            }]);
+
+            let descriptor_buffer_info = vk::DescriptorBufferInfo {
+                buffer: camera_data_buffer,
+                offset: 0,
+                range: vk::WHOLE_SIZE,
+            };
+
+            let descriptor_writes = [vk::WriteDescriptorSet::builder()
+                .dst_set(graphics_pipeline_descriptor_set)
+                .dst_binding(0)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&[descriptor_buffer_info])
+                .build()];
+
+            unsafe { device.update_descriptor_sets(&descriptor_writes, &[]) };
+
             let begin_info = vk::CommandBufferBeginInfo {
                 flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
                 ..Default::default()
@@ -729,6 +949,17 @@ fn main() {
                 .expect("Failed to begin command buffer");
             let clear_color = vk::ClearColorValue {
                 float32: [0.5, 1., 0.5, 1.0],
+            };
+
+            unsafe {
+                device.cmd_bind_descriptor_sets(
+                    *command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    graphics_pipeline_layout,
+                    0,
+                    &[graphics_pipeline_descriptor_set],
+                    &[],
+                )
             };
 
             let render_pass_begin = vk::RenderPassBeginInfo::builder()
@@ -784,6 +1015,9 @@ fn main() {
         }
         _ => (),
     });
+
+    let camera = camera::Camera::new();
+    println!("{:?}", camera);
 
     // unsafe { swapchain_loader.destroy_swapchain(swapchain, None) };
     unsafe { surface_loader.destroy_surface(surface, None) };
