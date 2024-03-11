@@ -1,5 +1,20 @@
 use cgmath::*;
 
+use bitflags::bitflags;
+
+bitflags! {
+    #[derive(Debug)]
+    pub struct MovementFlags: u8 {
+        const None = 0;
+        const Forward = 1 << 0;
+        const Backward = 1 << 1;
+        const Left = 1 << 2;
+        const Right = 1 << 3;
+        const Up = 1 << 4;
+        const Down = 1 << 5;
+    }
+}
+
 #[derive(Debug)]
 pub struct Camera {
     pos: Vector3<f32>,
@@ -12,12 +27,7 @@ pub struct Camera {
     yaw: Deg<f32>,
     pitch: Deg<f32>,
 
-    move_left: bool,
-    move_right: bool,
-    move_fw: bool,
-    move_bw: bool,
-    move_up: bool,
-    move_down: bool,
+    movement: MovementFlags,
 }
 
 #[repr(C)]
@@ -37,40 +47,34 @@ impl Camera {
             sensitivity: 0.1,
             yaw: Deg(90.0 as f32),
             pitch: Deg(0.0 as f32),
-            // todo bitflag
-            move_left: false,
-            move_bw: false,
-            move_fw: false,
-            move_right: false,
-            move_up: false,
-            move_down: false,
+            movement: MovementFlags::None,
         }
     }
 
     pub fn update_pos(&mut self) {
         let mut delta = vec3(0.0, 0.0, 0.0);
 
-        if self.move_left {
+        if self.movement.contains(MovementFlags::Left) {
             delta += self.dir.cross(self.up).normalize();
         }
 
-        if self.move_right {
+        if self.movement.contains(MovementFlags::Right) {
             delta -= self.dir.cross(self.up).normalize();
         }
 
-        if self.move_fw {
+        if self.movement.contains(MovementFlags::Forward) {
             delta -= self.dir;
         }
 
-        if self.move_bw {
+        if self.movement.contains(MovementFlags::Backward) {
             delta += self.dir;
         }
 
-        if self.move_up {
+        if self.movement.contains(MovementFlags::Up) {
             delta += vec3(0.0, 1.0, 0.0);
         }
 
-        if self.move_down {
+        if self.movement.contains(MovementFlags::Down) {
             delta += vec3(0.0, -1.0, 0.0);
         }
 
@@ -78,27 +82,27 @@ impl Camera {
     }
 
     pub fn set_move_forward(&mut self, toggle: bool) {
-        self.move_fw = toggle;
+        self.movement.set(MovementFlags::Forward, toggle);
     }
 
     pub fn set_move_backward(&mut self, toggle: bool) {
-        self.move_bw = toggle;
+        self.movement.set(MovementFlags::Backward, toggle);
     }
 
     pub fn set_move_left(&mut self, toggle: bool) {
-        self.move_left = toggle;
+        self.movement.set(MovementFlags::Left, toggle);
     }
 
     pub fn set_move_right(&mut self, toggle: bool) {
-        self.move_right = toggle;
+        self.movement.set(MovementFlags::Right, toggle);
     }
 
     pub fn set_move_up(&mut self, toggle: bool) {
-        self.move_up = toggle;
+        self.movement.set(MovementFlags::Up, toggle);
     }
 
     pub fn set_move_down(&mut self, toggle: bool) {
-        self.move_down = toggle;
+        self.movement.set(MovementFlags::Down, toggle);
     }
 
     pub fn look_around(&mut self, mut delta_x: f32, mut delta_y: f32) {
