@@ -9,8 +9,8 @@ pub struct Camera {
     speed: f32,
     sensitivity: f32,
 
-    yaw: f32,
-    pitch: f32,
+    yaw: Deg<f32>,
+    pitch: Deg<f32>,
 
     move_left: bool,
     move_right: bool,
@@ -30,13 +30,13 @@ pub struct CameraData {
 impl Camera {
     pub fn new() -> Camera {
         Camera {
-            pos: vec3(0.0, 0.0, 5.0),
+            pos: vec3(0.0, 1.0, 5.0),
             dir: vec3(0.0, 0.0, -1.0),
             up: vec3(0.0, 1.0, 0.0),
-            speed: 0.25,
+            speed: 0.125,
             sensitivity: 0.1,
-            yaw: -90.0,
-            pitch: 0.0,
+            yaw: Deg(90.0 as f32),
+            pitch: Deg(0.0 as f32),
             // todo bitflag
             move_left: false,
             move_bw: false,
@@ -51,27 +51,27 @@ impl Camera {
         let mut delta = vec3(0.0, 0.0, 0.0);
 
         if self.move_left {
-            delta -= self.speed * self.dir.cross(self.up).normalize();
+            delta += self.dir.cross(self.up).normalize();
         }
 
         if self.move_right {
-            delta += self.speed * self.dir.cross(self.up).normalize();
+            delta -= self.dir.cross(self.up).normalize();
         }
 
         if self.move_fw {
-            delta += self.speed * self.dir;
+            delta -= self.dir;
         }
 
         if self.move_bw {
-            delta -= self.speed * self.dir;
+            delta += self.dir;
         }
 
         if self.move_up {
-            delta += vec3(0.0, self.speed, 0.0);
+            delta += vec3(0.0, 1.0, 0.0);
         }
 
         if self.move_down {
-            delta += vec3(0.0, -self.speed, 0.0);
+            delta += vec3(0.0, -1.0, 0.0);
         }
 
         self.pos += self.speed * delta;
@@ -105,17 +105,25 @@ impl Camera {
         delta_x *= self.sensitivity;
         delta_y *= self.sensitivity;
 
-        self.yaw += delta_x;
-        self.pitch += delta_y;
+        self.yaw += Deg(delta_x);
+        self.pitch += Deg(delta_y);
+
+        if self.pitch > Deg(89.0) {
+            self.pitch = Deg(89.0);
+        }
+
+        if self.pitch < Deg(-89.0) {
+            self.pitch = Deg(-89.0);
+        }
 
         let mut dir = Vector3::new(0.0, 0.0, 0.0);
 
-        dir.x = Deg(self.yaw).cos() * Deg(self.pitch).cos();
-        dir.y = Deg(self.pitch).sin();
-        dir.z = Deg(self.yaw).sin() * Deg(self.pitch).cos();
+        dir.x = self.yaw.cos() * self.pitch.cos();
+        dir.y = self.pitch.sin();
+        dir.z = self.yaw.sin() * self.pitch.cos();
 
         self.dir = dir.normalize();
-        let right = dir.cross(vec3(0.0, 1.0, 0.0)).normalize();
+        let right = self.dir.cross(vec3(0.0, 1.0, 0.0)).normalize();
         self.up = right.cross(self.dir).normalize();
     }
 
@@ -124,13 +132,15 @@ impl Camera {
     }
 
     pub fn view(&self) -> Matrix4<f32> {
-        let eye = Point3::from_vec(self.pos + self.dir);
-        let center = Point3::from_vec(self.pos);
+        let pos = Point3::from_vec(self.pos);
+        let target = Point3::from_vec(self.pos + self.dir);
 
-        cgmath::Transform::look_at_lh(eye, center, self.up)
+        cgmath::Transform::look_at_lh(pos, target, self.up)
     }
 
     pub fn get_projection_view(&self, w: f32, h: f32) -> Matrix4<f32> {
-        Camera::projection(w, h) * self.view()
+        let mut scale = Matrix4::<f32>::identity();
+        scale[1][1] = -1.0;
+        scale * Camera::projection(w, h) * self.view()
     }
 }
