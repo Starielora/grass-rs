@@ -1,5 +1,5 @@
 use std::{
-    borrow::Cow,
+    borrow::{BorrowMut, Cow},
     error::Error,
     ffi::{CStr, CString},
     mem::{self, size_of},
@@ -619,6 +619,11 @@ fn create_grid_graphics_pipeline(
             .unwrap()
     };
 
+    unsafe {
+        device.destroy_shader_module(vs_module, None);
+        device.destroy_shader_module(fs_module, None);
+    }
+
     Ok(pipelines[0])
 }
 
@@ -756,6 +761,12 @@ fn create_graphics_pipeline(
             .create_graphics_pipelines(vk::PipelineCache::null(), &[create_info], None)
             .unwrap()
     };
+
+    unsafe {
+        device.destroy_shader_module(vs_module, None);
+        device.destroy_shader_module(fs_module, None);
+    }
+
     pipelines[0]
 }
 
@@ -988,7 +999,7 @@ fn main() {
     let memory_props = unsafe { instance.get_physical_device_memory_properties(physical_device) };
     let physical_device_props = unsafe { instance.get_physical_device_properties(physical_device) };
 
-    let (color_image, color_image_view, device_memory) = create_color_image(
+    let (color_image, color_image_view, color_image_memory) = create_color_image(
         &device,
         &memory_props,
         surface_format.format,
@@ -1107,7 +1118,7 @@ fn main() {
         .expect("Could not create command pool");
 
     let command_buffer_allocate_info = vk::CommandBufferAllocateInfo {
-        command_pool: command_pool,
+        command_pool,
         level: vk::CommandBufferLevel::PRIMARY,
         command_buffer_count: 1,
         ..Default::default()
@@ -1126,37 +1137,37 @@ fn main() {
     let wait_semaphore = unsafe { device.create_semaphore(&semaphore_create_info, None) }
         .expect("Could not create semaphore");
 
-    let mut imgui = Context::create();
-    imgui.set_ini_filename(None);
-
-    let mut platform = WinitPlatform::new(&mut imgui);
-    platform.attach_window(imgui.io_mut(), &window, HiDpiMode::Rounded);
-
-    let mut imgui_renderer = Renderer::with_default_allocator(
-        &instance,
-        physical_device,
-        device.clone(),
-        present_queue,
-        command_pool,
-        render_pass,
-        &mut imgui,
-        Some(Options {
-            in_flight_frames: 1,
-            sample_count: vk::SampleCountFlags::TYPE_8,
-            ..Default::default()
-        }),
-    )
-    .expect("Could not create imgui renderer");
+    // let mut imgui = Context::create();
+    // imgui.set_ini_filename(None);
+    //
+    // let mut platform = WinitPlatform::new(&mut imgui);
+    // platform.attach_window(imgui.io_mut(), &window, HiDpiMode::Rounded);
+    //
+    // let mut imgui_renderer = Renderer::with_default_allocator(
+    //     &instance,
+    //     physical_device,
+    //     device.clone(),
+    //     present_queue,
+    //     command_pool,
+    //     render_pass,
+    //     &mut imgui,
+    //     Some(Options {
+    //         in_flight_frames: 1,
+    //         sample_count: vk::SampleCountFlags::TYPE_8,
+    //         ..Default::default()
+    //     }),
+    // )
+    // .expect("Could not create imgui renderer");
 
     let mut last_frame = Instant::now();
 
     let _ = event_loop.run(move |event, window_target| {
-        platform.handle_event(imgui.io_mut(), &window, &event);
+        // platform.handle_event(imgui.io_mut(), &window, &event);
 
         match event {
             Event::NewEvents(_) => {
                 let now = Instant::now();
-                imgui.io_mut().update_delta_time(now - last_frame);
+                // imgui.io_mut().update_delta_time(now - last_frame);
                 last_frame = now;
             }
             Event::WindowEvent {
@@ -1310,27 +1321,27 @@ fn main() {
 
                 unsafe { device.cmd_draw(*command_buffer, 6, 1, 0, 0) };
 
-                platform
-                    .prepare_frame(imgui.io_mut(), &window)
-                    .expect("Failed to prepare frame.");
-                let ui = imgui.frame();
-                ui.window("Hello world")
-                    .size([300.0, 110.0], Condition::FirstUseEver)
-                    .build(|| {
-                        ui.text_wrapped("Hello world!");
-                        ui.text_wrapped("こんにちは世界！");
-                        ui.button("This...is...imgui-rs!");
-                        ui.separator();
-                        let mouse_pos = ui.io().mouse_pos;
-                        ui.text(format!(
-                            "Mouse Position: ({:.1},{:.1})",
-                            mouse_pos[0], mouse_pos[1]
-                        ));
-                    });
-
-                imgui_renderer
-                    .cmd_draw(*command_buffer, imgui.render())
-                    .expect("Could not draw imgui");
+                // platform
+                //     .prepare_frame(imgui.io_mut(), &window)
+                //     .expect("Failed to prepare frame.");
+                // let ui = imgui.frame();
+                // ui.window("Hello world")
+                //     .size([300.0, 110.0], Condition::FirstUseEver)
+                //     .build(|| {
+                //         ui.text_wrapped("Hello world!");
+                //         ui.text_wrapped("こんにちは世界！");
+                //         ui.button("This...is...imgui-rs!");
+                //         ui.separator();
+                //         let mouse_pos = ui.io().mouse_pos;
+                //         ui.text(format!(
+                //             "Mouse Position: ({:.1},{:.1})",
+                //             mouse_pos[0], mouse_pos[1]
+                //         ));
+                //     });
+                //
+                // imgui_renderer
+                //     .cmd_draw(*command_buffer, imgui.render())
+                //     .expect("Could not draw imgui");
 
                 unsafe { device.cmd_end_render_pass(*command_buffer) };
                 unsafe { device.end_command_buffer(*command_buffer) }
@@ -1359,16 +1370,39 @@ fn main() {
 
                 unsafe { device.device_wait_idle() }.expect("Failed to wait");
             }
+            Event::LoopExiting => unsafe {
+                device.destroy_semaphore(wait_semaphore, None);
+                device.destroy_semaphore(acquire_semaphore, None);
+                let command_buffers_to_free = [*command_buffer];
+                device.free_command_buffers(command_pool, &command_buffers_to_free);
+                device.destroy_command_pool(command_pool, None);
+                device.free_memory(camera_data_memory, None);
+                device.destroy_buffer(camera_data_buffer, None);
+                device.destroy_descriptor_set_layout(graphics_pipeline_descriptor_set_layout, None);
+                device.destroy_descriptor_pool(descriptor_pool, None);
+                device.destroy_pipeline(grid_graphics_pipeline, None);
+                device.destroy_pipeline_layout(graphics_pipeline_layout, None);
+                device.destroy_pipeline(graphics_pipeline, None);
+                device.destroy_render_pass(render_pass, None);
+                device.free_memory(depth_image_memory, None);
+                device.destroy_image_view(depth_image_view, None);
+                device.destroy_image(depth_image, None);
+                device.free_memory(color_image_memory, None);
+                device.destroy_image_view(color_image_view, None);
+                device.destroy_image(color_image, None);
+                framebuffers.iter().for_each(|fb| {
+                    device.destroy_framebuffer(*fb, None);
+                });
+                swapchain_images_views.iter().for_each(|iv| {
+                    device.destroy_image_view(*iv, None);
+                });
+                swapchain_loader.destroy_swapchain(swapchain, None);
+                surface_loader.destroy_surface(vk_surface, None);
+                device.destroy_device(None);
+                debug_utils.destroy_debug_utils_messenger(debug_utils_messenger, None);
+                instance.destroy_instance(None);
+            },
             _ => (),
         }
     });
-
-    let camera = camera::Camera::new();
-    println!("{:?}", camera);
-
-    // unsafe { swapchain_loader.destroy_swapchain(swapchain, None) };
-    unsafe { surface_loader.destroy_surface(vk_surface, None) };
-    // unsafe { device.destroy_device(None) };
-    unsafe { debug_utils.destroy_debug_utils_messenger(debug_utils_messenger, None) };
-    unsafe { instance.destroy_instance(None) };
 }
