@@ -3,10 +3,13 @@ use std::{
     error::Error,
     ffi::{CStr, CString},
     mem::{self, size_of},
+    time::Instant,
 };
 
 use cgmath::Vector4;
-use imgui::Context;
+use imgui::{Condition, Context, DrawData};
+use imgui_rs_vulkan_renderer::{Options, Renderer};
+use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use winit::{
     event::{ElementState, Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -17,8 +20,8 @@ use winit::{
 };
 
 use ash::{
-    khr::{surface, win32_surface, swapchain},
     ext::debug_utils,
+    khr::{surface, swapchain, win32_surface},
     vk::{
         DeviceMemory, Extent2D, PresentModeKHR, QueueFlags, SurfaceFormatKHR, SurfaceKHR,
         SwapchainKHR,
@@ -60,12 +63,12 @@ unsafe extern "system" fn debug_callback(
 }
 
 fn create_instance(entry: &Entry, debug: &mut vk::DebugUtilsMessengerCreateInfoEXT) -> Instance {
-    let app_name_binding = CString::new("app name").unwrap();
-    let engine_name_binding = CString::new("engine name").unwrap();
+    let app_name = CString::new("app name").unwrap();
+    let engine_name = CString::new("engine name").unwrap();
     let app_info = vk::ApplicationInfo::default()
-        .application_name(app_name_binding.as_c_str())
+        .application_name(app_name.as_c_str())
         .application_version(0)
-        .engine_name(engine_name_binding.as_c_str())
+        .engine_name(engine_name.as_c_str())
         .engine_version(0)
         .api_version(vk::make_api_version(0, 1, 3, 0));
 
@@ -98,7 +101,13 @@ fn create_swapchain(
     instance: &ash::Instance,
     surface: SurfaceKHR,
     queue_family_index: u32,
-) -> (SwapchainKHR, SurfaceFormatKHR, Extent2D, surface::Instance, swapchain::Device) {
+) -> (
+    SwapchainKHR,
+    SurfaceFormatKHR,
+    Extent2D,
+    surface::Instance,
+    swapchain::Device,
+) {
     let surface_loader = surface::Instance::new(&entry, instance);
     let surface_caps = unsafe {
         surface_loader.get_physical_device_surface_capabilities(physical_device, surface)
@@ -142,7 +151,7 @@ fn create_swapchain(
                 .expect("No surface formats to create swapchain."),
         );
 
-    let queue_family_indices_binding = [queue_family_index];
+    let queue_family_indices = [queue_family_index];
     let create_info = vk::SwapchainCreateInfoKHR::default()
         .surface(surface)
         .min_image_count(surface_caps.min_image_count)
@@ -152,7 +161,7 @@ fn create_swapchain(
         .image_array_layers(1)
         .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
         .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
-        .queue_family_indices(&queue_family_indices_binding)
+        .queue_family_indices(&queue_family_indices)
         .pre_transform(vk::SurfaceTransformFlagsKHR::IDENTITY)
         .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
         .present_mode(chosen_present_mode)
@@ -225,13 +234,13 @@ fn create_render_pass(
         layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
     };
 
-    let color_attachment_reference_binding = [color_attachment_reference];
-    let resolve_attachment_reference_binding = [resolve_attachment_reference];
+    let color_attachment_references = [color_attachment_reference];
+    let resolve_attachment_reference = [resolve_attachment_reference];
     let subpass = vk::SubpassDescription::default()
         .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-        .color_attachments(&color_attachment_reference_binding)
+        .color_attachments(&color_attachment_references)
         .depth_stencil_attachment(&depth_attachment_reference)
-        .resolve_attachments(&resolve_attachment_reference_binding);
+        .resolve_attachments(&resolve_attachment_reference);
 
     let subpass_dependencies = [
         vk::SubpassDependency {
@@ -256,11 +265,11 @@ fn create_render_pass(
         },
     ];
 
-    let attachment_binding = [color_attachment, depth_attachment, color_resolve_attachment];
-    let subpass_binding = [subpass];
+    let attachments = [color_attachment, depth_attachment, color_resolve_attachment];
+    let subpasses = [subpass];
     let render_pass_create_info = vk::RenderPassCreateInfo::default()
-        .attachments(&attachment_binding)
-        .subpasses(&subpass_binding)
+        .attachments(&attachments)
+        .subpasses(&subpasses)
         .dependencies(&subpass_dependencies);
 
     let render_pass = unsafe { logical_device.create_render_pass(&render_pass_create_info, None) }
@@ -280,10 +289,10 @@ fn create_framebuffers(
     swapchain_image_views
         .iter()
         .map(|view| {
-            let attachment_binding = [*color_image_view, *depth_image_view, *view];
+            let attachments = [*color_image_view, *depth_image_view, *view];
             let create_info = vk::FramebufferCreateInfo::default()
                 .render_pass(*render_pass)
-                .attachments(&attachment_binding)
+                .attachments(&attachments)
                 .width(extent.width)
                 .height(extent.height)
                 .layers(1);
@@ -481,8 +490,7 @@ fn create_graphics_pipeline_layout(
     layout: vk::DescriptorSetLayout,
 ) -> vk::PipelineLayout {
     let layouts = [layout];
-    let create_info = vk::PipelineLayoutCreateInfo::default()
-        .set_layouts(&layouts);
+    let create_info = vk::PipelineLayoutCreateInfo::default().set_layouts(&layouts);
     unsafe { device.create_pipeline_layout(&create_info, None).unwrap() }
 }
 
@@ -893,7 +901,6 @@ fn main() {
     let window_attributes = WindowAttributes::default();
     let window = event_loop.create_window(window_attributes).unwrap();
 
-
     let mut debug_utils_messenger_create_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
         .message_severity(
             vk::DebugUtilsMessageSeverityFlagsEXT::ERROR
@@ -916,7 +923,16 @@ fn main() {
             .expect("Could not create debug utils messenger")
     };
 
-    let vk_surface = unsafe { ash_window::create_surface(&entry, &instance, window.display_handle().unwrap().as_raw(), window.window_handle().unwrap().as_raw(), Option::None).unwrap() };
+    let vk_surface = unsafe {
+        ash_window::create_surface(
+            &entry,
+            &instance,
+            window.display_handle().unwrap().as_raw(),
+            window.window_handle().unwrap().as_raw(),
+            Option::None,
+        )
+        .unwrap()
+    };
 
     let physical_devices = unsafe {
         instance
@@ -1004,7 +1020,7 @@ fn main() {
                         .r(vk::ComponentSwizzle::IDENTITY)
                         .g(vk::ComponentSwizzle::IDENTITY)
                         .b(vk::ComponentSwizzle::IDENTITY)
-                        .a(vk::ComponentSwizzle::IDENTITY)
+                        .a(vk::ComponentSwizzle::IDENTITY),
                 )
                 .subresource_range(
                     vk::ImageSubresourceRange::default()
@@ -1012,7 +1028,7 @@ fn main() {
                         .base_mip_level(0)
                         .level_count(1)
                         .base_array_layer(0)
-                        .layer_count(1)
+                        .layer_count(1),
                 );
             unsafe { device.create_image_view(&create_info, None) }
                 .expect("Could not create swapchain image view")
@@ -1113,204 +1129,238 @@ fn main() {
     let mut imgui = Context::create();
     imgui.set_ini_filename(None);
 
-    // let mut platform = WinitPlatform::init(&mut imgui);
-    // platform.attach_window(imgui.io_mut(), &window, HiDpiMode::Rounded);
+    let mut platform = WinitPlatform::new(&mut imgui);
+    platform.attach_window(imgui.io_mut(), &window, HiDpiMode::Rounded);
 
-    // let renderer = {
-    //     let allocator = Allocator::new(&AllocatorCreateDesc{
-    //         instance: instance.clone(),
-    //         device: device.clone(),
-    //         physical_device: physical_device.clone(),
-    //         debug_settings: Default::default(),
-    //         buffer_device_address: false,
-    //         allocation_sizes: Default::default()
-    //     }).expect("Could not create imgui renderer allocator");
+    let mut imgui_renderer = Renderer::with_default_allocator(
+        &instance,
+        physical_device,
+        device.clone(),
+        present_queue,
+        command_pool,
+        render_pass,
+        &mut imgui,
+        Some(Options {
+            in_flight_frames: 1,
+            sample_count: vk::SampleCountFlags::TYPE_8,
+            ..Default::default()
+        }),
+    )
+    .expect("Could not create imgui renderer");
 
-    //     Renderer::with_gpu_allocator(
-    //         Arc::new(Mutex::new(allocator)),
-    //         device.clone(),
-    //         present_queue,
-    //         command_pool,
-    //         render_pass,
-    //         &mut imgui,
-    //         Some(Options {
-    //                 in_flight_frames: 1,
-    //                 ..Default::default()
-    //             }),
-    //     ).expect("Could not create imgui renderer")
-    // };
+    let mut last_frame = Instant::now();
 
-    let _ = event_loop.run(move |event, window_target| match event {
-        Event::WindowEvent {
-            window_id: _,
-            event: WindowEvent::CloseRequested,
-        } => window_target.exit(),
-        Event::WindowEvent {
-            window_id: _,
-            event: WindowEvent::KeyboardInput { event, .. },
-        } => {
-            let (key, state) = (event.physical_key, event.state);
-            match key {
-                PhysicalKey::Code(key_code) => match (key_code, state) {
-                    (KeyCode::Escape, ElementState::Pressed) => window_target.exit(),
-                    (KeyCode::KeyA, _) => camera.set_move_left(state == ElementState::Pressed),
-                    (KeyCode::KeyD, _) => camera.set_move_right(state == ElementState::Pressed),
-                    (KeyCode::KeyW, _) => camera.set_move_forward(state == ElementState::Pressed),
-                    (KeyCode::KeyS, _) => camera.set_move_backward(state == ElementState::Pressed),
-                    (KeyCode::KeyF, _) => window.set_cursor_visible(state == ElementState::Pressed),
-                    (KeyCode::KeyQ, _) => camera.set_move_down(state == ElementState::Pressed),
-                    (KeyCode::KeyE, _) => camera.set_move_up(state == ElementState::Pressed),
-                    _ => {
-                        if let PhysicalKey::Code(key) = key {
-                            println!("Key {:?}: {}", state, key.to_scancode().unwrap())
+    let _ = event_loop.run(move |event, window_target| {
+        platform.handle_event(imgui.io_mut(), &window, &event);
+
+        match event {
+            Event::NewEvents(_) => {
+                let now = Instant::now();
+                imgui.io_mut().update_delta_time(now - last_frame);
+                last_frame = now;
+            }
+            Event::WindowEvent {
+                window_id: _,
+                event: WindowEvent::CloseRequested,
+            } => window_target.exit(),
+            Event::WindowEvent {
+                window_id: _,
+                event: WindowEvent::KeyboardInput { event, .. },
+            } => {
+                let (key, state) = (event.physical_key, event.state);
+                match key {
+                    PhysicalKey::Code(key_code) => match (key_code, state) {
+                        (KeyCode::Escape, ElementState::Pressed) => window_target.exit(),
+                        (KeyCode::KeyA, _) => camera.set_move_left(state == ElementState::Pressed),
+                        (KeyCode::KeyD, _) => camera.set_move_right(state == ElementState::Pressed),
+                        (KeyCode::KeyW, _) => {
+                            camera.set_move_forward(state == ElementState::Pressed)
                         }
-                    }
-                },
-                PhysicalKey::Unidentified(_) => todo!(),
+                        (KeyCode::KeyS, _) => {
+                            camera.set_move_backward(state == ElementState::Pressed)
+                        }
+                        (KeyCode::KeyF, _) => {
+                            window.set_cursor_visible(state == ElementState::Pressed)
+                        }
+                        (KeyCode::KeyQ, _) => camera.set_move_down(state == ElementState::Pressed),
+                        (KeyCode::KeyE, _) => camera.set_move_up(state == ElementState::Pressed),
+                        _ => {
+                            if let PhysicalKey::Code(key) = key {
+                                println!("Key {:?}: {}", state, key.to_scancode().unwrap())
+                            }
+                        }
+                    },
+                    PhysicalKey::Unidentified(_) => todo!(),
+                }
             }
-        }
-        Event::DeviceEvent { device_id, event } => match event {
-            winit::event::DeviceEvent::MouseMotion { delta } => {
-                camera.look_around(delta.0 as f32, delta.1 as f32);
-            }
-            _ => {}
-        },
-        Event::AboutToWait => {
-            camera.update_pos();
+            Event::DeviceEvent { device_id, event } => match event {
+                winit::event::DeviceEvent::MouseMotion { delta } => {
+                    camera.look_around(delta.0 as f32, delta.1 as f32);
+                }
+                _ => {}
+            },
+            Event::AboutToWait => {
+                camera.update_pos();
 
-            let (image_index, success) = unsafe {
-                swapchain_loader.acquire_next_image(
-                    swapchain,
-                    !0,
-                    acquire_semaphore,
-                    vk::Fence::null(),
-                )
-            }
-            .expect("Could not acquire image");
+                let (image_index, success) = unsafe {
+                    swapchain_loader.acquire_next_image(
+                        swapchain,
+                        !0,
+                        acquire_semaphore,
+                        vk::Fence::null(),
+                    )
+                }
+                .expect("Could not acquire image");
 
-            unsafe {
-                device.reset_command_buffer(*command_buffer, vk::CommandBufferResetFlags::empty())
-            }
-            .expect("Failed to reset command buffer");
+                unsafe {
+                    device
+                        .reset_command_buffer(*command_buffer, vk::CommandBufferResetFlags::empty())
+                }
+                .expect("Failed to reset command buffer");
 
-            camera_data_slice.copy_from_slice(&[camera::CameraData {
-                pos: Vector4::new(0.0, 0.0, 0.0, 0.0),
-                projview: camera
-                    .get_projection_view(window_extent.width as f32, window_extent.height as f32),
-            }]);
+                camera_data_slice.copy_from_slice(&[camera::CameraData {
+                    pos: Vector4::new(0.0, 0.0, 0.0, 0.0),
+                    projview: camera.get_projection_view(
+                        window_extent.width as f32,
+                        window_extent.height as f32,
+                    ),
+                }]);
 
-            let descriptor_buffer_info = vk::DescriptorBufferInfo {
-                buffer: camera_data_buffer,
-                offset: 0,
-                range: vk::WHOLE_SIZE,
-            };
+                let descriptor_buffer_info = vk::DescriptorBufferInfo {
+                    buffer: camera_data_buffer,
+                    offset: 0,
+                    range: vk::WHOLE_SIZE,
+                };
 
-            let descriptor_buffer_infos = [descriptor_buffer_info];
-            let descriptor_writes = [vk::WriteDescriptorSet::default()
-                .dst_set(graphics_pipeline_descriptor_set)
-                .dst_binding(0)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .buffer_info(&descriptor_buffer_infos)];
+                let descriptor_buffer_infos = [descriptor_buffer_info];
+                let descriptor_writes = [vk::WriteDescriptorSet::default()
+                    .dst_set(graphics_pipeline_descriptor_set)
+                    .dst_binding(0)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .buffer_info(&descriptor_buffer_infos)];
 
-            unsafe { device.update_descriptor_sets(&descriptor_writes, &[]) };
+                unsafe { device.update_descriptor_sets(&descriptor_writes, &[]) };
 
-            let begin_info = vk::CommandBufferBeginInfo {
-                flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
-                ..Default::default()
-            };
+                let begin_info = vk::CommandBufferBeginInfo {
+                    flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
+                    ..Default::default()
+                };
 
-            unsafe { device.begin_command_buffer(*command_buffer, &begin_info) }
-                .expect("Failed to begin command buffer");
-            let clear_color = vk::ClearColorValue {
-                float32: [119.0 / 255.0, 107.0 / 255.0, 93.0 / 255.0, 1.0],
-            };
+                unsafe { device.begin_command_buffer(*command_buffer, &begin_info) }
+                    .expect("Failed to begin command buffer");
+                let clear_color = vk::ClearColorValue {
+                    float32: [153.0 / 255.0, 204.0 / 255.0, 255.0 / 255.0, 1.0],
+                };
 
-            let depth_clear_value = vk::ClearDepthStencilValue {
-                depth: 1.0,
-                stencil: 0,
-            };
+                let depth_clear_value = vk::ClearDepthStencilValue {
+                    depth: 1.0,
+                    stencil: 0,
+                };
 
-            unsafe {
-                device.cmd_bind_descriptor_sets(
-                    *command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    graphics_pipeline_layout,
-                    0,
-                    &[graphics_pipeline_descriptor_set],
-                    &[],
-                )
-            };
+                unsafe {
+                    device.cmd_bind_descriptor_sets(
+                        *command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        graphics_pipeline_layout,
+                        0,
+                        &[graphics_pipeline_descriptor_set],
+                        &[],
+                    )
+                };
 
-            let clear_values = [
+                let clear_values = [
                     vk::ClearValue { color: clear_color },
                     vk::ClearValue {
                         depth_stencil: depth_clear_value,
                     },
                 ];
-            let render_pass_begin = vk::RenderPassBeginInfo::default()
-                .render_pass(render_pass)
-                .framebuffer(framebuffers[image_index as usize])
-                .render_area(vk::Rect2D {
-                    extent: window_extent,
-                    offset: vk::Offset2D { x: 0, y: 0 },
-                })
-                .clear_values(&clear_values);
+                let render_pass_begin = vk::RenderPassBeginInfo::default()
+                    .render_pass(render_pass)
+                    .framebuffer(framebuffers[image_index as usize])
+                    .render_area(vk::Rect2D {
+                        extent: window_extent,
+                        offset: vk::Offset2D { x: 0, y: 0 },
+                    })
+                    .clear_values(&clear_values);
 
-            unsafe {
-                device.cmd_begin_render_pass(
-                    *command_buffer,
-                    &render_pass_begin,
-                    vk::SubpassContents::INLINE,
-                )
-            };
+                unsafe {
+                    device.cmd_begin_render_pass(
+                        *command_buffer,
+                        &render_pass_begin,
+                        vk::SubpassContents::INLINE,
+                    )
+                };
 
-            unsafe {
-                device.cmd_bind_pipeline(
-                    *command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    graphics_pipeline,
-                )
-            };
-            unsafe { device.cmd_draw(*command_buffer, 3, 1, 0, 0) };
+                unsafe {
+                    device.cmd_bind_pipeline(
+                        *command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        graphics_pipeline,
+                    )
+                };
+                unsafe { device.cmd_draw(*command_buffer, 3, 1, 0, 0) };
 
-            unsafe {
-                device.cmd_bind_pipeline(
-                    *command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    grid_graphics_pipeline,
-                )
-            };
+                unsafe {
+                    device.cmd_bind_pipeline(
+                        *command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        grid_graphics_pipeline,
+                    )
+                };
 
-            unsafe { device.cmd_draw(*command_buffer, 6, 1, 0, 0) };
+                unsafe { device.cmd_draw(*command_buffer, 6, 1, 0, 0) };
 
-            unsafe { device.cmd_end_render_pass(*command_buffer) };
-            unsafe { device.end_command_buffer(*command_buffer) }
-                .expect("Failed to end command buffer???");
+                platform
+                    .prepare_frame(imgui.io_mut(), &window)
+                    .expect("Failed to prepare frame.");
+                let ui = imgui.frame();
+                ui.window("Hello world")
+                    .size([300.0, 110.0], Condition::FirstUseEver)
+                    .build(|| {
+                        ui.text_wrapped("Hello world!");
+                        ui.text_wrapped("こんにちは世界！");
+                        ui.button("This...is...imgui-rs!");
+                        ui.separator();
+                        let mouse_pos = ui.io().mouse_pos;
+                        ui.text(format!(
+                            "Mouse Position: ({:.1},{:.1})",
+                            mouse_pos[0], mouse_pos[1]
+                        ));
+                    });
 
-            let acquire_semaphores = [acquire_semaphore];
-            let command_buffers = [*command_buffer];
-            let wait_semaphores = [wait_semaphore];
-            let submits = [vk::SubmitInfo::default()
-                .wait_semaphores(&acquire_semaphores)
-                .command_buffers(&command_buffers)
-                .signal_semaphores(&wait_semaphores)
-                .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])];
-            unsafe { device.queue_submit(present_queue, &submits, vk::Fence::null()) }
-                .expect("Failed to submit");
+                imgui_renderer
+                    .cmd_draw(*command_buffer, imgui.render())
+                    .expect("Could not draw imgui");
 
-            let swapchains = [swapchain];
-            let image_indices = [image_index];
-            let present_info = vk::PresentInfoKHR::default()
-                .swapchains(&swapchains)
-                .wait_semaphores(&wait_semaphores)
-                .image_indices(&image_indices);
+                unsafe { device.cmd_end_render_pass(*command_buffer) };
+                unsafe { device.end_command_buffer(*command_buffer) }
+                    .expect("Failed to end command buffer???");
 
-            unsafe { swapchain_loader.queue_present(present_queue, &present_info) }
-                .expect("Failed to queue present");
+                let acquire_semaphores = [acquire_semaphore];
+                let command_buffers = [*command_buffer];
+                let wait_semaphores = [wait_semaphore];
+                let submits = [vk::SubmitInfo::default()
+                    .wait_semaphores(&acquire_semaphores)
+                    .command_buffers(&command_buffers)
+                    .signal_semaphores(&wait_semaphores)
+                    .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])];
+                unsafe { device.queue_submit(present_queue, &submits, vk::Fence::null()) }
+                    .expect("Failed to submit");
 
-            unsafe { device.device_wait_idle() }.expect("Failed to wait");
+                let swapchains = [swapchain];
+                let image_indices = [image_index];
+                let present_info = vk::PresentInfoKHR::default()
+                    .swapchains(&swapchains)
+                    .wait_semaphores(&wait_semaphores)
+                    .image_indices(&image_indices);
+
+                unsafe { swapchain_loader.queue_present(present_queue, &present_info) }
+                    .expect("Failed to queue present");
+
+                unsafe { device.device_wait_idle() }.expect("Failed to wait");
+            }
+            _ => (),
         }
-        _ => (),
     });
 
     let camera = camera::Camera::new();
