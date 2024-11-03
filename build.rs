@@ -1,9 +1,8 @@
 use std::{
-    env::{self, current_dir},
-    fmt::format,
+    env::{self},
     fs,
-    path::{self, Path, PathBuf},
-    process::{exit, Command, Output},
+    path::Path,
+    process::{exit, Command},
 };
 
 fn main() {
