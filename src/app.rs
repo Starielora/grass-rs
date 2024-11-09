@@ -1,19 +1,22 @@
 use ash::vk;
-use imgui_winit_support::HiDpiMode;
 use winit::application::ApplicationHandler;
 use winit::event::ElementState;
 use winit::keyboard::KeyCode;
 use winit::keyboard::PhysicalKey;
 
 use crate::camera;
+use crate::drawable;
+use crate::grid;
+use crate::gui;
 use crate::vkutils;
+
+use drawable::Drawable;
 
 pub struct App {
     camera: camera::Camera,
-    imguictx: Option<imgui::Context>,
-    imgui_renderer: Option<imgui_rs_vulkan_renderer::Renderer>,
+    gui: Option<gui::Gui>,
+    drawables: std::vec::Vec<Box<dyn drawable::Drawable>>,
     vkctx: Option<vkutils::Context>,
-    platform: Option<imgui_winit_support::WinitPlatform>,
     window: Option<winit::window::Window>,
     last_frame: std::time::Instant,
 }
@@ -23,15 +26,12 @@ impl App {
         let mut camera = camera::Camera::new();
         camera.look_around(0.0, 0.0);
 
-        // yeah, gg winit/Rust, well played. Do not initialize shit in constructor, just fucking
-        // wrap in optional and initialize later
         Self {
             window: Option::None,
+            gui: Option::None,
+            drawables: std::vec::Vec::new(),
             camera,
-            platform: Option::None,
             vkctx: Option::None,
-            imguictx: Option::None,
-            imgui_renderer: Option::None,
             last_frame: std::time::Instant::now(),
         }
     }
@@ -45,33 +45,20 @@ impl ApplicationHandler for App {
 
         let vkctx = vkutils::Context::new(&window);
 
-        let mut imguictx = imgui::Context::create();
-        imguictx.set_ini_filename(None);
-
-        let mut platform = imgui_winit_support::WinitPlatform::new(&mut imguictx);
-        platform.attach_window(imguictx.io_mut(), &window, HiDpiMode::Rounded);
-
-        let imgui_renderer = imgui_rs_vulkan_renderer::Renderer::with_default_allocator(
-            &vkctx.instance,
-            vkctx.physical_device,
-            vkctx.device.clone(),
-            vkctx.present_queue,
-            vkctx.command_pool,
-            vkctx.render_pass,
-            &mut imguictx,
-            Some(imgui_rs_vulkan_renderer::Options {
-                in_flight_frames: 1,
-                sample_count: vk::SampleCountFlags::TYPE_8,
-                ..Default::default()
-            }),
+        let grid = grid::Grid::new(
+            &vkctx.device,
+            &vkctx.window_extent,
+            &vkctx.graphics_pipeline.pipeline_layout,
+            &vkctx.render_pass,
         )
-        .expect("Could not create imgui renderer");
+        .expect("Could not create grid pipeline");
 
+        let gui = gui::Gui::new(&window, &vkctx);
+
+        self.drawables.push(Box::new(grid));
+        self.gui = Some(gui);
         self.window = Some(window);
         self.vkctx = Some(vkctx);
-        self.imguictx = Some(imguictx);
-        self.platform = Some(platform);
-        self.imgui_renderer = Some(imgui_renderer);
         self.last_frame = std::time::Instant::now();
     }
 
@@ -79,9 +66,9 @@ impl ApplicationHandler for App {
         let camera = &mut self.camera;
         let window = self.window.as_ref().unwrap();
         let vkctx = &mut self.vkctx.as_mut().unwrap();
-        let imguictx = &mut self.imguictx.as_mut().unwrap();
-        let platform = self.platform.as_ref().unwrap();
-        let imgui_renderer = &mut self.imgui_renderer.as_mut().unwrap();
+        let gui = self.gui.as_mut().unwrap();
+        let drawables: std::vec::Vec<&mut dyn drawable::Drawable> =
+            self.drawables.iter_mut().map(|d| d.as_mut()).collect();
 
         camera.update_pos();
 
@@ -193,37 +180,12 @@ impl ApplicationHandler for App {
         };
         unsafe { vkctx.device.cmd_draw(*command_buffer, 3, 1, 0, 0) };
 
-        unsafe {
-            vkctx.device.cmd_bind_pipeline(
-                *command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                vkctx.grid_pipeline,
-            )
-        };
+        for d in drawables {
+            d.cmd_draw(&command_buffer);
+        }
 
-        unsafe { vkctx.device.cmd_draw(*command_buffer, 6, 1, 0, 0) };
-
-        platform
-            .prepare_frame(imguictx.io_mut(), &window)
-            .expect("Failed to prepare frame.");
-        let ui = imguictx.frame();
-        ui.window("Hello world")
-            .size([300.0, 110.0], imgui::Condition::FirstUseEver)
-            .build(|| {
-                ui.text_wrapped("Hello world!");
-                ui.text_wrapped("こんにちは世界！");
-                ui.button("This...is...imgui-rs!");
-                ui.separator();
-                let mouse_pos = ui.io().mouse_pos;
-                ui.text(format!(
-                    "Mouse Position: ({:.1},{:.1})",
-                    mouse_pos[0], mouse_pos[1]
-                ));
-            });
-
-        imgui_renderer
-            .cmd_draw(*command_buffer, imguictx.render())
-            .expect("Could not draw imgui");
+        gui.prepare_frame(&window);
+        gui.cmd_draw(&command_buffer);
 
         unsafe { vkctx.device.cmd_end_render_pass(*command_buffer) };
         unsafe { vkctx.device.end_command_buffer(*command_buffer) }
@@ -266,12 +228,11 @@ impl ApplicationHandler for App {
         _event_loop: &winit::event_loop::ActiveEventLoop,
         _cause: winit::event::StartCause,
     ) {
-        if self.imguictx.is_some() {
+        if self.gui.is_some() {
             let now = std::time::Instant::now();
-            self.imguictx
+            self.gui
                 .as_mut()
                 .unwrap()
-                .io_mut()
                 .update_delta_time(now - self.last_frame);
             self.last_frame = now;
         }
@@ -301,17 +262,9 @@ impl ApplicationHandler for App {
     ) {
         let camera = &mut self.camera;
         let window = self.window.as_ref().unwrap();
-        let imguictx = &mut self.imguictx.as_mut().unwrap();
-        let platform = self.platform.as_mut().unwrap();
+        let gui = self.gui.as_mut().unwrap();
 
-        // FFFFFFFFFFFFFFFFFFFFFFFFFFFUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU
-        // handle_window_event is private so I have to wrap this shit, even though handle_event
-        // calls only handle_window_event
-        let ev = winit::event::Event::<()>::WindowEvent {
-            window_id,
-            event: event.clone(),
-        };
-        platform.handle_event(imguictx.io_mut(), &window, &ev);
+        gui.handle_winit_window_event(window, window_id, &event);
 
         match event {
             winit::event::WindowEvent::KeyboardInput {
@@ -352,6 +305,7 @@ impl ApplicationHandler for App {
                     PhysicalKey::Unidentified(_) => (),
                 }
             }
+            winit::event::WindowEvent::ModifiersChanged(_) => {}
             _ => (),
         }
     }
