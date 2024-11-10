@@ -10,15 +10,15 @@ use crate::grid;
 use crate::gui;
 use crate::vkutils;
 
-use drawable::Drawable;
-
 pub struct App {
     camera: camera::Camera,
-    gui: Option<gui::Gui>,
-    drawables: std::vec::Vec<Box<dyn drawable::Drawable>>,
+    gui: Option<std::rc::Rc<std::cell::RefCell<gui::Gui>>>,
+    drawables: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn drawable::Drawable>>>,
     vkctx: Option<vkutils::Context>,
     window: Option<winit::window::Window>,
     last_frame: std::time::Instant,
+    keyboard_modifiers_state: winit::event::Modifiers,
+    cursor_visible: bool,
 }
 
 impl App {
@@ -33,6 +33,8 @@ impl App {
             camera,
             vkctx: Option::None,
             last_frame: std::time::Instant::now(),
+            keyboard_modifiers_state: winit::event::Modifiers::default(),
+            cursor_visible: false,
         }
     }
 }
@@ -42,6 +44,8 @@ impl ApplicationHandler for App {
         let window = event_loop
             .create_window(winit::window::WindowAttributes::default())
             .expect("Could not create window");
+
+        window.set_cursor_visible(self.cursor_visible);
 
         let vkctx = vkutils::Context::new(&window);
 
@@ -53,9 +57,12 @@ impl ApplicationHandler for App {
         )
         .expect("Could not create grid pipeline");
 
-        let gui = gui::Gui::new(&window, &vkctx);
+        let gui = std::rc::Rc::new(std::cell::RefCell::new(gui::Gui::new(&window, &vkctx)));
 
-        self.drawables.push(Box::new(grid));
+        self.drawables
+            .push(std::rc::Rc::new(std::cell::RefCell::new(grid)));
+        self.drawables.push(gui.clone());
+
         self.gui = Some(gui);
         self.window = Some(window);
         self.vkctx = Some(vkctx);
@@ -66,9 +73,6 @@ impl ApplicationHandler for App {
         let camera = &mut self.camera;
         let window = self.window.as_ref().unwrap();
         let vkctx = &mut self.vkctx.as_mut().unwrap();
-        let gui = self.gui.as_mut().unwrap();
-        let drawables: std::vec::Vec<&mut dyn drawable::Drawable> =
-            self.drawables.iter_mut().map(|d| d.as_mut()).collect();
 
         camera.update_pos();
 
@@ -180,12 +184,15 @@ impl ApplicationHandler for App {
         };
         unsafe { vkctx.device.cmd_draw(*command_buffer, 3, 1, 0, 0) };
 
-        for d in drawables {
-            d.cmd_draw(&command_buffer);
-        }
+        self.gui
+            .as_mut()
+            .unwrap()
+            .borrow_mut()
+            .prepare_frame(&window);
 
-        gui.prepare_frame(&window);
-        gui.cmd_draw(&command_buffer);
+        for d in self.drawables.iter_mut() {
+            d.borrow_mut().cmd_draw(&command_buffer);
+        }
 
         unsafe { vkctx.device.cmd_end_render_pass(*command_buffer) };
         unsafe { vkctx.device.end_command_buffer(*command_buffer) }
@@ -233,6 +240,7 @@ impl ApplicationHandler for App {
             self.gui
                 .as_mut()
                 .unwrap()
+                .borrow_mut()
                 .update_delta_time(now - self.last_frame);
             self.last_frame = now;
         }
@@ -248,7 +256,9 @@ impl ApplicationHandler for App {
 
         match event {
             winit::event::DeviceEvent::MouseMotion { delta } => {
-                camera.look_around(delta.0 as f32, delta.1 as f32);
+                if !self.cursor_visible {
+                    camera.look_around(delta.0 as f32, delta.1 as f32);
+                }
             }
             _ => (),
         }
@@ -262,11 +272,14 @@ impl ApplicationHandler for App {
     ) {
         let camera = &mut self.camera;
         let window = self.window.as_ref().unwrap();
-        let gui = self.gui.as_mut().unwrap();
+        let mut gui = self.gui.as_mut().unwrap().borrow_mut();
 
         gui.handle_winit_window_event(window, window_id, &event);
 
         match event {
+            winit::event::WindowEvent::CloseRequested => {
+                event_loop.exit();
+            }
             winit::event::WindowEvent::KeyboardInput {
                 device_id: _,
                 event,
@@ -275,7 +288,10 @@ impl ApplicationHandler for App {
                 let (key, state) = (event.physical_key, event.state);
                 match key {
                     PhysicalKey::Code(key_code) => match (key_code, state) {
-                        (KeyCode::Escape, ElementState::Pressed) => event_loop.exit(),
+                        (KeyCode::Escape, ElementState::Pressed) => {
+                            self.cursor_visible = !self.cursor_visible;
+                            window.set_cursor_visible(self.cursor_visible);
+                        }
                         (KeyCode::KeyA, _) => camera.set_move_left(state == ElementState::Pressed),
                         (KeyCode::KeyD, _) => camera.set_move_right(state == ElementState::Pressed),
                         (KeyCode::KeyW, _) => {
@@ -284,11 +300,15 @@ impl ApplicationHandler for App {
                         (KeyCode::KeyS, _) => {
                             camera.set_move_backward(state == ElementState::Pressed)
                         }
-                        (KeyCode::KeyF, _) => {
-                            window.set_cursor_visible(state == ElementState::Pressed)
-                        }
+                        (KeyCode::KeyF, _) => {}
                         (KeyCode::KeyQ, _) => camera.set_move_down(state == ElementState::Pressed),
                         (KeyCode::KeyE, _) => camera.set_move_up(state == ElementState::Pressed),
+                        (KeyCode::F4, ElementState::Pressed) => {
+                            match self.keyboard_modifiers_state.lalt_state() {
+                                winit::keyboard::ModifiersKeyState::Pressed => event_loop.exit(),
+                                winit::keyboard::ModifiersKeyState::Unknown => {}
+                            }
+                        }
                         _ => {
                             if let PhysicalKey::Code(key) = key {
                                 println!(
@@ -305,7 +325,10 @@ impl ApplicationHandler for App {
                     PhysicalKey::Unidentified(_) => (),
                 }
             }
-            winit::event::WindowEvent::ModifiersChanged(_) => {}
+            winit::event::WindowEvent::ModifiersChanged(state) => {
+                self.keyboard_modifiers_state = state;
+                println!("Modifiers changed to {:?}", state);
+            }
             _ => (),
         }
     }
