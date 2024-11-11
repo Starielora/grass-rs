@@ -41,8 +41,10 @@ impl App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        let window_attrs = winit::window::WindowAttributes::default()
+            .with_inner_size(winit::dpi::PhysicalSize::new(1440, 900));
         let window = event_loop
-            .create_window(winit::window::WindowAttributes::default())
+            .create_window(window_attrs)
             .expect("Could not create window");
 
         window.set_cursor_visible(self.cursor_visible);

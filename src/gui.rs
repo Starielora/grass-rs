@@ -66,14 +66,6 @@ impl Gui {
     }
 
     pub fn prepare_frame(self: &mut Self, window: &winit::window::Window) {
-        self.platform
-            .prepare_frame(self.imguictx.io_mut(), &window)
-            .expect("Failed to prepare frame.");
-    }
-}
-
-impl drawable::Drawable for Gui {
-    fn cmd_draw(self: &mut Self, command_buffer: &vk::CommandBuffer) {
         let ui = self.imguictx.frame();
         ui.window("Hello world")
             .size([300.0, 110.0], imgui::Condition::FirstUseEver)
@@ -88,7 +80,14 @@ impl drawable::Drawable for Gui {
                     mouse_pos[0], mouse_pos[1]
                 ));
             });
+        self.platform
+            .prepare_frame(self.imguictx.io_mut(), &window)
+            .expect("Failed to prepare frame.");
+    }
+}
 
+impl drawable::Drawable for Gui {
+    fn cmd_draw(self: &mut Self, command_buffer: &vk::CommandBuffer) {
         self.imgui_renderer
             .cmd_draw(*command_buffer, self.imguictx.render())
             .expect("Could not draw imgui");
