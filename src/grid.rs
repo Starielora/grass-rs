@@ -7,6 +7,8 @@ use crate::drawable;
 pub struct Grid {
     pipeline: vk::Pipeline,
     device: ash::Device,
+    pipeline_layout: vk::PipelineLayout,
+    descriptor_set: vk::DescriptorSet,
 }
 
 impl Grid {
@@ -14,6 +16,7 @@ impl Grid {
         device: &ash::Device,
         window_extent: &vk::Extent2D,
         pipeline_layout: &vk::PipelineLayout,
+        set: &vk::DescriptorSet,
         render_pass: &vk::RenderPass,
     ) -> Result<Grid, Box<dyn std::error::Error>> {
         let shader_main = CStr::from_bytes_with_nul(b"main\0")?;
@@ -144,6 +147,8 @@ impl Grid {
         Ok(Self {
             pipeline: pipelines[0],
             device: device.clone(),
+            pipeline_layout: *pipeline_layout,
+            descriptor_set: *set,
         })
     }
 }
@@ -155,6 +160,15 @@ impl drawable::Drawable for Grid {
                 *command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline,
+            );
+
+            self.device.cmd_bind_descriptor_sets(
+                *command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline_layout,
+                0,
+                &[self.descriptor_set],
+                &[],
             );
 
             self.device.cmd_draw(*command_buffer, 6, 1, 0, 0);

@@ -5,6 +5,7 @@ use winit::keyboard::KeyCode;
 use winit::keyboard::PhysicalKey;
 
 use crate::camera;
+use crate::cube;
 use crate::drawable;
 use crate::grid;
 use crate::gui;
@@ -55,12 +56,26 @@ impl ApplicationHandler for App {
             &vkctx.device,
             &vkctx.window_extent,
             &vkctx.graphics_pipeline.pipeline_layout,
+            &vkctx.graphics_pipeline.descriptor_set,
             &vkctx.render_pass,
         )
         .expect("Could not create grid pipeline");
 
-        let gui = std::rc::Rc::new(std::cell::RefCell::new(gui::Gui::new(&window, &vkctx)));
+        let cube = std::rc::Rc::new(std::cell::RefCell::new(cube::Cube::new(
+            vkctx.device.clone(),
+            vkctx.graphics_pipeline.descriptor_set,
+            vkctx.graphics_pipeline.descriptor_set_layout,
+            vkctx.window_extent,
+            vkctx.render_pass,
+        )));
 
+        let gui = std::rc::Rc::new(std::cell::RefCell::new(gui::Gui::new(
+            &window,
+            &vkctx,
+            cube.borrow_mut().model.clone(),
+        )));
+
+        self.drawables.push(cube);
         self.drawables
             .push(std::rc::Rc::new(std::cell::RefCell::new(grid)));
         self.drawables.push(gui.clone());
@@ -176,15 +191,6 @@ impl ApplicationHandler for App {
                 vk::SubpassContents::INLINE,
             )
         };
-
-        unsafe {
-            vkctx.device.cmd_bind_pipeline(
-                *command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                vkctx.graphics_pipeline.pipeline,
-            )
-        };
-        unsafe { vkctx.device.cmd_draw(*command_buffer, 3, 1, 0, 0) };
 
         self.gui
             .as_mut()

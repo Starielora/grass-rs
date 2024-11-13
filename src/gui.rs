@@ -7,10 +7,15 @@ pub struct Gui {
     platform: imgui_winit_support::WinitPlatform,
     imguictx: imgui::Context,
     imgui_renderer: imgui_rs_vulkan_renderer::Renderer,
+    cube_model: std::rc::Rc<std::cell::RefCell<cgmath::Matrix4<f32>>>,
 }
 
 impl Gui {
-    pub fn new(window: &winit::window::Window, vkctx: &vkutils::Context) -> Self {
+    pub fn new(
+        window: &winit::window::Window,
+        vkctx: &vkutils::Context,
+        model: std::rc::Rc<std::cell::RefCell<cgmath::Matrix4<f32>>>,
+    ) -> Self {
         let mut imguictx = imgui::Context::create();
         imguictx.set_ini_filename(None);
 
@@ -41,6 +46,7 @@ impl Gui {
             platform,
             imguictx,
             imgui_renderer,
+            cube_model: model,
         }
     }
 
@@ -80,6 +86,10 @@ impl Gui {
                     mouse_pos[0], mouse_pos[1]
                 ));
             });
+        let mut matrix = self.cube_model.borrow_mut();
+        ui.window("Cube").build(|| {
+            ui.slider("Pos X", 0.0 as f32, 5.0 as f32, &mut matrix[3][0]);
+        });
         self.platform
             .prepare_frame(self.imguictx.io_mut(), &window)
             .expect("Failed to prepare frame.");
