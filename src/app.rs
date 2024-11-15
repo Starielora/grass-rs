@@ -116,7 +116,7 @@ impl ApplicationHandler for App {
             .camera
             .data_slice
             .copy_from_slice(&[camera::CameraData {
-                pos: cgmath::Vector4::new(0.0, 0.0, 0.0, 0.0),
+                pos: glm::make_vec4(&[0.0, 0.0, 0.0, 0.0]),
                 projview: camera.get_projection_view(
                     vkctx.window_extent.width as f32,
                     vkctx.window_extent.height as f32,

@@ -9,6 +9,8 @@ mod grid;
 mod gui;
 mod vkutils;
 
+extern crate nalgebra_glm as glm;
+
 fn main() {
     let event_loop = EventLoop::new().expect("Error creating event loop.");
     event_loop.set_control_flow(ControlFlow::Poll);

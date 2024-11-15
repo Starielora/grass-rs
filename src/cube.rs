@@ -1,10 +1,8 @@
 use crate::drawable;
 use ash::vk::{self, ShaderStageFlags};
 
-use cgmath::SquareMatrix;
-
 pub struct Cube {
-    pub model: std::rc::Rc<std::cell::RefCell<cgmath::Matrix4<f32>>>,
+    pub model: std::rc::Rc<std::cell::RefCell<glm::Mat4>>,
     device: ash::Device, // TODO should I move it as cmd_draw arg?
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
@@ -30,7 +28,7 @@ fn create_graphics_pipeline_layout(
     let push_constant_range = vk::PushConstantRange::default()
         .stage_flags(ShaderStageFlags::VERTEX)
         .offset(0)
-        .size(std::mem::size_of::<cgmath::Matrix4<f32>>() as u32);
+        .size(std::mem::size_of::<glm::Mat4>() as u32);
 
     let ranges = [push_constant_range];
 
@@ -195,7 +193,7 @@ impl Cube {
         let pipeline = create_graphics_pipeline(&device, &extent, &pipeline_layout, &render_pass);
 
         Self {
-            model: std::rc::Rc::new(std::cell::RefCell::new(cgmath::Matrix4::<f32>::identity())),
+            model: std::rc::Rc::new(std::cell::RefCell::new(glm::Mat4::identity())),
             device,
             pipeline_layout,
             pipeline,
@@ -228,8 +226,8 @@ impl drawable::Drawable for Cube {
                 vk::ShaderStageFlags::VERTEX,
                 0,
                 std::slice::from_raw_parts(
-                    (&*self.model.borrow_mut() as *const cgmath::Matrix4<f32>) as *const u8,
-                    std::mem::size_of::<cgmath::Matrix4<f32>>(),
+                    (&*self.model.borrow_mut() as *const glm::Mat4) as *const u8,
+                    std::mem::size_of::<glm::Mat4>(),
                 ),
             );
 

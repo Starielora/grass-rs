@@ -1,4 +1,4 @@
-use cgmath::*;
+extern crate nalgebra_glm as glm;
 
 use bitflags::bitflags;
 
@@ -17,15 +17,15 @@ bitflags! {
 
 #[derive(Debug)]
 pub struct Camera {
-    pos: Vector3<f32>,
-    dir: Vector3<f32>,
-    up: Vector3<f32>,
+    pos: glm::Vec3,
+    dir: glm::Vec3,
+    up: glm::Vec3,
 
     speed: f32,
     sensitivity: f32,
 
-    yaw: Deg<f32>,
-    pitch: Deg<f32>,
+    yaw: f32,
+    pitch: f32,
 
     movement: MovementFlags,
 }
@@ -33,33 +33,33 @@ pub struct Camera {
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct CameraData {
-    pub pos: Vector4<f32>,
-    pub projview: Matrix4<f32>,
+    pub pos: glm::Vec4,
+    pub projview: glm::Mat4,
 }
 
 impl Camera {
     pub fn new() -> Camera {
         Camera {
-            pos: vec3(0.0, 1.0, 5.0),
-            dir: vec3(0.0, 0.0, -1.0),
-            up: vec3(0.0, 1.0, 0.0),
+            pos: glm::make_vec3(&[0.0, 1.0, 5.0]),
+            dir: glm::make_vec3(&[0.0, 0.0, -1.0]),
+            up: glm::make_vec3(&[0.0, 1.0, 0.0]),
             speed: 0.125,
             sensitivity: 0.1,
-            yaw: Deg(90.0 as f32),
-            pitch: Deg(0.0 as f32),
+            yaw: 90.0 as f32,
+            pitch: 0.0 as f32,
             movement: MovementFlags::None,
         }
     }
 
     pub fn update_pos(&mut self) {
-        let mut delta = vec3(0.0, 0.0, 0.0);
+        let mut delta = glm::make_vec3(&[0.0, 0.0, 0.0]);
 
         if self.movement.contains(MovementFlags::Left) {
-            delta += self.dir.cross(self.up).normalize();
+            delta += glm::cross(&self.dir, &self.up).normalize();
         }
 
         if self.movement.contains(MovementFlags::Right) {
-            delta -= self.dir.cross(self.up).normalize();
+            delta -= glm::cross(&self.dir, &self.up).normalize();
         }
 
         if self.movement.contains(MovementFlags::Forward) {
@@ -71,11 +71,11 @@ impl Camera {
         }
 
         if self.movement.contains(MovementFlags::Up) {
-            delta += vec3(0.0, 1.0, 0.0);
+            delta += glm::make_vec3(&[0.0, 1.0, 0.0]);
         }
 
         if self.movement.contains(MovementFlags::Down) {
-            delta += vec3(0.0, -1.0, 0.0);
+            delta += glm::make_vec3(&[0.0, -1.0, 0.0]);
         }
 
         self.pos += self.speed * delta;
@@ -109,42 +109,47 @@ impl Camera {
         delta_x *= self.sensitivity;
         delta_y *= self.sensitivity;
 
-        self.yaw += Deg(delta_x);
-        self.pitch += Deg(delta_y);
+        self.yaw += delta_x;
+        self.pitch += delta_y;
 
-        if self.pitch > Deg(89.0) {
-            self.pitch = Deg(89.0);
+        if self.pitch > 89.0 {
+            self.pitch = 89.0;
         }
 
-        if self.pitch < Deg(-89.0) {
-            self.pitch = Deg(-89.0);
+        if self.pitch < -89.0 {
+            self.pitch = -89.0;
         }
 
-        let mut dir = Vector3::new(0.0, 0.0, 0.0);
+        let mut dir = glm::make_vec3(&[0.0, 0.0, 0.0]);
 
-        dir.x = self.yaw.cos() * self.pitch.cos();
-        dir.y = self.pitch.sin();
-        dir.z = self.yaw.sin() * self.pitch.cos();
+        let yaw_rad = self.yaw.to_radians();
+        let pitch_rad = self.pitch.to_radians();
+
+        dir.x = yaw_rad.cos() * pitch_rad.cos();
+        dir.y = pitch_rad.sin();
+        dir.z = yaw_rad.sin() * pitch_rad.cos();
 
         self.dir = dir.normalize();
-        let right = self.dir.cross(vec3(0.0, 1.0, 0.0)).normalize();
-        self.up = right.cross(self.dir).normalize();
+        let right = self
+            .dir
+            .cross(&glm::make_vec3(&[0.0, 1.0, 0.0]))
+            .normalize();
+        self.up = right.cross(&self.dir).normalize();
     }
 
-    pub fn projection(w: f32, h: f32) -> Matrix4<f32> {
-        cgmath::perspective(Deg(45.0), w / h, 0.01, 100.0)
+    pub fn projection(w: f32, h: f32) -> glm::Mat4 {
+        glm::perspective(w / h, (45.0 as f32).to_radians(), 0.01, 100.0)
     }
 
-    pub fn view(&self) -> Matrix4<f32> {
-        let pos = Point3::from_vec(self.pos);
-        let target = Point3::from_vec(self.pos + self.dir);
+    pub fn view(&self) -> glm::Mat4 {
+        let target = self.pos + self.dir;
 
-        cgmath::Transform::look_at_lh(pos, target, self.up)
+        glm::look_at_lh(&self.pos, &target, &self.up)
     }
 
-    pub fn get_projection_view(&self, w: f32, h: f32) -> Matrix4<f32> {
-        let mut scale = Matrix4::<f32>::identity();
-        scale[1][1] = -1.0;
+    pub fn get_projection_view(&self, w: f32, h: f32) -> glm::Mat4 {
+        let mut scale = glm::Mat4::identity();
+        scale.m22 = -1.0;
         scale * Camera::projection(w, h) * self.view()
     }
 }
