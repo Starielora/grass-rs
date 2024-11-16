@@ -237,10 +237,8 @@ impl Cube {
             -0.5,  0.5, -0.5,  0.0,  1.0,  0.0,  0.0,  1.0
         ];
 
-        let pipeline_layout = create_graphics_pipeline_layout(
-            &ctx.device,
-            ctx.graphics_pipeline.descriptor_set_layout,
-        );
+        let pipeline_layout =
+            create_graphics_pipeline_layout(&ctx.device, ctx.descriptor_set_layout);
         let pipeline = create_graphics_pipeline(
             &ctx.device,
             &ctx.window_extent,
@@ -274,7 +272,7 @@ impl Cube {
             device: ctx.device.clone(),
             pipeline_layout,
             pipeline,
-            descriptor_set: ctx.graphics_pipeline.descriptor_set,
+            descriptor_set: ctx.descriptor_set,
             buffer,
             memory,
         }

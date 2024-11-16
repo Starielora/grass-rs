@@ -1,10 +1,7 @@
 #version 460 core
 
-layout(set = 0, binding = 0) uniform CameraData
-{
-    vec4 position;
-    mat4 projview;
-} camera_data;
+#extension GL_GOOGLE_include_directive : enable
+#include "descriptor_set.glsl"
 
 const vec3 pos[4] = vec3[4](
     vec3(-1.0, 0.0,  1.0),

@@ -22,7 +22,15 @@ fn main() {
     // gather shaders
     let shaders = std::fs::read_dir("shaders")
         .expect("Could not read dir")
-        .filter(|file| file.as_ref().unwrap().path().is_file())
+        .filter(|file| {
+            let f = file.as_ref().unwrap();
+            f.path().is_file()
+                && !f
+                    .file_name()
+                    .to_str()
+                    .expect("Could not convert file_name OsString to string slice")
+                    .starts_with("descriptor_set")
+        })
         .map(|file| file.as_ref().unwrap().path())
         .collect::<Vec<_>>();
 

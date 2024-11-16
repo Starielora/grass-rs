@@ -1,10 +1,7 @@
 #version 460 core
 
-layout(set = 0, binding = 0) uniform CameraData
-{
-    vec4 position;
-    mat4 projview;
-} camera_data;
+#extension GL_GOOGLE_include_directive : enable
+#include "descriptor_set.glsl"
 
 layout(location = 0) out vec4 out_color;
 layout(location = 0) in vec3 world_pos;

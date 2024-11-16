@@ -1,4 +1,7 @@
-#version 450
+#version 460 core
+
+#extension GL_GOOGLE_include_directive : enable
+#include "descriptor_set.glsl"
 
 vec2 positions[3] = vec2[](
     vec2(0.0, 0.5),
@@ -13,11 +16,6 @@ vec3 colors[3] = vec3[](
 );
 
 layout(location = 0) out vec3 fragColor;
-layout(set = 0, binding = 0) uniform CameraData
-{
-    vec4 position;
-    mat4 projview;
-} camera_data;
 
 void main()
 {

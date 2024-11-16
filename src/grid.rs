@@ -15,8 +15,8 @@ impl Grid {
     pub fn new(
         device: &ash::Device,
         window_extent: &vk::Extent2D,
-        pipeline_layout: &vk::PipelineLayout,
-        set: &vk::DescriptorSet,
+        descriptor_set_layout: &vk::DescriptorSetLayout,
+        descriptor_set: &vk::DescriptorSet,
         render_pass: &vk::RenderPass,
     ) -> Result<Grid, Box<dyn std::error::Error>> {
         let shader_main = CStr::from_bytes_with_nul(b"main\0")?;
@@ -121,6 +121,10 @@ impl Grid {
             .attachments(&attachments)
             .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
+        let layouts = [*descriptor_set_layout];
+        let create_info = vk::PipelineLayoutCreateInfo::default().set_layouts(&layouts);
+        let pipeline_layout = unsafe { device.create_pipeline_layout(&create_info, None).unwrap() };
+
         let create_info = vk::GraphicsPipelineCreateInfo::default()
             .stages(&shader_stages)
             .vertex_input_state(&vertex_input_state)
@@ -130,7 +134,7 @@ impl Grid {
             .multisample_state(&multisample_state)
             .depth_stencil_state(&depth_stencil_state)
             .color_blend_state(&color_blend_state)
-            .layout(*pipeline_layout)
+            .layout(pipeline_layout)
             .render_pass(*render_pass);
 
         let pipelines = unsafe {
@@ -147,8 +151,8 @@ impl Grid {
         Ok(Self {
             pipeline: pipelines[0],
             device: device.clone(),
-            pipeline_layout: *pipeline_layout,
-            descriptor_set: *set,
+            pipeline_layout,
+            descriptor_set: *descriptor_set,
         })
     }
 }
@@ -179,6 +183,8 @@ impl drawable::Drawable for Grid {
 impl std::ops::Drop for Grid {
     fn drop(&mut self) {
         unsafe {
+            self.device
+                .destroy_pipeline_layout(self.pipeline_layout, None);
             self.device.destroy_pipeline(self.pipeline, None);
         }
     }

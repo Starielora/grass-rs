@@ -55,8 +55,8 @@ impl ApplicationHandler for App {
         let grid = grid::Grid::new(
             &vkctx.device,
             &vkctx.window_extent,
-            &vkctx.graphics_pipeline.pipeline_layout,
-            &vkctx.graphics_pipeline.descriptor_set,
+            &vkctx.descriptor_set_layout,
+            &vkctx.descriptor_set,
             &vkctx.render_pass,
         )
         .expect("Could not create grid pipeline");
@@ -125,7 +125,7 @@ impl ApplicationHandler for App {
 
         let descriptor_buffer_infos = [descriptor_buffer_info];
         let descriptor_writes = [vk::WriteDescriptorSet::default()
-            .dst_set(vkctx.graphics_pipeline.descriptor_set)
+            .dst_set(vkctx.descriptor_set)
             .dst_binding(0)
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .buffer_info(&descriptor_buffer_infos)];
@@ -150,17 +150,6 @@ impl ApplicationHandler for App {
         let depth_clear_value = vk::ClearDepthStencilValue {
             depth: 1.0,
             stencil: 0,
-        };
-
-        unsafe {
-            vkctx.device.cmd_bind_descriptor_sets(
-                *command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                vkctx.graphics_pipeline.pipeline_layout,
-                0,
-                &[vkctx.graphics_pipeline.descriptor_set],
-                &[],
-            )
         };
 
         let clear_values = [
