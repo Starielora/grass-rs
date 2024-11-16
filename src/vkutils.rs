@@ -687,14 +687,21 @@ fn create_graphics_pipeline(
 }
 
 fn create_descriptor_set_layout(device: &ash::Device) -> vk::DescriptorSetLayout {
-    let bindings = [vk::DescriptorSetLayoutBinding {
-        binding: 0u32,
-        descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
-        descriptor_count: 1,
-        stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
-        p_immutable_samplers: std::ptr::null(),
-        _marker: std::marker::PhantomData,
-    }];
+    let bindings = [
+        vk::DescriptorSetLayoutBinding {
+            binding: 0u32,
+            descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
+            descriptor_count: 1,
+            stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+            p_immutable_samplers: std::ptr::null(),
+            _marker: std::marker::PhantomData,
+        },
+        vk::DescriptorSetLayoutBinding::default()
+            .binding(1)
+            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+    ];
 
     let create_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
     unsafe {
@@ -710,7 +717,7 @@ fn create_descriptor_pool(device: &ash::Device) -> vk::DescriptorPool {
         .max_sets(16)
         .pool_sizes(&[vk::DescriptorPoolSize {
             ty: vk::DescriptorType::UNIFORM_BUFFER,
-            descriptor_count: 1,
+            descriptor_count: 2,
         }]);
 
     unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
@@ -790,7 +797,7 @@ fn allocate_buffer_memory(
     )
 }
 
-fn create_uniform_buffer(
+fn create_buffer(
     device: &ash::Device,
     size: u64,
     usage: vk::BufferUsageFlags,
@@ -985,15 +992,14 @@ impl Context {
             graphics_pipeline_descriptor_set_layout,
         );
 
-        let (camera_data_buffer, camera_data_memory, camera_data_allocation_size) =
-            create_uniform_buffer(
-                &device,
-                size_of::<CameraData>() as u64,
-                vk::BufferUsageFlags::UNIFORM_BUFFER,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-                &physical_device_props,
-                &memory_props,
-            );
+        let (camera_data_buffer, camera_data_memory, camera_data_allocation_size) = create_buffer(
+            &device,
+            size_of::<CameraData>() as u64,
+            vk::BufferUsageFlags::UNIFORM_BUFFER,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            &physical_device_props,
+            &memory_props,
+        );
         let camera_data_ptr = unsafe {
             device
                 .map_memory(
@@ -1096,6 +1102,22 @@ impl Context {
             acquire_semaphore,
             wait_semaphore,
         }
+    }
+
+    pub fn create_buffer(
+        self: &Self,
+        size: u64,
+        usage: vk::BufferUsageFlags,
+        memory_propery_flags: vk::MemoryPropertyFlags,
+    ) -> (vk::Buffer, vk::DeviceMemory, u64) {
+        create_buffer(
+            &self.device,
+            size,
+            usage,
+            memory_propery_flags,
+            &self.physical_device_props.props,
+            &self.physical_device_props.memory_props,
+        )
     }
 }
 

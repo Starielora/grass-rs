@@ -61,18 +61,12 @@ impl ApplicationHandler for App {
         )
         .expect("Could not create grid pipeline");
 
-        let cube = std::rc::Rc::new(std::cell::RefCell::new(cube::Cube::new(
-            vkctx.device.clone(),
-            vkctx.graphics_pipeline.descriptor_set,
-            vkctx.graphics_pipeline.descriptor_set_layout,
-            vkctx.window_extent,
-            vkctx.render_pass,
-        )));
+        let cube = std::rc::Rc::new(std::cell::RefCell::new(cube::Cube::new(&vkctx)));
 
         let gui = std::rc::Rc::new(std::cell::RefCell::new(gui::Gui::new(
             &window,
             &vkctx,
-            cube.borrow_mut().model.clone(),
+            &mut cube.borrow_mut(),
         )));
 
         self.drawables.push(cube);
@@ -116,7 +110,7 @@ impl ApplicationHandler for App {
             .camera
             .data_slice
             .copy_from_slice(&[camera::CameraData {
-                pos: glm::make_vec4(&[0.0, 0.0, 0.0, 0.0]),
+                pos: glm::make_vec4(&[camera.pos.x, camera.pos.y, camera.pos.z, 0.0]),
                 projview: camera.get_projection_view(
                     vkctx.window_extent.width as f32,
                     vkctx.window_extent.height as f32,

@@ -17,7 +17,7 @@ bitflags! {
 
 #[derive(Debug)]
 pub struct Camera {
-    pos: glm::Vec3,
+    pub pos: glm::Vec3,
     dir: glm::Vec3,
     up: glm::Vec3,
 

@@ -1,20 +1,22 @@
 use crate::vkutils;
 use ash::vk;
 
+use crate::cube;
 use crate::drawable;
 
 pub struct Gui {
     platform: imgui_winit_support::WinitPlatform,
     imguictx: imgui::Context,
     imgui_renderer: imgui_rs_vulkan_renderer::Renderer,
-    cube_model: std::rc::Rc<std::cell::RefCell<glm::Mat4>>,
+    cube_rot_y: std::rc::Rc<std::cell::RefCell<f32>>,
+    cube_rot_x: std::rc::Rc<std::cell::RefCell<f32>>,
 }
 
 impl Gui {
     pub fn new(
         window: &winit::window::Window,
         vkctx: &vkutils::Context,
-        model: std::rc::Rc<std::cell::RefCell<glm::Mat4>>,
+        cube: &mut cube::Cube,
     ) -> Self {
         let mut imguictx = imgui::Context::create();
         imguictx.set_ini_filename(None);
@@ -46,7 +48,8 @@ impl Gui {
             platform,
             imguictx,
             imgui_renderer,
-            cube_model: model,
+            cube_rot_y: cube.rot_y.clone(),
+            cube_rot_x: cube.rot_x.clone(),
         }
     }
 
@@ -86,9 +89,20 @@ impl Gui {
                     mouse_pos[0], mouse_pos[1]
                 ));
             });
-        let mut matrix = self.cube_model.borrow_mut();
+
         ui.window("Cube").build(|| {
-            ui.slider("Pos X", 0.0 as f32, 5.0 as f32, &mut matrix.m14);
+            ui.slider(
+                "Rot Y",
+                0.0 as f32,
+                360.0 as f32,
+                &mut self.cube_rot_y.borrow_mut(),
+            );
+            ui.slider(
+                "Rot X",
+                0.0 as f32,
+                360.0 as f32,
+                &mut self.cube_rot_x.borrow_mut(),
+            );
         });
         self.platform
             .prepare_frame(self.imguictx.io_mut(), &window)

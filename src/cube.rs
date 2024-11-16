@@ -1,17 +1,24 @@
 use crate::drawable;
+use crate::vkutils;
+
 use ash::vk::{self, ShaderStageFlags};
 
 pub struct Cube {
-    pub model: std::rc::Rc<std::cell::RefCell<glm::Mat4>>,
-    device: ash::Device, // TODO should I move it as cmd_draw arg?
+    pub rot_y: std::rc::Rc<std::cell::RefCell<f32>>,
+    pub rot_x: std::rc::Rc<std::cell::RefCell<f32>>,
+    device: ash::Device,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
     descriptor_set: vk::DescriptorSet,
+    buffer: vk::Buffer,
+    memory: vk::DeviceMemory,
 }
 
 impl std::ops::Drop for Cube {
     fn drop(&mut self) {
         unsafe {
+            self.device.free_memory(self.memory, None);
+            self.device.destroy_buffer(self.buffer, None);
             self.device
                 .destroy_pipeline_layout(self.pipeline_layout, None);
             self.device.destroy_pipeline(self.pipeline, None);
@@ -84,7 +91,7 @@ fn create_graphics_pipeline(
     };
 
     let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo {
-        topology: vk::PrimitiveTopology::TRIANGLE_STRIP,
+        topology: vk::PrimitiveTopology::TRIANGLE_LIST,
         ..Default::default()
     };
 
@@ -182,22 +189,94 @@ fn create_graphics_pipeline(
 }
 
 impl Cube {
-    pub fn new(
-        device: ash::Device,
-        set: vk::DescriptorSet,
-        set_layout: vk::DescriptorSetLayout,
-        extent: vk::Extent2D,
-        render_pass: vk::RenderPass,
-    ) -> Self {
-        let pipeline_layout = create_graphics_pipeline_layout(&device, set_layout);
-        let pipeline = create_graphics_pipeline(&device, &extent, &pipeline_layout, &render_pass);
+    pub fn new(ctx: &vkutils::Context) -> Self {
+        const VERTEX_DATA_SIZE: usize = 8 * 6 * 6;
+        #[rustfmt::skip]
+        static VERTICES: [f32; VERTEX_DATA_SIZE] = [
+            // positions       // normals        // texture coords
+            -0.5, -0.5, -0.5,  0.0,  0.0, -1.0,  0.0,  0.0,
+             0.5, -0.5, -0.5,  0.0,  0.0, -1.0,  1.0,  0.0,
+             0.5,  0.5, -0.5,  0.0,  0.0, -1.0,  1.0,  1.0,
+             0.5,  0.5, -0.5,  0.0,  0.0, -1.0,  1.0,  1.0,
+            -0.5,  0.5, -0.5,  0.0,  0.0, -1.0,  0.0,  1.0,
+            -0.5, -0.5, -0.5,  0.0,  0.0, -1.0,  0.0,  0.0,
+
+             0.5, -0.5,  0.5,  0.0,  0.0,  1.0,  1.0,  0.0,
+            -0.5, -0.5,  0.5,  0.0,  0.0,  1.0,  0.0,  0.0,
+             0.5,  0.5,  0.5,  0.0,  0.0,  1.0,  1.0,  1.0,
+            -0.5,  0.5,  0.5,  0.0,  0.0,  1.0,  0.0,  1.0,
+             0.5,  0.5,  0.5,  0.0,  0.0,  1.0,  1.0,  1.0,
+            -0.5, -0.5,  0.5,  0.0,  0.0,  1.0,  0.0,  0.0,
+
+            -0.5,  0.5, -0.5, -1.0,  0.0,  0.0,  1.0,  1.0,
+            -0.5,  0.5,  0.5, -1.0,  0.0,  0.0,  1.0,  0.0,
+            -0.5, -0.5, -0.5, -1.0,  0.0,  0.0,  0.0,  1.0,
+            -0.5, -0.5,  0.5, -1.0,  0.0,  0.0,  0.0,  0.0,
+            -0.5, -0.5, -0.5, -1.0,  0.0,  0.0,  0.0,  1.0,
+            -0.5,  0.5,  0.5, -1.0,  0.0,  0.0,  1.0,  0.0,
+
+             0.5,  0.5,  0.5,  1.0,  0.0,  0.0,  1.0,  0.0,
+             0.5,  0.5, -0.5,  1.0,  0.0,  0.0,  1.0,  1.0,
+             0.5, -0.5, -0.5,  1.0,  0.0,  0.0,  0.0,  1.0,
+             0.5, -0.5, -0.5,  1.0,  0.0,  0.0,  0.0,  1.0,
+             0.5, -0.5,  0.5,  1.0,  0.0,  0.0,  0.0,  0.0,
+             0.5,  0.5,  0.5,  1.0,  0.0,  0.0,  1.0,  0.0,
+
+             0.5, -0.5, -0.5,  0.0, -1.0,  0.0,  1.0,  1.0,
+            -0.5, -0.5, -0.5,  0.0, -1.0,  0.0,  0.0,  1.0,
+             0.5, -0.5,  0.5,  0.0, -1.0,  0.0,  1.0,  0.0,
+            -0.5, -0.5,  0.5,  0.0, -1.0,  0.0,  0.0,  0.0,
+             0.5, -0.5,  0.5,  0.0, -1.0,  0.0,  1.0,  0.0,
+            -0.5, -0.5, -0.5,  0.0, -1.0,  0.0,  0.0,  1.0,
+
+            -0.5,  0.5, -0.5,  0.0,  1.0,  0.0,  0.0,  1.0,
+             0.5,  0.5, -0.5,  0.0,  1.0,  0.0,  1.0,  1.0,
+             0.5,  0.5,  0.5,  0.0,  1.0,  0.0,  1.0,  0.0,
+             0.5,  0.5,  0.5,  0.0,  1.0,  0.0,  1.0,  0.0,
+            -0.5,  0.5,  0.5,  0.0,  1.0,  0.0,  0.0,  0.0,
+            -0.5,  0.5, -0.5,  0.0,  1.0,  0.0,  0.0,  1.0
+        ];
+
+        let pipeline_layout = create_graphics_pipeline_layout(
+            &ctx.device,
+            ctx.graphics_pipeline.descriptor_set_layout,
+        );
+        let pipeline = create_graphics_pipeline(
+            &ctx.device,
+            &ctx.window_extent,
+            &pipeline_layout,
+            &ctx.render_pass,
+        );
+        let (buffer, memory, allocation_size) = ctx.create_buffer(
+            (VERTEX_DATA_SIZE * std::mem::size_of::<f32>()) as u64,
+            vk::BufferUsageFlags::STORAGE_BUFFER,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+        );
+
+        let buffer_ptr = unsafe {
+            ctx.device
+                .map_memory(memory, 0, vk::WHOLE_SIZE, vk::MemoryMapFlags::empty())
+                .expect("Could not map cube buffer memory")
+        };
+
+        unsafe {
+            ash::util::Align::new(
+                buffer_ptr,
+                std::mem::align_of::<[f32; VERTEX_DATA_SIZE]>() as u64,
+                allocation_size,
+            )
+            .copy_from_slice(&VERTICES);
+        };
 
         Self {
-            model: std::rc::Rc::new(std::cell::RefCell::new(glm::Mat4::identity())),
-            device,
+            rot_y: std::rc::Rc::new(std::cell::RefCell::new(0.0 as f32)),
+            rot_x: std::rc::Rc::new(std::cell::RefCell::new(0.0 as f32)),
+            device: ctx.device.clone(),
             pipeline_layout,
             pipeline,
-            descriptor_set: set,
+            descriptor_set: ctx.graphics_pipeline.descriptor_set,
+            buffer,
+            memory,
         }
     }
 }
@@ -205,11 +284,39 @@ impl Cube {
 impl drawable::Drawable for Cube {
     fn cmd_draw(&mut self, command_buffer: &vk::CommandBuffer) {
         unsafe {
+            let model = glm::Mat4::identity();
+            let mut model_rotated = glm::rotate(
+                &model,
+                self.rot_y.borrow().to_radians(),
+                &glm::make_vec3(&[0.0, 1.0, 0.0]),
+            );
+
+            model_rotated = glm::rotate(
+                &model_rotated,
+                self.rot_x.borrow().to_radians(),
+                &glm::make_vec3(&[1.0, 0.0, 0.0]),
+            );
+
             self.device.cmd_bind_pipeline(
                 *command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline,
             );
+
+            let descriptor_buffer_info = vk::DescriptorBufferInfo {
+                buffer: self.buffer,
+                offset: 0,
+                range: vk::WHOLE_SIZE,
+            };
+
+            let descriptor_buffer_infos = [descriptor_buffer_info];
+            let descriptor_writes = [vk::WriteDescriptorSet::default()
+                .dst_set(self.descriptor_set)
+                .dst_binding(1)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .buffer_info(&descriptor_buffer_infos)];
+
+            self.device.update_descriptor_sets(&descriptor_writes, &[]);
 
             self.device.cmd_bind_descriptor_sets(
                 *command_buffer,
@@ -226,12 +333,12 @@ impl drawable::Drawable for Cube {
                 vk::ShaderStageFlags::VERTEX,
                 0,
                 std::slice::from_raw_parts(
-                    (&*self.model.borrow_mut() as *const glm::Mat4) as *const u8,
+                    (&model_rotated as *const glm::Mat4) as *const u8,
                     std::mem::size_of::<glm::Mat4>(),
                 ),
             );
 
-            self.device.cmd_draw(*command_buffer, 14, 1, 0, 0);
+            self.device.cmd_draw(*command_buffer, 36, 1, 0, 0);
         }
     }
 }
