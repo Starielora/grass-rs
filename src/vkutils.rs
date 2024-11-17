@@ -18,7 +18,7 @@ use ash::{
 use ash::{vk, Entry};
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
-use crate::camera::CameraData;
+use crate::camera::GPUCameraData;
 
 #[allow(dead_code)]
 pub struct PhysicalDeviceProps {
@@ -41,10 +41,11 @@ pub struct Images {
 #[allow(dead_code)]
 pub struct CameraVkData {
     pub buffer: vk::Buffer,
+    pub buffer_address: vk::DeviceAddress,
     pub memory: vk::DeviceMemory,
     pub allocation_size: u64,
     pub data_ptr: *mut c_void,
-    pub data_slice: ash::util::Align<CameraData>,
+    pub data_slice: ash::util::Align<GPUCameraData>,
 }
 
 #[allow(dead_code)]
@@ -70,9 +71,6 @@ pub struct Context {
     pub swapchain_images: Images,
     pub render_pass: vk::RenderPass,
     pub framebuffers: Vec<vk::Framebuffer>,
-    pub descriptor_pool: vk::DescriptorPool,
-    pub descriptor_set_layout: vk::DescriptorSetLayout,
-    pub descriptor_set: vk::DescriptorSet,
     pub camera: CameraVkData,
     pub command_pool: vk::CommandPool,
     pub command_buffers: Vec<vk::CommandBuffer>,
@@ -531,58 +529,6 @@ fn create_depth_image(
     Ok((image, view, memory))
 }
 
-fn create_descriptor_set_layout(device: &ash::Device) -> vk::DescriptorSetLayout {
-    let bindings = [
-        vk::DescriptorSetLayoutBinding {
-            binding: 0u32,
-            descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
-            descriptor_count: 1,
-            stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
-            p_immutable_samplers: std::ptr::null(),
-            _marker: std::marker::PhantomData,
-        },
-        vk::DescriptorSetLayoutBinding::default()
-            .binding(1)
-            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
-    ];
-
-    let create_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
-    unsafe {
-        device
-            .create_descriptor_set_layout(&create_info, None)
-            .unwrap()
-    }
-}
-
-fn create_descriptor_pool(device: &ash::Device) -> vk::DescriptorPool {
-    let create_info = vk::DescriptorPoolCreateInfo::default()
-        .flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND)
-        .max_sets(16)
-        .pool_sizes(&[vk::DescriptorPoolSize {
-            ty: vk::DescriptorType::UNIFORM_BUFFER,
-            descriptor_count: 2,
-        }]);
-
-    unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
-}
-
-fn allocate_descriptor_set(
-    device: &ash::Device,
-    pool: vk::DescriptorPool,
-    layout: vk::DescriptorSetLayout,
-) -> vk::DescriptorSet {
-    let layouts = [layout];
-    let allocate_info = vk::DescriptorSetAllocateInfo::default()
-        .descriptor_pool(pool)
-        .set_layouts(&layouts);
-
-    let set = unsafe { device.allocate_descriptor_sets(&allocate_info).unwrap() };
-
-    set[0]
-}
-
 fn uniform_buffer_padded_size(
     size: u64,
     physical_device_props: &vk::PhysicalDeviceProperties,
@@ -622,6 +568,7 @@ fn allocate_buffer_memory(
     memory_props: &vk::PhysicalDeviceMemoryProperties,
     memory_property_flags: vk::MemoryPropertyFlags,
     buffer: vk::Buffer,
+    usage: vk::BufferUsageFlags,
 ) -> (vk::DeviceMemory, u64) {
     let memory_requirements = unsafe { device.get_buffer_memory_requirements(buffer) };
     let memory_type_index = find_memory_type_index(
@@ -630,11 +577,17 @@ fn allocate_buffer_memory(
         memory_property_flags,
     );
 
-    let allocate_info = vk::MemoryAllocateInfo {
-        allocation_size: memory_requirements.size,
-        memory_type_index,
-        ..Default::default()
-    };
+    let mut allocate_info = vk::MemoryAllocateInfo::default()
+        .allocation_size(memory_requirements.size)
+        .memory_type_index(memory_type_index);
+
+    // TODO this situation looks like it could be done better
+    let mut device_address_allocate_flags =
+        vk::MemoryAllocateFlagsInfo::default().flags(vk::MemoryAllocateFlags::DEVICE_ADDRESS_KHR);
+
+    if usage.contains(vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS) {
+        allocate_info = allocate_info.push_next(&mut device_address_allocate_flags);
+    }
 
     (
         unsafe { device.allocate_memory(&allocate_info, None).unwrap() },
@@ -663,7 +616,7 @@ fn create_buffer(
     let buffer = unsafe { device.create_buffer(&create_info, None).unwrap() };
 
     let (memory, allocation_size) =
-        allocate_buffer_memory(device, memory_props, memory_property_flags, buffer);
+        allocate_buffer_memory(device, memory_props, memory_property_flags, buffer, usage);
 
     unsafe { device.bind_buffer_memory(buffer, memory, 0).unwrap() };
 
@@ -738,7 +691,11 @@ impl Context {
             .queue_priorities(&queue_prios)];
         let device_extensions = [swapchain::NAME.as_ptr()];
 
+        let mut vk12_physical_device_features =
+            vk::PhysicalDeviceVulkan12Features::default().buffer_device_address(true);
+
         let logical_device_create_info = vk::DeviceCreateInfo::default()
+            .push_next(&mut vk12_physical_device_features)
             .queue_create_infos(&queue_create_infos)
             .enabled_extension_names(&device_extensions);
 
@@ -820,23 +777,23 @@ impl Context {
             &window_extent,
         );
 
-        let graphics_pipeline_descriptor_set_layout = create_descriptor_set_layout(&device);
-
-        let descriptor_pool = create_descriptor_pool(&device);
-        let graphics_pipeline_descriptor_set = allocate_descriptor_set(
-            &device,
-            descriptor_pool,
-            graphics_pipeline_descriptor_set_layout,
-        );
-
         let (camera_data_buffer, camera_data_memory, camera_data_allocation_size) = create_buffer(
             &device,
-            size_of::<CameraData>() as u64,
-            vk::BufferUsageFlags::UNIFORM_BUFFER,
+            size_of::<GPUCameraData>() as u64,
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
             &physical_device_props,
             &memory_props,
         );
+
+        let buffer_address_info = vk::BufferDeviceAddressInfo {
+            buffer: camera_data_buffer,
+            ..Default::default()
+        };
+
+        let camera_buffer_address =
+            unsafe { device.get_buffer_device_address(&buffer_address_info) };
+
         let camera_data_ptr = unsafe {
             device
                 .map_memory(
@@ -850,7 +807,7 @@ impl Context {
         let camera_data_slice = unsafe {
             ash::util::Align::new(
                 camera_data_ptr,
-                mem::align_of::<CameraData>() as u64,
+                mem::align_of::<GPUCameraData>() as u64,
                 camera_data_allocation_size,
             )
         };
@@ -920,11 +877,9 @@ impl Context {
             },
             render_pass,
             framebuffers,
-            descriptor_pool,
-            descriptor_set_layout: graphics_pipeline_descriptor_set_layout,
-            descriptor_set: graphics_pipeline_descriptor_set,
             camera: CameraVkData {
                 buffer: camera_data_buffer,
+                buffer_address: camera_buffer_address,
                 memory: camera_data_memory,
                 allocation_size: camera_data_allocation_size,
                 data_ptr: camera_data_ptr,
@@ -965,10 +920,6 @@ impl std::ops::Drop for Context {
             self.device.destroy_command_pool(self.command_pool, None);
             self.device.free_memory(self.camera.memory, None);
             self.device.destroy_buffer(self.camera.buffer, None);
-            self.device
-                .destroy_descriptor_set_layout(self.descriptor_set_layout, None);
-            self.device
-                .destroy_descriptor_pool(self.descriptor_pool, None);
             self.device.destroy_render_pass(self.render_pass, None);
             self.device.free_memory(self.depth_image.memory, None);
             self.device.destroy_image_view(self.depth_image.view, None);

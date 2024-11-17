@@ -1,7 +1,8 @@
-use crate::drawable;
+use crate::push_constants::GPUPushConstants;
 use crate::vkutils;
+use crate::{drawable, push_constants::get_push_constants_range};
 
-use ash::vk::{self, ShaderStageFlags};
+use ash::vk::{self};
 
 pub struct Cube {
     pub rot_y: std::rc::Rc<std::cell::RefCell<f32>>,
@@ -9,16 +10,23 @@ pub struct Cube {
     device: ash::Device,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
-    descriptor_set: vk::DescriptorSet,
-    buffer: vk::Buffer,
-    memory: vk::DeviceMemory,
+    vertex_buffer: vk::Buffer,
+    vertex_buffer_memory: vk::DeviceMemory,
+    pub vertex_buffer_device_address: vk::DeviceAddress,
+    model_buffer: vk::Buffer,
+    model_buffer_memory: vk::DeviceMemory,
+    model_buffer_ptr: *mut std::ffi::c_void,
+    model_buffer_allocation_size: u64,
+    pub model_buffer_device_address: vk::DeviceAddress,
 }
 
 impl std::ops::Drop for Cube {
     fn drop(&mut self) {
         unsafe {
-            self.device.free_memory(self.memory, None);
-            self.device.destroy_buffer(self.buffer, None);
+            self.device.free_memory(self.model_buffer_memory, None);
+            self.device.destroy_buffer(self.model_buffer, None);
+            self.device.free_memory(self.vertex_buffer_memory, None);
+            self.device.destroy_buffer(self.vertex_buffer, None);
             self.device
                 .destroy_pipeline_layout(self.pipeline_layout, None);
             self.device.destroy_pipeline(self.pipeline, None);
@@ -26,22 +34,13 @@ impl std::ops::Drop for Cube {
     }
 }
 
-fn create_graphics_pipeline_layout(
-    device: &ash::Device,
-    layout: vk::DescriptorSetLayout,
-) -> vk::PipelineLayout {
-    let layouts = [layout];
+fn create_graphics_pipeline_layout(device: &ash::Device) -> vk::PipelineLayout {
+    let layouts = [];
 
-    let push_constant_range = vk::PushConstantRange::default()
-        .stage_flags(ShaderStageFlags::VERTEX)
-        .offset(0)
-        .size(std::mem::size_of::<glm::Mat4>() as u32);
-
-    let ranges = [push_constant_range];
-
+    let push_constants_range = get_push_constants_range();
     let create_info = vk::PipelineLayoutCreateInfo::default()
         .set_layouts(&layouts)
-        .push_constant_ranges(&ranges);
+        .push_constant_ranges(&push_constants_range);
     unsafe { device.create_pipeline_layout(&create_info, None).unwrap() }
 }
 
@@ -237,33 +236,70 @@ impl Cube {
             -0.5,  0.5, -0.5,  0.0,  1.0,  0.0,  0.0,  1.0
         ];
 
-        let pipeline_layout =
-            create_graphics_pipeline_layout(&ctx.device, ctx.descriptor_set_layout);
+        let pipeline_layout = create_graphics_pipeline_layout(&ctx.device);
         let pipeline = create_graphics_pipeline(
             &ctx.device,
             &ctx.window_extent,
             &pipeline_layout,
             &ctx.render_pass,
         );
-        let (buffer, memory, allocation_size) = ctx.create_buffer(
+        let (vertex_buffer, vertex_buffer_memory, allocation_size) = ctx.create_buffer(
             (VERTEX_DATA_SIZE * std::mem::size_of::<f32>()) as u64,
-            vk::BufferUsageFlags::STORAGE_BUFFER,
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
         );
 
-        let buffer_ptr = unsafe {
+        let vertex_buffer_ptr = unsafe {
             ctx.device
-                .map_memory(memory, 0, vk::WHOLE_SIZE, vk::MemoryMapFlags::empty())
+                .map_memory(
+                    vertex_buffer_memory,
+                    0,
+                    vk::WHOLE_SIZE,
+                    vk::MemoryMapFlags::empty(),
+                )
                 .expect("Could not map cube buffer memory")
         };
 
         unsafe {
             ash::util::Align::new(
-                buffer_ptr,
+                vertex_buffer_ptr,
                 std::mem::align_of::<[f32; VERTEX_DATA_SIZE]>() as u64,
                 allocation_size,
             )
             .copy_from_slice(&VERTICES);
+        };
+
+        let vertex_buffer_device_address = unsafe {
+            let address_info = vk::BufferDeviceAddressInfo {
+                buffer: vertex_buffer,
+                ..Default::default()
+            };
+            ctx.device.get_buffer_device_address(&address_info)
+        };
+
+        let (model_buffer, model_buffer_memory, model_buffer_allocation_size) = ctx.create_buffer(
+            std::mem::size_of::<glm::Mat4>() as u64,
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+        );
+
+        let model_buffer_ptr = unsafe {
+            ctx.device
+                .map_memory(
+                    model_buffer_memory,
+                    0,
+                    vk::WHOLE_SIZE,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .expect("Could not map cube model buffer memory")
+        };
+
+        let model_buffer_device_address = unsafe {
+            let address_info = vk::BufferDeviceAddressInfo {
+                buffer: model_buffer,
+                ..Default::default()
+            };
+            ctx.device.get_buffer_device_address(&address_info)
         };
 
         Self {
@@ -272,15 +308,20 @@ impl Cube {
             device: ctx.device.clone(),
             pipeline_layout,
             pipeline,
-            descriptor_set: ctx.descriptor_set,
-            buffer,
-            memory,
+            vertex_buffer,
+            vertex_buffer_memory,
+            vertex_buffer_device_address,
+            model_buffer,
+            model_buffer_memory,
+            model_buffer_ptr,
+            model_buffer_allocation_size,
+            model_buffer_device_address,
         }
     }
 }
 
 impl drawable::Drawable for Cube {
-    fn cmd_draw(&mut self, command_buffer: &vk::CommandBuffer) {
+    fn cmd_draw(&mut self, command_buffer: &vk::CommandBuffer, push_constants: &GPUPushConstants) {
         unsafe {
             let model = glm::Mat4::identity();
             let mut model_rotated = glm::rotate(
@@ -295,44 +336,27 @@ impl drawable::Drawable for Cube {
                 &glm::make_vec3(&[1.0, 0.0, 0.0]),
             );
 
+            ash::util::Align::new(
+                self.model_buffer_ptr,
+                std::mem::align_of::<glm::Mat4>() as u64,
+                self.model_buffer_allocation_size,
+            )
+            .copy_from_slice(&[model_rotated]);
+
             self.device.cmd_bind_pipeline(
                 *command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline,
             );
 
-            let descriptor_buffer_info = vk::DescriptorBufferInfo {
-                buffer: self.buffer,
-                offset: 0,
-                range: vk::WHOLE_SIZE,
-            };
-
-            let descriptor_buffer_infos = [descriptor_buffer_info];
-            let descriptor_writes = [vk::WriteDescriptorSet::default()
-                .dst_set(self.descriptor_set)
-                .dst_binding(1)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .buffer_info(&descriptor_buffer_infos)];
-
-            self.device.update_descriptor_sets(&descriptor_writes, &[]);
-
-            self.device.cmd_bind_descriptor_sets(
-                *command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline_layout,
-                0,
-                &[self.descriptor_set],
-                &[],
-            );
-
             self.device.cmd_push_constants(
                 *command_buffer,
                 self.pipeline_layout,
-                vk::ShaderStageFlags::VERTEX,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
                 0,
                 std::slice::from_raw_parts(
-                    (&model_rotated as *const glm::Mat4) as *const u8,
-                    std::mem::size_of::<glm::Mat4>(),
+                    (push_constants as *const GPUPushConstants) as *const u8,
+                    std::mem::size_of::<GPUPushConstants>(),
                 ),
             );
 

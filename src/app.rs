@@ -9,6 +9,7 @@ use crate::cube;
 use crate::drawable;
 use crate::grid;
 use crate::gui;
+use crate::push_constants::GPUPushConstants;
 use crate::vkutils;
 
 pub struct App {
@@ -20,6 +21,7 @@ pub struct App {
     last_frame: std::time::Instant,
     keyboard_modifiers_state: winit::event::Modifiers,
     cursor_visible: bool,
+    push_constants: Option<GPUPushConstants>,
 }
 
 impl App {
@@ -36,6 +38,7 @@ impl App {
             last_frame: std::time::Instant::now(),
             keyboard_modifiers_state: winit::event::Modifiers::default(),
             cursor_visible: false,
+            push_constants: Option::None,
         }
     }
 }
@@ -52,14 +55,8 @@ impl ApplicationHandler for App {
 
         let vkctx = vkutils::Context::new(&window);
 
-        let grid = grid::Grid::new(
-            &vkctx.device,
-            &vkctx.window_extent,
-            &vkctx.descriptor_set_layout,
-            &vkctx.descriptor_set,
-            &vkctx.render_pass,
-        )
-        .expect("Could not create grid pipeline");
+        let grid = grid::Grid::new(&vkctx.device, &vkctx.window_extent, &vkctx.render_pass)
+            .expect("Could not create grid pipeline");
 
         let cube = std::rc::Rc::new(std::cell::RefCell::new(cube::Cube::new(&vkctx)));
 
@@ -68,6 +65,12 @@ impl ApplicationHandler for App {
             &vkctx,
             &mut cube.borrow_mut(),
         )));
+
+        self.push_constants = Some(GPUPushConstants {
+            cube_vertex: cube.borrow().vertex_buffer_device_address,
+            cube_model: cube.borrow().model_buffer_device_address,
+            camera_data_buffer_address: vkctx.camera.buffer_address,
+        });
 
         self.drawables.push(cube);
         self.drawables
@@ -109,28 +112,13 @@ impl ApplicationHandler for App {
         vkctx
             .camera
             .data_slice
-            .copy_from_slice(&[camera::CameraData {
+            .copy_from_slice(&[camera::GPUCameraData {
                 pos: glm::make_vec4(&[camera.pos.x, camera.pos.y, camera.pos.z, 0.0]),
                 projview: camera.get_projection_view(
                     vkctx.window_extent.width as f32,
                     vkctx.window_extent.height as f32,
                 ),
             }]);
-
-        let descriptor_buffer_info = vk::DescriptorBufferInfo {
-            buffer: vkctx.camera.buffer,
-            offset: 0,
-            range: vk::WHOLE_SIZE,
-        };
-
-        let descriptor_buffer_infos = [descriptor_buffer_info];
-        let descriptor_writes = [vk::WriteDescriptorSet::default()
-            .dst_set(vkctx.descriptor_set)
-            .dst_binding(0)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .buffer_info(&descriptor_buffer_infos)];
-
-        unsafe { vkctx.device.update_descriptor_sets(&descriptor_writes, &[]) };
 
         let begin_info = vk::CommandBufferBeginInfo {
             flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
@@ -182,7 +170,8 @@ impl ApplicationHandler for App {
             .prepare_frame(&window);
 
         for d in self.drawables.iter_mut() {
-            d.borrow_mut().cmd_draw(&command_buffer);
+            d.borrow_mut()
+                .cmd_draw(&command_buffer, self.push_constants.as_ref().unwrap());
         }
 
         unsafe { vkctx.device.cmd_end_render_pass(*command_buffer) };

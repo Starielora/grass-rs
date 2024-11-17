@@ -1,8 +1,9 @@
-layout(set = 0, binding = 0) uniform CameraData
-{
+#extension GL_EXT_buffer_reference : require
+
+layout(buffer_reference, std430) readonly buffer CameraData {
     vec4 position;
     mat4 projview;
-} camera_data;
+};
 
 struct VertexData {
     float pos_x;
@@ -15,11 +16,17 @@ struct VertexData {
     float tex_v;
 };
 
-layout(set = 0, binding = 1) readonly buffer ObjectBuffer {
+layout(buffer_reference, std430) readonly buffer CubeVertexData {
     VertexData data[];
-} object_buffer;
+};
+
+layout(buffer_reference, std430) readonly buffer CubeModel {
+    mat4 matrix;
+};
 
 layout(push_constant) uniform constants
 {
-    mat4 cube_model;
+    CubeVertexData cube_vertex_data;
+    CubeModel cube_model;
+    CameraData camera_data;
 } push_constants;

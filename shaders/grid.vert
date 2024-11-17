@@ -19,6 +19,8 @@ layout (location = 1) out float grid_size;
 
 void main()
 {
+    CameraData camera_data = push_constants.camera_data;
+
     grid_size = 100.0;
     int idx = indices[gl_VertexIndex];
     vec3 position = pos[idx] * grid_size;

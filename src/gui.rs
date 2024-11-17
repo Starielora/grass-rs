@@ -1,3 +1,4 @@
+use crate::push_constants::GPUPushConstants;
 use crate::vkutils;
 use ash::vk;
 
@@ -111,7 +112,7 @@ impl Gui {
 }
 
 impl drawable::Drawable for Gui {
-    fn cmd_draw(self: &mut Self, command_buffer: &vk::CommandBuffer) {
+    fn cmd_draw(self: &mut Self, command_buffer: &vk::CommandBuffer, _: &GPUPushConstants) {
         self.imgui_renderer
             .cmd_draw(*command_buffer, self.imguictx.render())
             .expect("Could not draw imgui");

@@ -32,7 +32,7 @@ pub struct Camera {
 
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub struct CameraData {
+pub struct GPUCameraData {
     pub pos: glm::Vec4,
     pub projview: glm::Mat4,
 }

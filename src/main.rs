@@ -7,6 +7,7 @@ mod cube;
 mod drawable;
 mod grid;
 mod gui;
+mod push_constants;
 mod vkutils;
 
 extern crate nalgebra_glm as glm;

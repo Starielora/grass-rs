@@ -2,21 +2,21 @@ use std::ffi::CStr;
 
 use ash::vk;
 
-use crate::drawable;
+use crate::{
+    drawable,
+    push_constants::{get_push_constants_range, GPUPushConstants},
+};
 
 pub struct Grid {
     pipeline: vk::Pipeline,
     device: ash::Device,
     pipeline_layout: vk::PipelineLayout,
-    descriptor_set: vk::DescriptorSet,
 }
 
 impl Grid {
     pub fn new(
         device: &ash::Device,
         window_extent: &vk::Extent2D,
-        descriptor_set_layout: &vk::DescriptorSetLayout,
-        descriptor_set: &vk::DescriptorSet,
         render_pass: &vk::RenderPass,
     ) -> Result<Grid, Box<dyn std::error::Error>> {
         let shader_main = CStr::from_bytes_with_nul(b"main\0")?;
@@ -121,8 +121,11 @@ impl Grid {
             .attachments(&attachments)
             .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
-        let layouts = [*descriptor_set_layout];
-        let create_info = vk::PipelineLayoutCreateInfo::default().set_layouts(&layouts);
+        let layouts = [];
+        let push_constants_range = get_push_constants_range();
+        let create_info = vk::PipelineLayoutCreateInfo::default()
+            .set_layouts(&layouts)
+            .push_constant_ranges(&push_constants_range);
         let pipeline_layout = unsafe { device.create_pipeline_layout(&create_info, None).unwrap() };
 
         let create_info = vk::GraphicsPipelineCreateInfo::default()
@@ -152,13 +155,16 @@ impl Grid {
             pipeline: pipelines[0],
             device: device.clone(),
             pipeline_layout,
-            descriptor_set: *descriptor_set,
         })
     }
 }
 
 impl drawable::Drawable for Grid {
-    fn cmd_draw(self: &mut Self, command_buffer: &vk::CommandBuffer) {
+    fn cmd_draw(
+        self: &mut Self,
+        command_buffer: &vk::CommandBuffer,
+        push_constants: &GPUPushConstants,
+    ) {
         unsafe {
             self.device.cmd_bind_pipeline(
                 *command_buffer,
@@ -166,13 +172,15 @@ impl drawable::Drawable for Grid {
                 self.pipeline,
             );
 
-            self.device.cmd_bind_descriptor_sets(
+            self.device.cmd_push_constants(
                 *command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline_layout,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
                 0,
-                &[self.descriptor_set],
-                &[],
+                std::slice::from_raw_parts(
+                    (push_constants as *const GPUPushConstants) as *const u8,
+                    std::mem::size_of::<GPUPushConstants>(),
+                ),
             );
 
             self.device.cmd_draw(*command_buffer, 6, 1, 0, 0);
