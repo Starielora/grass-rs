@@ -4,6 +4,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 mod app;
 mod camera;
 mod cube;
+mod dir_light;
 mod drawable;
 mod grid;
 mod gui;

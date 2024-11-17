@@ -24,9 +24,21 @@ layout(buffer_reference, std430) readonly buffer CubeModel {
     mat4 matrix;
 };
 
+struct DirLight {
+    vec4 dir;
+    vec4 ambient;
+    vec4 diffuse;
+    vec4 specular;
+};
+
+layout(buffer_reference, std430) readonly buffer DirLightBuffer {
+    DirLight data;
+};
+
 layout(push_constant) uniform constants
 {
     CubeVertexData cube_vertex_data;
     CubeModel cube_model;
     CameraData camera_data;
+    DirLightBuffer dir_light;
 } push_constants;

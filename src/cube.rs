@@ -324,8 +324,11 @@ impl drawable::Drawable for Cube {
     fn cmd_draw(&mut self, command_buffer: &vk::CommandBuffer, push_constants: &GPUPushConstants) {
         unsafe {
             let model = glm::Mat4::identity();
+
+            let model_scaled = glm::scale(&model, &glm::make_vec3(&[5.0, 5.0, 5.0]));
+
             let mut model_rotated = glm::rotate(
-                &model,
+                &model_scaled,
                 self.rot_y.borrow().to_radians(),
                 &glm::make_vec3(&[0.0, 1.0, 0.0]),
             );

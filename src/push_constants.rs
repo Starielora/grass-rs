@@ -7,6 +7,7 @@ pub struct GPUPushConstants {
     pub cube_vertex: vk::DeviceAddress,
     pub cube_model: vk::DeviceAddress,
     pub camera_data_buffer_address: vk::DeviceAddress,
+    pub dir_light_buffer_address: vk::DeviceAddress,
 }
 
 // TODO why I cannot define this as static or const array is beyond me. It says I cannot use
