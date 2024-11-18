@@ -8,6 +8,7 @@ mod dir_light;
 mod drawable;
 mod grid;
 mod gui;
+mod gui_scene_node;
 mod push_constants;
 mod vkutils;
 

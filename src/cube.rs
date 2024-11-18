@@ -1,12 +1,17 @@
+use crate::gui_scene_node::GuiSceneNode;
 use crate::push_constants::GPUPushConstants;
 use crate::vkutils;
 use crate::{drawable, push_constants::get_push_constants_range};
 
 use ash::vk::{self};
 
+struct GuiData {
+    pub translation: glm::Vec3,
+    pub rotation: glm::Vec3,
+    pub scale: glm::Vec3,
+}
+
 pub struct Cube {
-    pub rot_y: std::rc::Rc<std::cell::RefCell<f32>>,
-    pub rot_x: std::rc::Rc<std::cell::RefCell<f32>>,
     device: ash::Device,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
@@ -18,6 +23,7 @@ pub struct Cube {
     model_buffer_ptr: *mut std::ffi::c_void,
     model_buffer_allocation_size: u64,
     pub model_buffer_device_address: vk::DeviceAddress,
+    gui_data: GuiData,
 }
 
 impl std::ops::Drop for Cube {
@@ -303,8 +309,6 @@ impl Cube {
         };
 
         Self {
-            rot_y: std::rc::Rc::new(std::cell::RefCell::new(0.0 as f32)),
-            rot_x: std::rc::Rc::new(std::cell::RefCell::new(0.0 as f32)),
             device: ctx.device.clone(),
             pipeline_layout,
             pipeline,
@@ -316,6 +320,11 @@ impl Cube {
             model_buffer_ptr,
             model_buffer_allocation_size,
             model_buffer_device_address,
+            gui_data: GuiData {
+                translation: glm::make_vec3(&[0.0, 0.0, 0.0]),
+                rotation: glm::make_vec3(&[0.0, 0.0, 0.0]),
+                scale: glm::make_vec3(&[1.0, 1.0, 1.0]),
+            },
         }
     }
 }
@@ -325,26 +334,34 @@ impl drawable::Drawable for Cube {
         unsafe {
             let model = glm::Mat4::identity();
 
-            let model_scaled = glm::scale(&model, &glm::make_vec3(&[5.0, 5.0, 5.0]));
+            let model_translated = glm::translate(&model, &self.gui_data.translation);
 
             let mut model_rotated = glm::rotate(
-                &model_scaled,
-                self.rot_y.borrow().to_radians(),
+                &model_translated,
+                self.gui_data.rotation.x,
+                &glm::make_vec3(&[1.0, 0.0, 0.0]),
+            );
+
+            model_rotated = glm::rotate(
+                &model_rotated,
+                self.gui_data.rotation.y,
                 &glm::make_vec3(&[0.0, 1.0, 0.0]),
             );
 
             model_rotated = glm::rotate(
                 &model_rotated,
-                self.rot_x.borrow().to_radians(),
-                &glm::make_vec3(&[1.0, 0.0, 0.0]),
+                self.gui_data.rotation.z,
+                &glm::make_vec3(&[0.0, 0.0, 1.0]),
             );
+
+            let model_scaled = glm::scale(&model_rotated, &self.gui_data.scale);
 
             ash::util::Align::new(
                 self.model_buffer_ptr,
                 std::mem::align_of::<glm::Mat4>() as u64,
                 self.model_buffer_allocation_size,
             )
-            .copy_from_slice(&[model_rotated]);
+            .copy_from_slice(&[model_scaled]);
 
             self.device.cmd_bind_pipeline(
                 *command_buffer,
@@ -364,6 +381,27 @@ impl drawable::Drawable for Cube {
             );
 
             self.device.cmd_draw(*command_buffer, 36, 1, 0, 0);
+        }
+    }
+}
+
+impl GuiSceneNode for Cube {
+    fn update(self: &mut Self, ui: &imgui::Ui) {
+        if ui.tree_node("Cube").is_some() {
+            ui.indent();
+            imgui::Drag::new("Translation")
+                .range(-50.0, 50.0)
+                .speed(0.25)
+                .build_array(ui, &mut self.gui_data.translation.data.0[0]);
+            imgui::Drag::new("Rotation")
+                .range(-50.0, 50.0)
+                .speed(0.25)
+                .build_array(ui, &mut self.gui_data.rotation.data.0[0]);
+            imgui::Drag::new("Scale")
+                .range(0.0, 50.0)
+                .speed(0.25)
+                .build_array(ui, &mut self.gui_data.scale.data.0[0]);
+            ui.unindent();
         }
     }
 }

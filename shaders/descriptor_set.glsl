@@ -26,9 +26,7 @@ layout(buffer_reference, std430) readonly buffer CubeModel {
 
 struct DirLight {
     vec4 dir;
-    vec4 ambient;
-    vec4 diffuse;
-    vec4 specular;
+    vec4 color;
 };
 
 layout(buffer_reference, std430) readonly buffer DirLightBuffer {

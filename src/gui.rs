@@ -1,24 +1,18 @@
+use crate::gui_scene_node::GuiSceneNode;
 use crate::push_constants::GPUPushConstants;
 use crate::vkutils;
 use ash::vk;
 
-use crate::cube;
 use crate::drawable;
 
 pub struct Gui {
     platform: imgui_winit_support::WinitPlatform,
     imguictx: imgui::Context,
     imgui_renderer: imgui_rs_vulkan_renderer::Renderer,
-    cube_rot_y: std::rc::Rc<std::cell::RefCell<f32>>,
-    cube_rot_x: std::rc::Rc<std::cell::RefCell<f32>>,
 }
 
 impl Gui {
-    pub fn new(
-        window: &winit::window::Window,
-        vkctx: &vkutils::Context,
-        cube: &mut cube::Cube,
-    ) -> Self {
+    pub fn new(window: &winit::window::Window, vkctx: &vkutils::Context) -> Self {
         let mut imguictx = imgui::Context::create();
         imguictx.set_ini_filename(None);
 
@@ -49,8 +43,6 @@ impl Gui {
             platform,
             imguictx,
             imgui_renderer,
-            cube_rot_y: cube.rot_y.clone(),
-            cube_rot_x: cube.rot_x.clone(),
         }
     }
 
@@ -75,36 +67,21 @@ impl Gui {
             .handle_event(self.imguictx.io_mut(), &window, &ev);
     }
 
-    pub fn prepare_frame(self: &mut Self, window: &winit::window::Window) {
+    pub fn prepare_frame(
+        self: &mut Self,
+        window: &winit::window::Window,
+        scene_nodes: &mut std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
+    ) {
         let ui = self.imguictx.frame();
-        ui.window("Hello world")
-            .size([300.0, 110.0], imgui::Condition::FirstUseEver)
+
+        ui.window("Scene")
+            .size([300.0, 500.0], imgui::Condition::FirstUseEver)
             .build(|| {
-                ui.text_wrapped("Hello world!");
-                ui.text_wrapped("こんにちは世界！");
-                ui.button("This...is...imgui-rs!");
-                ui.separator();
-                let mouse_pos = ui.io().mouse_pos;
-                ui.text(format!(
-                    "Mouse Position: ({:.1},{:.1})",
-                    mouse_pos[0], mouse_pos[1]
-                ));
+                for node in scene_nodes {
+                    node.borrow_mut().update(ui);
+                }
             });
 
-        ui.window("Cube").build(|| {
-            ui.slider(
-                "Rot Y",
-                0.0 as f32,
-                360.0 as f32,
-                &mut self.cube_rot_y.borrow_mut(),
-            );
-            ui.slider(
-                "Rot X",
-                0.0 as f32,
-                360.0 as f32,
-                &mut self.cube_rot_x.borrow_mut(),
-            );
-        });
         self.platform
             .prepare_frame(self.imguictx.io_mut(), &window)
             .expect("Failed to prepare frame.");

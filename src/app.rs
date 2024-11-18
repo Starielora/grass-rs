@@ -10,6 +10,7 @@ use crate::dir_light;
 use crate::drawable;
 use crate::grid;
 use crate::gui;
+use crate::gui_scene_node::GuiSceneNode;
 use crate::push_constants::GPUPushConstants;
 use crate::vkutils;
 
@@ -17,7 +18,8 @@ pub struct App {
     camera: camera::Camera,
     gui: Option<std::rc::Rc<std::cell::RefCell<gui::Gui>>>,
     drawables: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn drawable::Drawable>>>,
-    dir_light: Option<dir_light::DirLight>,
+    scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
+    dir_light: Option<std::rc::Rc<std::cell::RefCell<dir_light::DirLight>>>,
     vkctx: Option<vkutils::Context>,
     window: Option<winit::window::Window>,
     last_frame: std::time::Instant,
@@ -35,6 +37,7 @@ impl App {
             window: Option::None,
             gui: Option::None,
             drawables: std::vec::Vec::new(),
+            scene_nodes: std::vec::Vec::new(),
             camera,
             vkctx: Option::None,
             last_frame: std::time::Instant::now(),
@@ -63,25 +66,33 @@ impl ApplicationHandler for App {
 
         let cube = std::rc::Rc::new(std::cell::RefCell::new(cube::Cube::new(&vkctx)));
 
-        let gui = std::rc::Rc::new(std::cell::RefCell::new(gui::Gui::new(
-            &window,
+        let gui = std::rc::Rc::new(std::cell::RefCell::new(gui::Gui::new(&window, &vkctx)));
+
+        let init_dir_light_data = dir_light::GPUDirLight {
+            dir: glm::make_vec4(&[-0.2, -1.0, -0.3, 0.0]),
+            color: glm::make_vec4(&[1.0, 1.0, 1.0, 0.0]),
+        };
+
+        let dir_light = std::rc::Rc::new(std::cell::RefCell::new(dir_light::DirLight::new(
+            init_dir_light_data,
             &vkctx,
-            &mut cube.borrow_mut(),
         )));
 
-        let dir_light_data = dir_light::GPUDirLight {
-            dir: glm::make_vec4(&[-0.2, -1.0, -0.3, 0.0]),
-            ambient: glm::make_vec4(&[0.05, 0.05, 0.05, 0.0]),
-            diffuse: glm::make_vec4(&[0.4, 0.4, 0.4, 0.0]),
-            specular: glm::make_vec4(&[1.0, 1.0, 1.0, 0.0]),
-        };
-        self.dir_light = Some(dir_light::DirLight::new(dir_light_data, &vkctx));
+        self.scene_nodes.push(dir_light.clone());
+        self.scene_nodes.push(cube.clone());
+
+        self.dir_light = Some(dir_light.clone());
 
         self.push_constants = Some(GPUPushConstants {
             cube_vertex: cube.borrow().vertex_buffer_device_address,
             cube_model: cube.borrow().model_buffer_device_address,
             camera_data_buffer_address: vkctx.camera.buffer_address,
-            dir_light_buffer_address: self.dir_light.as_ref().unwrap().buffer_device_address,
+            dir_light_buffer_address: self
+                .dir_light
+                .as_ref()
+                .unwrap()
+                .borrow()
+                .buffer_device_address,
         });
 
         self.drawables.push(cube);
@@ -179,7 +190,7 @@ impl ApplicationHandler for App {
             .as_mut()
             .unwrap()
             .borrow_mut()
-            .prepare_frame(&window);
+            .prepare_frame(&window, &mut self.scene_nodes);
 
         for d in self.drawables.iter_mut() {
             d.borrow_mut()

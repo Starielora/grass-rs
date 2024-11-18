@@ -2,15 +2,13 @@ extern crate nalgebra_glm as glm;
 
 use ash::vk;
 
-use crate::vkutils;
+use crate::{gui_scene_node::GuiSceneNode, vkutils};
 
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct GPUDirLight {
     pub dir: glm::Vec4,
-    pub ambient: glm::Vec4,
-    pub diffuse: glm::Vec4,
-    pub specular: glm::Vec4,
+    pub color: glm::Vec4,
 }
 
 pub struct DirLight {
@@ -64,6 +62,34 @@ impl DirLight {
             buffer_ptr,
             buffer_device_address,
             device: vkctx.device.clone(),
+        }
+    }
+
+    fn update_gpu_buffer(self: &Self) {
+        unsafe {
+            ash::util::Align::new(
+                self.buffer_ptr,
+                std::mem::align_of::<GPUDirLight>() as u64,
+                self.buffer_allocation_size,
+            )
+            .copy_from_slice(&[self.gpu_data]);
+        }
+    }
+}
+
+impl GuiSceneNode for DirLight {
+    fn update(self: &mut Self, ui: &imgui::Ui) {
+        self.update_gpu_buffer();
+
+        if ui.tree_node("Directional light").is_some() {
+            ui.indent();
+            imgui::Drag::new("Direction")
+                .range(-1.0, 1.0)
+                .speed(0.1)
+                .build_array(ui, &mut self.gpu_data.dir.data.0[0]);
+
+            ui.color_edit4("Color", &mut self.gpu_data.color.data.0[0]);
+            ui.unindent();
         }
     }
 }
