@@ -138,7 +138,7 @@ impl Camera {
     }
 
     pub fn projection(w: f32, h: f32) -> glm::Mat4 {
-        glm::perspective(w / h, (45.0 as f32).to_radians(), 0.01, 100.0)
+        glm::perspective(w / h, (45.0 as f32).to_radians(), 0.01, 500.0)
     }
 
     pub fn view(&self) -> glm::Mat4 {

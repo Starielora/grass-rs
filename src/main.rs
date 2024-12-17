@@ -10,6 +10,7 @@ mod grid;
 mod gui;
 mod gui_scene_node;
 mod push_constants;
+mod skybox;
 mod vkutils;
 
 extern crate nalgebra_glm as glm;

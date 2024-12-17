@@ -1,5 +1,7 @@
 #extension GL_EXT_buffer_reference : require
 
+layout(set = 0, binding = 1)
+
 layout(buffer_reference, std430) readonly buffer CameraData {
     vec4 position;
     mat4 projview;

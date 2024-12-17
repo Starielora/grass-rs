@@ -6,6 +6,7 @@ use std::{
     mem::{self, size_of},
 };
 
+use ash::vk::Handle;
 use ash::{
     ext::debug_utils,
     khr::{surface, swapchain, win32_surface},
@@ -76,6 +77,7 @@ pub struct Context {
     pub command_buffers: Vec<vk::CommandBuffer>,
     pub acquire_semaphore: vk::Semaphore,
     pub wait_semaphore: vk::Semaphore,
+    pub physical_device_memory_props: vk::PhysicalDeviceMemoryProperties,
 }
 
 unsafe extern "system" fn debug_callback(
@@ -889,6 +891,7 @@ impl Context {
             command_buffers,
             acquire_semaphore,
             wait_semaphore,
+            physical_device_memory_props: memory_props,
         }
     }
 
@@ -906,6 +909,187 @@ impl Context {
             &self.physical_device_props.props,
             &self.physical_device_props.memory_props,
         )
+    }
+
+    pub fn set_image_layout(
+        self: &Self,
+        command_buffer: vk::CommandBuffer,
+        image: vk::Image,
+        old_image_layout: vk::ImageLayout,
+        new_image_layout: vk::ImageLayout,
+        subresource_range: vk::ImageSubresourceRange,
+        src_stage_mask: Option<vk::PipelineStageFlags>,
+        dst_stage_mask: Option<vk::PipelineStageFlags>,
+    ) {
+        let src_mask = src_stage_mask
+            .or(Some(vk::PipelineStageFlags::ALL_COMMANDS))
+            .unwrap();
+
+        let dst_mask = dst_stage_mask
+            .or(Some(vk::PipelineStageFlags::ALL_COMMANDS))
+            .unwrap();
+
+        let mut memory_barrier = vk::ImageMemoryBarrier::default()
+            .old_layout(old_image_layout)
+            .new_layout(new_image_layout)
+            .image(image)
+            .subresource_range(subresource_range);
+
+        match old_image_layout {
+            vk::ImageLayout::UNDEFINED => memory_barrier.src_access_mask = vk::AccessFlags::NONE,
+            vk::ImageLayout::PREINITIALIZED => {
+                memory_barrier.src_access_mask = vk::AccessFlags::HOST_WRITE
+            }
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL => {
+                memory_barrier.src_access_mask = vk::AccessFlags::COLOR_ATTACHMENT_WRITE
+            }
+            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL => {
+                memory_barrier.src_access_mask = vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE
+            }
+            vk::ImageLayout::TRANSFER_SRC_OPTIMAL => {
+                memory_barrier.src_access_mask = vk::AccessFlags::TRANSFER_READ
+            }
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL => {
+                memory_barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE
+            }
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL => {
+                memory_barrier.src_access_mask = vk::AccessFlags::SHADER_READ
+            }
+            _ => todo!("TBD"),
+        }
+
+        match new_image_layout {
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL => {
+                memory_barrier.dst_access_mask = vk::AccessFlags::TRANSFER_WRITE
+            }
+            vk::ImageLayout::TRANSFER_SRC_OPTIMAL => {
+                memory_barrier.dst_access_mask = vk::AccessFlags::TRANSFER_READ
+            }
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL => {
+                memory_barrier.dst_access_mask = vk::AccessFlags::COLOR_ATTACHMENT_WRITE
+            }
+            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL => {
+                memory_barrier.dst_access_mask =
+                    memory_barrier.dst_access_mask | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE
+            }
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL => {
+                if memory_barrier.src_access_mask == vk::AccessFlags::NONE {
+                    memory_barrier.src_access_mask =
+                        vk::AccessFlags::HOST_WRITE | vk::AccessFlags::TRANSFER_WRITE;
+                }
+                memory_barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
+            }
+            _ => todo!("TBD"),
+        }
+
+        let mem_barriers = [];
+        let buffer_barriers = [];
+        let image_barriers = [memory_barrier];
+
+        unsafe {
+            self.device.cmd_pipeline_barrier(
+                command_buffer,
+                src_mask,
+                dst_mask,
+                vk::DependencyFlags::empty(),
+                &mem_barriers,
+                &buffer_barriers,
+                &image_barriers,
+            );
+        }
+    }
+
+    pub fn allocage_image_memory(self: &Self, image: vk::Image) -> vk::DeviceMemory {
+        let image_mem_reqs = unsafe { self.device.get_image_memory_requirements(image) };
+        let image_mem_type = find_memory_type(
+            &self.physical_device_memory_props,
+            image_mem_reqs.memory_type_bits,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL | vk::MemoryPropertyFlags::HOST_COHERENT,
+        );
+        let mem_alloc_info = vk::MemoryAllocateInfo::default()
+            .allocation_size(image_mem_reqs.size)
+            .memory_type_index(image_mem_type);
+        let image_mem = unsafe {
+            self.device
+                .allocate_memory(&mem_alloc_info, None)
+                .expect("Failed to allocate skybox image memory")
+        };
+        unsafe {
+            self.device
+                .bind_image_memory(image, image_mem, 0)
+                .expect("Failed to bind skybox image memory")
+        };
+
+        image_mem
+    }
+
+    pub fn create_command_buffer(
+        self: &Self,
+        level: vk::CommandBufferLevel,
+        begin: bool,
+    ) -> vk::CommandBuffer {
+        let allocate_info = vk::CommandBufferAllocateInfo::default()
+            .level(level)
+            .command_pool(self.command_pool)
+            .command_buffer_count(1);
+
+        let cmd_buffer = unsafe {
+            self.device
+                .allocate_command_buffers(&allocate_info)
+                .expect("Failed to allocate command buffer.")
+        }[0];
+
+        if begin {
+            let begin_info = vk::CommandBufferBeginInfo::default();
+            unsafe {
+                self.device
+                    .begin_command_buffer(cmd_buffer, &begin_info)
+                    .expect("Failed to begin command buffer")
+            };
+        }
+
+        cmd_buffer
+    }
+
+    pub fn flush_command_buffer(self: &Self, cmd_buffer: vk::CommandBuffer, free: bool) {
+        if cmd_buffer.is_null() {
+            return;
+        }
+
+        unsafe {
+            self.device
+                .end_command_buffer(cmd_buffer)
+                .expect("Faild to end command buffer")
+        };
+
+        let cmd_buffers = [cmd_buffer];
+        let submit_info = vk::SubmitInfo::default().command_buffers(&cmd_buffers);
+        let fence_info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::empty());
+
+        unsafe {
+            let fence = self
+                .device
+                .create_fence(&fence_info, None)
+                .expect("Failed to create fence");
+
+            let submits = [submit_info];
+
+            self.device
+                .queue_submit(self.present_queue, &submits, fence)
+                .expect("Failed to submit queue");
+
+            let fences = [fence];
+            self.device.wait_for_fences(&fences, true, 10000000000);
+            self.device.destroy_fence(fence, None);
+        };
+
+        if free {
+            unsafe {
+                let buffers = [cmd_buffer];
+                self.device
+                    .free_command_buffers(self.command_pool, &buffers);
+            }
+        }
     }
 }
 

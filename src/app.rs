@@ -12,6 +12,7 @@ use crate::grid;
 use crate::gui;
 use crate::gui_scene_node::GuiSceneNode;
 use crate::push_constants::GPUPushConstants;
+use crate::skybox;
 use crate::vkutils;
 
 pub struct App {
@@ -65,6 +66,7 @@ impl ApplicationHandler for App {
             .expect("Could not create grid pipeline");
 
         let cube = std::rc::Rc::new(std::cell::RefCell::new(cube::Cube::new(&vkctx)));
+        let skybox = std::rc::Rc::new(std::cell::RefCell::new(skybox::Skybox::new(&vkctx)));
 
         let gui = std::rc::Rc::new(std::cell::RefCell::new(gui::Gui::new(&window, &vkctx)));
 
@@ -96,6 +98,7 @@ impl ApplicationHandler for App {
         });
 
         self.drawables.push(cube);
+        self.drawables.push(skybox);
         self.drawables
             .push(std::rc::Rc::new(std::cell::RefCell::new(grid)));
         self.drawables.push(gui.clone());

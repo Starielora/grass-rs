@@ -14,3 +14,4 @@ bitflags = "2.4.2"
 imgui-rs-vulkan-renderer = { version = "1.16.0" }
 imgui = "0.12"
 imgui-winit-support = "^0.13"
+stb_image_rust = "2.27.2"
