@@ -1,10 +1,11 @@
 #version 450
 
-layout(set = 0, binding = 0) uniform samplerCube skybox_tx;
+#extension GL_GOOGLE_include_directive : enable
+#include "descriptor_set.glsl"
 
 layout(location = 0) in vec3 in_uvw;
 layout(location = 0) out vec4 outColor;
 
 void main() {
-    outColor = vec4(texture(skybox_tx, in_uvw).rgb, 1.0);
+    outColor = vec4(texture(skybox_tx[push_constants.current_skybox], in_uvw).rgb, 1.0);
 }

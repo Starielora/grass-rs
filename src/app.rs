@@ -82,6 +82,7 @@ impl ApplicationHandler for App {
 
         self.scene_nodes.push(dir_light.clone());
         self.scene_nodes.push(cube.clone());
+        self.scene_nodes.push(skybox.clone());
 
         self.dir_light = Some(dir_light.clone());
 
@@ -95,6 +96,7 @@ impl ApplicationHandler for App {
                 .unwrap()
                 .borrow()
                 .buffer_device_address,
+            current_skybox: 0,
         });
 
         self.drawables.push(cube);

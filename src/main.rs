@@ -2,6 +2,7 @@ use app::App;
 use winit::event_loop::{ControlFlow, EventLoop};
 
 mod app;
+mod bindless_descriptor_set;
 mod camera;
 mod cube;
 mod dir_light;

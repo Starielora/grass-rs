@@ -1,6 +1,7 @@
 #extension GL_EXT_buffer_reference : require
+#extension GL_EXT_nonuniform_qualifier: require
 
-layout(set = 0, binding = 1)
+layout(set = 0, binding = 0) uniform samplerCube skybox_tx[];
 
 layout(buffer_reference, std430) readonly buffer CameraData {
     vec4 position;
@@ -41,4 +42,5 @@ layout(push_constant) uniform constants
     CubeModel cube_model;
     CameraData camera_data;
     DirLightBuffer dir_light;
+    uint current_skybox;
 } push_constants;

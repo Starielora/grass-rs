@@ -1,4 +1,6 @@
+use crate::bindless_descriptor_set;
 use crate::drawable;
+use crate::gui_scene_node::GuiSceneNode;
 use crate::push_constants::get_push_constants_range;
 use crate::push_constants::GPUPushConstants;
 use crate::vkutils;
@@ -9,77 +11,27 @@ pub struct Skybox {
     device: ash::Device,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
-    descriptor_set: vk::DescriptorSet,
-    descriptor_set_layout: vk::DescriptorSetLayout,
-    descriptor_pool: vk::DescriptorPool, // TODO this has to yeet from here
-    image: vk::Image,
-    image_view: vk::ImageView,
-    image_memory: vk::DeviceMemory,
+    images: std::vec::Vec<vk::Image>,
+    image_views: std::vec::Vec<vk::ImageView>,
+    image_memories: std::vec::Vec<vk::DeviceMemory>,
     sampler: vk::Sampler,
+    descriptor_set: vk::DescriptorSet,
+    current_resource_id: u32,
     // gui_data: GuiData,
 }
 
 fn create_graphics_pipeline_layout(
+    descriptor_set_layout: vk::DescriptorSetLayout,
     device: &ash::Device,
-) -> (
-    vk::PipelineLayout,
-    vk::DescriptorSet,
-    vk::DescriptorSetLayout,
-    vk::DescriptorPool,
-) {
-    let descriptor_pool_sizes = [vk::DescriptorPoolSize::default()
-        .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .descriptor_count(1)];
-    let descriptor_pool_create_info = vk::DescriptorPoolCreateInfo::default()
-        .flags(vk::DescriptorPoolCreateFlags::empty()) // TODO add UPDATE_AFTER_BIND and the other one to go bindless later
-        .max_sets(1)
-        .pool_sizes(&descriptor_pool_sizes);
-
-    let descriptor_pool = unsafe {
-        device
-            .create_descriptor_pool(&descriptor_pool_create_info, None)
-            .expect("Failed to create descriptor pool.")
-    };
-
-    let bindings = [vk::DescriptorSetLayoutBinding::default()
-        .binding(0)
-        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .descriptor_count(1)
-        .stage_flags(vk::ShaderStageFlags::ALL)];
-
-    let descriptor_set_layout_create_info = vk::DescriptorSetLayoutCreateInfo::default()
-        .flags(vk::DescriptorSetLayoutCreateFlags::empty())
-        .bindings(&bindings);
-
-    let descriptor_set_layout = unsafe {
-        device
-            .create_descriptor_set_layout(&descriptor_set_layout_create_info, None)
-            .expect("Failed to create descriptor set layout")
-    };
+) -> vk::PipelineLayout {
     let set_layouts = [descriptor_set_layout];
-
-    let descriptor_set_allocate_info = vk::DescriptorSetAllocateInfo::default()
-        .descriptor_pool(descriptor_pool)
-        .set_layouts(&set_layouts);
-
-    let descriptor_set = unsafe {
-        device
-            .allocate_descriptor_sets(&descriptor_set_allocate_info)
-            .expect("Failed to allocate descriptor set")
-    };
-
     let push_constants_range = get_push_constants_range();
     let create_info = vk::PipelineLayoutCreateInfo::default()
         .set_layouts(&set_layouts)
         .push_constant_ranges(&push_constants_range);
     let pipeline_layout = unsafe { device.create_pipeline_layout(&create_info, None).unwrap() };
 
-    (
-        pipeline_layout,
-        descriptor_set[0],
-        descriptor_set_layout,
-        descriptor_pool,
-    )
+    pipeline_layout
 }
 
 fn create_graphics_pipeline(
@@ -226,41 +178,19 @@ fn create_graphics_pipeline(
 }
 
 fn load_textures_to_staging_buffer(
+    files: [&str; 6],
     vk: &vkutils::Context,
 ) -> (vk::Buffer, vk::DeviceMemory, u32, u32, isize) {
-    let files = [
-        "assets/skybox/Daylight Box_Right.png",
-        "assets/skybox/Daylight Box_Left.png",
-        "assets/skybox/Daylight Box_Top.png",
-        "assets/skybox/Daylight Box_Bottom.png",
-        "assets/skybox/Daylight Box_Front.png",
-        "assets/skybox/Daylight Box_Back.png",
-    ];
-
-    // TODO for no assume texture sizes
-    let texture_width: i32 = 512;
-    let texture_height: i32 = 512;
-
-    let single_texture_size_in_bytes: isize = texture_width as isize * texture_height as isize * 4; // w * h * rgba comps
-    let total_size_in_bytes = single_texture_size_in_bytes * 6; // 6 faces
-    let (staging_buffer, staging_buffer_memory, _staging_buffer_allocated_size) = vk.create_buffer(
-        total_size_in_bytes as u64,
-        vk::BufferUsageFlags::TRANSFER_SRC,
-        vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
-    );
-
-    let staging_buffer_ptr = unsafe {
-        vk.device
-            .map_memory(
-                staging_buffer_memory,
-                0,
-                vk::WHOLE_SIZE,
-                vk::MemoryMapFlags::empty(),
-            )
-            .expect("Failed to map memory for skybox image staging buffer")
-    };
+    let mut texture_width: i32 = 0;
+    let mut texture_height: i32 = 0;
 
     let mut staging_buffer_offset: isize = 0;
+
+    // these are initialized on first image
+    let mut staging_buffer: Option<vk::Buffer> = None;
+    let mut staging_buffer_memory: Option<vk::DeviceMemory> = None;
+    let mut staging_buffer_ptr: Option<*mut std::ffi::c_void> = None;
+    let mut single_texture_size_in_bytes: Option<isize> = None;
 
     for path in files {
         let mut f = std::fs::File::open(path).expect("file not found");
@@ -282,7 +212,34 @@ fn load_textures_to_staging_buffer(
             )
         };
 
-        if width != texture_width || height != texture_height {
+        // allocate staging buffer on first image
+        if texture_width == 0 && texture_height == 0 {
+            texture_width = width;
+            texture_height = height;
+
+            single_texture_size_in_bytes =
+                Some(texture_width as isize * texture_height as isize * 4); // w * h * rgba comps
+            let total_size_in_bytes = single_texture_size_in_bytes.unwrap() * 6; // 6 faces
+            let (buffer, buffer_mem, _staging_buffer_allocated_size) = vk.create_buffer(
+                total_size_in_bytes as u64,
+                vk::BufferUsageFlags::TRANSFER_SRC,
+                vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
+            );
+
+            staging_buffer = Some(buffer);
+            staging_buffer_memory = Some(buffer_mem);
+
+            staging_buffer_ptr = Some(unsafe {
+                vk.device
+                    .map_memory(
+                        staging_buffer_memory.unwrap(),
+                        0,
+                        vk::WHOLE_SIZE,
+                        vk::MemoryMapFlags::empty(),
+                    )
+                    .expect("Failed to map memory for skybox image staging buffer")
+            });
+        } else if width != texture_width || height != texture_height {
             panic!(
                 "Skybox images size mismatch. Expected {}x{}, got {}x{}",
                 texture_width, texture_height, width, height
@@ -292,32 +249,33 @@ fn load_textures_to_staging_buffer(
         unsafe {
             std::ptr::copy_nonoverlapping(
                 img_data,
-                staging_buffer_ptr.offset(staging_buffer_offset) as *mut u8,
-                single_texture_size_in_bytes as usize,
+                staging_buffer_ptr.unwrap().offset(staging_buffer_offset) as *mut u8,
+                single_texture_size_in_bytes.unwrap() as usize,
             );
 
             stb_image_rust::stbi_image_free(img_data);
         }
 
-        staging_buffer_offset += single_texture_size_in_bytes;
+        staging_buffer_offset += single_texture_size_in_bytes.unwrap();
     }
 
-    unsafe { vk.device.unmap_memory(staging_buffer_memory) };
+    unsafe { vk.device.unmap_memory(staging_buffer_memory.unwrap()) };
 
     (
-        staging_buffer,
-        staging_buffer_memory,
+        staging_buffer.unwrap(),
+        staging_buffer_memory.unwrap(),
         texture_width as u32,
         texture_height as u32,
-        single_texture_size_in_bytes,
+        single_texture_size_in_bytes.unwrap(),
     )
 }
 
 fn load_textures(
+    files: [&str; 6],
     vk: &vkutils::Context,
-) -> (vk::Image, vk::DeviceMemory, vk::ImageView, vk::Sampler) {
+) -> (vk::Image, vk::DeviceMemory, vk::ImageView) {
     let (staging_buffer, staging_buffer_memory, width, height, single_image_size) =
-        load_textures_to_staging_buffer(vk);
+        load_textures_to_staging_buffer(files, vk);
 
     let format = vk::Format::R8G8B8A8_UNORM;
 
@@ -362,26 +320,6 @@ fn load_textures(
         vk.device
             .create_image_view(&image_view_create_info, None)
             .expect("Failed to create skybox image view")
-    };
-
-    let sampler_create_info = vk::SamplerCreateInfo::default()
-        .mag_filter(vk::Filter::LINEAR)
-        .min_filter(vk::Filter::LINEAR)
-        .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
-        .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-        .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-        .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-        .mip_lod_bias(0.0)
-        .compare_op(vk::CompareOp::NEVER)
-        .min_lod(0.0)
-        .max_lod(1.0) // TODO mip levels
-        .border_color(vk::BorderColor::INT_OPAQUE_WHITE)
-        .max_anisotropy(1.0);
-
-    let sampler = unsafe {
-        vk.device
-            .create_sampler(&sampler_create_info, None)
-            .expect("Failed to create image sampler")
     };
 
     // lastly copy data from staging buffer to image
@@ -446,13 +384,13 @@ fn load_textures(
         vk.device.destroy_buffer(staging_buffer, None);
     }
 
-    (image, image_mem, image_view, sampler)
+    (image, image_mem, image_view)
 }
 
 impl Skybox {
     pub fn new(ctx: &vkutils::Context) -> Self {
-        let (pipeline_layout, descriptor_set, descriptor_set_layout, descriptor_pool) =
-            create_graphics_pipeline_layout(&ctx.device);
+        let pipeline_layout =
+            create_graphics_pipeline_layout(ctx.descriptor_set_layout, &ctx.device);
         let pipeline = create_graphics_pipeline(
             &ctx.device,
             &ctx.window_extent,
@@ -460,18 +398,77 @@ impl Skybox {
             &ctx.render_pass,
         );
 
-        let (image, image_memory, image_view, sampler) = load_textures(&ctx);
-        let descriptor_image_info = [vk::DescriptorImageInfo::default()
-            .sampler(sampler)
-            .image_view(image_view)
-            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+        let skybox1_texture_files = [
+            "assets/skybox/daylight/Daylight Box_Right.png",
+            "assets/skybox/daylight/Daylight Box_Left.png",
+            "assets/skybox/daylight/Daylight Box_Top.png",
+            "assets/skybox/daylight/Daylight Box_Bottom.png",
+            "assets/skybox/daylight/Daylight Box_Front.png",
+            "assets/skybox/daylight/Daylight Box_Back.png",
+        ];
 
-        let descriptor_writes = [vk::WriteDescriptorSet::default()
-            .dst_set(descriptor_set)
-            .dst_binding(0)
-            .descriptor_count(1)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .image_info(&descriptor_image_info)];
+        let skybox2_texture_files = [
+            "assets/skybox/learnopengl/right.png",
+            "assets/skybox/learnopengl/left.png",
+            "assets/skybox/learnopengl/top.png",
+            "assets/skybox/learnopengl/bottom.png",
+            "assets/skybox/learnopengl/front.png",
+            "assets/skybox/learnopengl/back.png",
+        ];
+
+        let sampler_create_info = vk::SamplerCreateInfo::default()
+            .mag_filter(vk::Filter::LINEAR)
+            .min_filter(vk::Filter::LINEAR)
+            .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
+            .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+            .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+            .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+            .mip_lod_bias(0.0)
+            .compare_op(vk::CompareOp::NEVER)
+            .min_lod(0.0)
+            .max_lod(1.0) // TODO mip levels
+            .border_color(vk::BorderColor::INT_OPAQUE_WHITE)
+            .max_anisotropy(1.0);
+
+        let sampler = unsafe {
+            ctx.device
+                .create_sampler(&sampler_create_info, None)
+                .expect("Failed to create image sampler")
+        };
+
+        let (image1, image_memory1, image_view1) = load_textures(skybox1_texture_files, &ctx);
+        let (image2, image_memory2, image_view2) = load_textures(skybox2_texture_files, &ctx);
+
+        let images = vec![image1, image2];
+        let views = vec![image_view1, image_view2];
+        let memories = vec![image_memory1, image_memory2];
+
+        let mut descriptor_image_infos = std::vec::Vec::new();
+        let mut descriptor_writes = std::vec::Vec::new();
+        let mut skybox_resource_id = 0;
+
+        for view in &views {
+            let descriptor_image_info = [vk::DescriptorImageInfo::default()
+                .sampler(sampler)
+                .image_view(*view)
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+
+            descriptor_image_infos.push(descriptor_image_info);
+        }
+
+        for info in &descriptor_image_infos {
+            descriptor_writes.push(
+                vk::WriteDescriptorSet::default()
+                    .dst_set(ctx.descriptor_set)
+                    .dst_binding(bindless_descriptor_set::CUBE_SAMPLER_BINDING)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .dst_array_element(skybox_resource_id)
+                    .image_info(info),
+            );
+
+            skybox_resource_id += 1;
+        }
 
         let descriptor_copies = [];
         unsafe {
@@ -483,13 +480,12 @@ impl Skybox {
             device: ctx.device.clone(),
             pipeline_layout,
             pipeline,
-            descriptor_set,
-            descriptor_set_layout,
-            descriptor_pool,
-            image,
-            image_view,
-            image_memory,
+            images,
+            image_views: views,
+            image_memories: memories,
             sampler,
+            descriptor_set: ctx.descriptor_set,
+            current_resource_id: 0,
         }
     }
 }
@@ -497,14 +493,16 @@ impl Skybox {
 impl std::ops::Drop for Skybox {
     fn drop(&mut self) {
         unsafe {
-            self.device.free_memory(self.image_memory, None);
-            self.device.destroy_image_view(self.image_view, None);
-            self.device.destroy_image(self.image, None);
+            for mem in &self.image_memories {
+                self.device.free_memory(*mem, None);
+            }
+            for view in &self.image_views {
+                self.device.destroy_image_view(*view, None);
+            }
+            for image in &self.images {
+                self.device.destroy_image(*image, None);
+            }
             self.device.destroy_sampler(self.sampler, None);
-            self.device
-                .destroy_descriptor_set_layout(self.descriptor_set_layout, None);
-            self.device
-                .destroy_descriptor_pool(self.descriptor_pool, None);
             self.device
                 .destroy_pipeline_layout(self.pipeline_layout, None);
             self.device.destroy_pipeline(self.pipeline, None);
@@ -532,18 +530,38 @@ impl drawable::Drawable for Skybox {
                 self.pipeline,
             );
 
+            // FIXME quick hack to check if it works... these are only integers so there's no perf
+            // penalty
+            let mut pc = (*push_constants).clone();
+            pc.current_skybox = self.current_resource_id;
+
             self.device.cmd_push_constants(
                 *command_buffer,
                 self.pipeline_layout,
                 vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
                 0,
                 std::slice::from_raw_parts(
-                    (push_constants as *const GPUPushConstants) as *const u8,
+                    (&pc as *const GPUPushConstants) as *const u8,
                     std::mem::size_of::<GPUPushConstants>(),
                 ),
             );
 
             self.device.cmd_draw(*command_buffer, 36, 1, 0, 0);
+        }
+    }
+}
+
+impl GuiSceneNode for Skybox {
+    fn update(self: &mut Self, ui: &imgui::Ui) {
+        if ui.tree_node("Skybox").is_some() {
+            ui.indent();
+            if ui.selectable("daylight") {
+                self.current_resource_id = 0;
+            }
+            if ui.selectable("learnopengl") {
+                self.current_resource_id = 1;
+            }
+            ui.unindent();
         }
     }
 }

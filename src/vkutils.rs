@@ -19,6 +19,7 @@ use ash::{
 use ash::{vk, Entry};
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
+use crate::bindless_descriptor_set;
 use crate::camera::GPUCameraData;
 
 #[allow(dead_code)]
@@ -78,6 +79,9 @@ pub struct Context {
     pub acquire_semaphore: vk::Semaphore,
     pub wait_semaphore: vk::Semaphore,
     pub physical_device_memory_props: vk::PhysicalDeviceMemoryProperties,
+    pub descriptor_pool: vk::DescriptorPool, // TODO this has to yeet from here
+    pub descriptor_set: vk::DescriptorSet,
+    pub descriptor_set_layout: vk::DescriptorSetLayout,
 }
 
 unsafe extern "system" fn debug_callback(
@@ -693,8 +697,13 @@ impl Context {
             .queue_priorities(&queue_prios)];
         let device_extensions = [swapchain::NAME.as_ptr()];
 
-        let mut vk12_physical_device_features =
-            vk::PhysicalDeviceVulkan12Features::default().buffer_device_address(true);
+        let mut vk12_physical_device_features = vk::PhysicalDeviceVulkan12Features::default()
+            .buffer_device_address(true)
+            // bindless
+            .runtime_descriptor_array(true)
+            .descriptor_binding_partially_bound(true)
+            .shader_sampled_image_array_non_uniform_indexing(true)
+            .descriptor_binding_sampled_image_update_after_bind(true);
 
         let logical_device_create_info = vk::DeviceCreateInfo::default()
             .push_next(&mut vk12_physical_device_features)
@@ -704,6 +713,10 @@ impl Context {
         let device =
             unsafe { instance.create_device(physical_device, &logical_device_create_info, None) }
                 .expect("Could not create logical device");
+
+        let (descriptor_pool, descriptor_set_layout, descriptor_set) =
+            bindless_descriptor_set::create(&device);
+
         let present_queue = unsafe { device.get_device_queue(graphics_queue_family_index, 0) };
 
         let (swapchain, surface_format, window_extent, surface_loader, swapchain_loader) =
@@ -892,6 +905,9 @@ impl Context {
             acquire_semaphore,
             wait_semaphore,
             physical_device_memory_props: memory_props,
+            descriptor_pool,
+            descriptor_set_layout,
+            descriptor_set,
         }
     }
 
@@ -1102,6 +1118,10 @@ impl std::ops::Drop for Context {
             self.device
                 .free_command_buffers(self.command_pool, &command_buffers_to_free);
             self.device.destroy_command_pool(self.command_pool, None);
+            self.device
+                .destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+            self.device
+                .destroy_descriptor_pool(self.descriptor_pool, None);
             self.device.free_memory(self.camera.memory, None);
             self.device.destroy_buffer(self.camera.buffer, None);
             self.device.destroy_render_pass(self.render_pass, None);
