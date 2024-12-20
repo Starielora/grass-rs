@@ -1,43 +1,14 @@
-use crate::gui_scene_node::GuiSceneNode;
-use crate::push_constants::GPUPushConstants;
+use crate::push_constants::get_push_constants_range;
 use crate::vkutils;
-use crate::{drawable, push_constants::get_push_constants_range};
+use ash::vk;
 
-use ash::vk::{self};
-
-struct GuiData {
-    pub translation: glm::Vec3,
-    pub rotation: glm::Vec3,
-    pub scale: glm::Vec3,
-}
-
-pub struct Cube {
+pub struct Pipeline {
     device: ash::Device,
-    pipeline_layout: vk::PipelineLayout,
-    pipeline: vk::Pipeline,
+    pub(in crate::cube) pipeline_layout: vk::PipelineLayout,
+    pub(in crate::cube) pipeline: vk::Pipeline,
     vertex_buffer: vk::Buffer,
     vertex_buffer_memory: vk::DeviceMemory,
-    pub vertex_buffer_device_address: vk::DeviceAddress,
-    model_buffer: vk::Buffer,
-    model_buffer_memory: vk::DeviceMemory,
-    model_buffer_ptr: *mut std::ffi::c_void,
-    model_buffer_allocation_size: u64,
-    pub model_buffer_device_address: vk::DeviceAddress,
-    gui_data: GuiData,
-}
-
-impl std::ops::Drop for Cube {
-    fn drop(&mut self) {
-        unsafe {
-            self.device.free_memory(self.model_buffer_memory, None);
-            self.device.destroy_buffer(self.model_buffer, None);
-            self.device.free_memory(self.vertex_buffer_memory, None);
-            self.device.destroy_buffer(self.vertex_buffer, None);
-            self.device
-                .destroy_pipeline_layout(self.pipeline_layout, None);
-            self.device.destroy_pipeline(self.pipeline, None);
-        }
-    }
+    pub(in crate::cube) vertex_buffer_device_address: vk::DeviceAddress,
 }
 
 fn create_graphics_pipeline_layout(device: &ash::Device) -> vk::PipelineLayout {
@@ -193,7 +164,7 @@ fn create_graphics_pipeline(
     pipelines[0]
 }
 
-impl Cube {
+impl Pipeline {
     pub fn new(ctx: &vkutils::Context) -> Self {
         const VERTEX_DATA_SIZE: usize = 8 * 6 * 6;
         #[rustfmt::skip]
@@ -283,31 +254,6 @@ impl Cube {
             ctx.device.get_buffer_device_address(&address_info)
         };
 
-        let (model_buffer, model_buffer_memory, model_buffer_allocation_size) = ctx.create_buffer(
-            std::mem::size_of::<glm::Mat4>() as u64,
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-        );
-
-        let model_buffer_ptr = unsafe {
-            ctx.device
-                .map_memory(
-                    model_buffer_memory,
-                    0,
-                    vk::WHOLE_SIZE,
-                    vk::MemoryMapFlags::empty(),
-                )
-                .expect("Could not map cube model buffer memory")
-        };
-
-        let model_buffer_device_address = unsafe {
-            let address_info = vk::BufferDeviceAddressInfo {
-                buffer: model_buffer,
-                ..Default::default()
-            };
-            ctx.device.get_buffer_device_address(&address_info)
-        };
-
         Self {
             device: ctx.device.clone(),
             pipeline_layout,
@@ -315,93 +261,18 @@ impl Cube {
             vertex_buffer,
             vertex_buffer_memory,
             vertex_buffer_device_address,
-            model_buffer,
-            model_buffer_memory,
-            model_buffer_ptr,
-            model_buffer_allocation_size,
-            model_buffer_device_address,
-            gui_data: GuiData {
-                translation: glm::make_vec3(&[0.0, 0.0, 0.0]),
-                rotation: glm::make_vec3(&[0.0, 0.0, 0.0]),
-                scale: glm::make_vec3(&[1.0, 1.0, 1.0]),
-            },
         }
     }
 }
 
-impl drawable::Drawable for Cube {
-    fn cmd_draw(&mut self, command_buffer: &vk::CommandBuffer, push_constants: &GPUPushConstants) {
+impl std::ops::Drop for Pipeline {
+    fn drop(&mut self) {
         unsafe {
-            let model = glm::Mat4::identity();
-
-            let model_translated = glm::translate(&model, &self.gui_data.translation);
-
-            let mut model_rotated = glm::rotate(
-                &model_translated,
-                self.gui_data.rotation.x,
-                &glm::make_vec3(&[1.0, 0.0, 0.0]),
-            );
-
-            model_rotated = glm::rotate(
-                &model_rotated,
-                self.gui_data.rotation.y,
-                &glm::make_vec3(&[0.0, 1.0, 0.0]),
-            );
-
-            model_rotated = glm::rotate(
-                &model_rotated,
-                self.gui_data.rotation.z,
-                &glm::make_vec3(&[0.0, 0.0, 1.0]),
-            );
-
-            let model_scaled = glm::scale(&model_rotated, &self.gui_data.scale);
-
-            ash::util::Align::new(
-                self.model_buffer_ptr,
-                std::mem::align_of::<glm::Mat4>() as u64,
-                self.model_buffer_allocation_size,
-            )
-            .copy_from_slice(&[model_scaled]);
-
-            self.device.cmd_bind_pipeline(
-                *command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline,
-            );
-
-            self.device.cmd_push_constants(
-                *command_buffer,
-                self.pipeline_layout,
-                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
-                0,
-                std::slice::from_raw_parts(
-                    (push_constants as *const GPUPushConstants) as *const u8,
-                    std::mem::size_of::<GPUPushConstants>(),
-                ),
-            );
-
-            self.device.cmd_draw(*command_buffer, 36, 1, 0, 0);
-        }
-    }
-}
-
-impl GuiSceneNode for Cube {
-    fn update(self: &mut Self, ui: &imgui::Ui) {
-        if ui.tree_node("Cube").is_some() {
-            ui.indent();
-            imgui::Drag::new("Translation")
-                .range(-50.0, 50.0)
-                .speed(0.25)
-                .build_array(ui, &mut self.gui_data.translation.data.0[0]);
-            imgui::Drag::new("Rotation")
-                .range(-50.0, 50.0)
-                .speed(0.25)
-                .build_array(ui, &mut self.gui_data.rotation.data.0[0]);
-            imgui::Drag::new("Scale")
-                .range(0.0, 50.0)
-                .speed(0.25)
-                .build_array(ui, &mut self.gui_data.scale.data.0[0]);
-            ui.unindent();
+            self.device.free_memory(self.vertex_buffer_memory, None);
+            self.device.destroy_buffer(self.vertex_buffer, None);
+            self.device
+                .destroy_pipeline_layout(self.pipeline_layout, None);
+            self.device.destroy_pipeline(self.pipeline, None);
         }
     }
 }

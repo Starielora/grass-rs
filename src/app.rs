@@ -18,6 +18,7 @@ use crate::vkutils;
 pub struct App {
     camera: camera::Camera,
     gui: Option<std::rc::Rc<std::cell::RefCell<gui::Gui>>>,
+    cube_pipeline: Option<cube::pipeline::Pipeline>,
     drawables: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn drawable::Drawable>>>,
     scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
     dir_light: Option<std::rc::Rc<std::cell::RefCell<dir_light::DirLight>>>,
@@ -37,6 +38,7 @@ impl App {
         Self {
             window: Option::None,
             gui: Option::None,
+            cube_pipeline: Option::None,
             drawables: std::vec::Vec::new(),
             scene_nodes: std::vec::Vec::new(),
             camera,
@@ -65,7 +67,34 @@ impl ApplicationHandler for App {
         let grid = grid::Grid::new(&vkctx.device, &vkctx.window_extent, &vkctx.render_pass)
             .expect("Could not create grid pipeline");
 
-        let cube = std::rc::Rc::new(std::cell::RefCell::new(cube::Cube::new(&vkctx)));
+        let cube_pipeline = cube::pipeline::Pipeline::new(&vkctx);
+
+        let cube = std::rc::Rc::new(std::cell::RefCell::new(cube::Cube::new(
+            &cube_pipeline,
+            &vkctx,
+            "Cube",
+        )));
+        let cube2 = std::rc::Rc::new(std::cell::RefCell::new(cube::Cube::new(
+            &cube_pipeline,
+            &vkctx,
+            "Floor",
+        )));
+
+        // set init transformations. Technically I could move these to constructor
+        {
+            cube.as_ref().borrow_mut().set_transformation(
+                glm::make_vec3(&[3.0, 2.0, 1.0]),
+                glm::make_vec3(&[0.0, 0.0, 0.0]),
+                glm::make_vec3(&[1.0, 1.0, 1.0]),
+            );
+
+            cube2.as_ref().borrow_mut().set_transformation(
+                glm::make_vec3(&[0.0, 0.0, 0.0]),
+                glm::make_vec3(&[0.0, 0.0, 0.0]),
+                glm::make_vec3(&[10.0, 0.5, 10.0]),
+            );
+        }
+
         let skybox = std::rc::Rc::new(std::cell::RefCell::new(skybox::Skybox::new(&vkctx)));
 
         let gui = std::rc::Rc::new(std::cell::RefCell::new(gui::Gui::new(&window, &vkctx)));
@@ -82,6 +111,7 @@ impl ApplicationHandler for App {
 
         self.scene_nodes.push(dir_light.clone());
         self.scene_nodes.push(cube.clone());
+        self.scene_nodes.push(cube2.clone());
         self.scene_nodes.push(skybox.clone());
 
         self.dir_light = Some(dir_light.clone());
@@ -100,12 +130,14 @@ impl ApplicationHandler for App {
         });
 
         self.drawables.push(cube);
+        self.drawables.push(cube2);
         self.drawables.push(skybox);
         self.drawables
             .push(std::rc::Rc::new(std::cell::RefCell::new(grid)));
         self.drawables.push(gui.clone());
 
         self.gui = Some(gui);
+        self.cube_pipeline = Some(cube_pipeline);
         self.window = Some(window);
         self.vkctx = Some(vkctx);
         self.last_frame = std::time::Instant::now();
