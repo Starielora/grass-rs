@@ -1,4 +1,3 @@
-use crate::vkutils;
 use ash::vk;
 
 pub const CUBE_SAMPLER_BINDING: u32 = 0;

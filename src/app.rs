@@ -74,6 +74,7 @@ impl ApplicationHandler for App {
             &vkctx,
             "Cube",
         )));
+
         let cube2 = std::rc::Rc::new(std::cell::RefCell::new(cube::Cube::new(
             &cube_pipeline,
             &vkctx,
@@ -95,7 +96,12 @@ impl ApplicationHandler for App {
             );
         }
 
-        let skybox = std::rc::Rc::new(std::cell::RefCell::new(skybox::Skybox::new(&vkctx)));
+        let skybox = std::rc::Rc::new(std::cell::RefCell::new(skybox::Skybox::new(
+            &vkctx,
+            cube_pipeline.vertex_buffer,
+            cube_pipeline.index_buffer,
+            cube_pipeline.indices_count,
+        )));
 
         let gui = std::rc::Rc::new(std::cell::RefCell::new(gui::Gui::new(&window, &vkctx)));
 
@@ -117,8 +123,8 @@ impl ApplicationHandler for App {
         self.dir_light = Some(dir_light.clone());
 
         self.push_constants = Some(GPUPushConstants {
-            cube_vertex: cube.borrow().vertex_buffer_device_address,
-            cube_model: cube.borrow().model_buffer_device_address,
+            cube_vertex: 0, //cube.borrow().vertex_buffer_device_address,
+            cube_model: 0,  //cube.borrow().model_buffer_device_address,
             camera_data_buffer_address: vkctx.camera.buffer_address,
             dir_light_buffer_address: self
                 .dir_light

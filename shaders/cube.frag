@@ -15,7 +15,7 @@ void main() {
     vec3 light_diffuse = vec3(1.0, 1.0, 1.0);
     vec3 light_specular = vec3(1.0, 1.0, 1.0);
     vec3 viewPos = push_constants.camera_data.position.xyz;
-    float shininess = 32;
+    float shininess = 16;
     vec3 cube_color = vec3(1.0, 1.0, 1.0);
     vec3 light_color = vec3(1.0, 1.0, 1.0);
 
@@ -33,6 +33,7 @@ void main() {
     vec3 reflectDir = reflect(-lightDir, norm);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
     vec3 specular = light_specular * spec * 0.5;
+
     vec3 result = ambient * 0.0 + diffuse * 1.0 + specular * 1.0;
 
     out_color = vec4(result, 1.0);

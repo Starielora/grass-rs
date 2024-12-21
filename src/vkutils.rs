@@ -1095,7 +1095,9 @@ impl Context {
                 .expect("Failed to submit queue");
 
             let fences = [fence];
-            self.device.wait_for_fences(&fences, true, 10000000000);
+            self.device
+                .wait_for_fences(&fences, true, 10000000000)
+                .expect("Error waiting for fences");
             self.device.destroy_fence(fence, None);
         };
 

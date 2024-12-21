@@ -7,6 +7,7 @@ mod camera;
 mod cube;
 mod dir_light;
 mod drawable;
+mod gltf_loader;
 mod grid;
 mod gui;
 mod gui_scene_node;

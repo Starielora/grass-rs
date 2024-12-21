@@ -17,6 +17,9 @@ pub struct Skybox {
     sampler: vk::Sampler,
     descriptor_set: vk::DescriptorSet,
     current_resource_id: u32,
+    vertex_buffer: vk::Buffer,
+    index_buffer: vk::Buffer,
+    indices_count: usize,
     // gui_data: GuiData,
 }
 
@@ -75,9 +78,32 @@ fn create_graphics_pipeline(
         },
     ];
 
-    let vertex_input_state = vk::PipelineVertexInputStateCreateInfo {
-        ..Default::default()
-    };
+    let vertex_binding_desciptions = [vk::VertexInputBindingDescription::default()
+        .binding(0)
+        .stride((std::mem::size_of::<f32>() * 8) as u32)
+        .input_rate(vk::VertexInputRate::VERTEX)];
+
+    let vertex_attribute_descriptions = [
+        vk::VertexInputAttributeDescription::default()
+            .location(0)
+            .binding(0)
+            .format(vk::Format::R32G32B32_SFLOAT)
+            .offset(0),
+        vk::VertexInputAttributeDescription::default()
+            .location(1)
+            .binding(0)
+            .format(vk::Format::R32G32B32_SFLOAT)
+            .offset((std::mem::size_of::<f32>() * 3) as u32),
+        vk::VertexInputAttributeDescription::default()
+            .location(2)
+            .binding(0)
+            .format(vk::Format::R32G32_SFLOAT)
+            .offset((std::mem::size_of::<f32>() * 6) as u32),
+    ];
+
+    let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::default()
+        .vertex_binding_descriptions(&vertex_binding_desciptions)
+        .vertex_attribute_descriptions(&vertex_attribute_descriptions);
 
     let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo {
         topology: vk::PrimitiveTopology::TRIANGLE_LIST,
@@ -107,7 +133,7 @@ fn create_graphics_pipeline(
         rasterizer_discard_enable: vk::FALSE,
         polygon_mode: vk::PolygonMode::FILL,
         cull_mode: vk::CullModeFlags::BACK,
-        front_face: vk::FrontFace::COUNTER_CLOCKWISE,
+        front_face: vk::FrontFace::CLOCKWISE,
         depth_bias_enable: vk::FALSE,
         line_width: 1.0,
         ..Default::default()
@@ -388,7 +414,12 @@ fn load_textures(
 }
 
 impl Skybox {
-    pub fn new(ctx: &vkutils::Context) -> Self {
+    pub fn new(
+        ctx: &vkutils::Context,
+        cube_vertex_buffer: vk::Buffer,
+        cube_index_buffer: vk::Buffer,
+        indices_count: usize,
+    ) -> Self {
         let pipeline_layout =
             create_graphics_pipeline_layout(ctx.descriptor_set_layout, &ctx.device);
         let pipeline = create_graphics_pipeline(
@@ -486,6 +517,9 @@ impl Skybox {
             sampler,
             descriptor_set: ctx.descriptor_set,
             current_resource_id: 0,
+            vertex_buffer: cube_vertex_buffer,
+            index_buffer: cube_index_buffer,
+            indices_count,
         }
     }
 }
@@ -546,7 +580,18 @@ impl drawable::Drawable for Skybox {
                 ),
             );
 
-            self.device.cmd_draw(*command_buffer, 36, 1, 0, 0);
+            let vertex_buffers = [self.vertex_buffer];
+            let offsets = [0];
+            self.device
+                .cmd_bind_vertex_buffers(*command_buffer, 0, &vertex_buffers, &offsets);
+            self.device.cmd_bind_index_buffer(
+                *command_buffer,
+                self.index_buffer,
+                0,
+                vk::IndexType::UINT16,
+            );
+            self.device
+                .cmd_draw_indexed(*command_buffer, self.indices_count as u32, 1, 0, 0, 0);
         }
     }
 }

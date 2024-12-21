@@ -5,7 +5,7 @@ use crate::gui_scene_node::GuiSceneNode;
 use crate::push_constants::GPUPushConstants;
 use crate::vkutils;
 
-use ash::vk::{self};
+use ash::vk::{self, IndexType};
 
 struct GuiData {
     pub id: usize,
@@ -19,7 +19,9 @@ pub struct Cube {
     device: ash::Device,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
-    pub vertex_buffer_device_address: vk::DeviceAddress,
+    vertex_buffer: vk::Buffer,
+    index_buffer: vk::Buffer,
+    indices_count: usize,
     model_buffer: vk::Buffer,
     model_buffer_memory: vk::DeviceMemory,
     model_buffer_ptr: *mut std::ffi::c_void,
@@ -71,7 +73,6 @@ impl Cube {
             device: ctx.device.clone(),
             pipeline_layout: cube_pipeline.pipeline_layout,
             pipeline: cube_pipeline.pipeline,
-            vertex_buffer_device_address: cube_pipeline.vertex_buffer_device_address,
             model_buffer,
             model_buffer_memory,
             model_buffer_ptr,
@@ -84,6 +85,9 @@ impl Cube {
                 rotation: glm::make_vec3(&[0.0, 0.0, 0.0]),
                 scale: glm::make_vec3(&[1.0, 1.0, 1.0]),
             },
+            vertex_buffer: cube_pipeline.vertex_buffer,
+            index_buffer: cube_pipeline.index_buffer,
+            indices_count: cube_pipeline.indices_count,
         }
     }
 
@@ -155,7 +159,18 @@ impl drawable::Drawable for Cube {
                 ),
             );
 
-            self.device.cmd_draw(*command_buffer, 36, 1, 0, 0);
+            let vertex_buffers = [self.vertex_buffer];
+            let offsets = [0];
+            self.device
+                .cmd_bind_vertex_buffers(*command_buffer, 0, &vertex_buffers, &offsets);
+            self.device.cmd_bind_index_buffer(
+                *command_buffer,
+                self.index_buffer,
+                0,
+                IndexType::UINT16,
+            );
+            self.device
+                .cmd_draw_indexed(*command_buffer, self.indices_count as u32, 1, 0, 0, 0);
         }
     }
 }
