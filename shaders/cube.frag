@@ -5,32 +5,35 @@
 
 layout(location = 0) out vec4 out_color;
 
-layout(location = 0) in vec4 frag_pos;
-layout(location = 1) in vec4 frag_normal;
-
-vec3 directional_lights_part(vec3 view_dir);
+layout(location = 0) in vec3 frag_pos;
+layout(location = 1) in vec3 frag_normal;
 
 void main() {
 
     DirLight light = push_constants.dir_light.data;
+    vec3 light_ambient = vec3(0.2, 0.2, 0.2);
+    vec3 light_diffuse = vec3(1.0, 1.0, 1.0);
+    vec3 light_specular = vec3(1.0, 1.0, 1.0);
+    vec3 viewPos = push_constants.camera_data.position.xyz;
+    float shininess = 32;
+    vec3 cube_color = vec3(1.0, 1.0, 1.0);
+    vec3 light_color = vec3(1.0, 1.0, 1.0);
 
     // ambient
-    float ambientStrength = 0.1;
-    vec3 ambient = (ambientStrength * light.color).xyz;
+    vec3 ambient = light_ambient * cube_color;
 
     // diffuse
-    vec3 norm = normalize(frag_normal).xyz;
-    float diff = max(dot(norm, -light.dir.xyz), 0.0);
-    vec3 diffuse = (diff * light.color).xyz;
+    vec3 norm = normalize(frag_normal);
+    vec3 lightDir = normalize((-light.dir).xyz);
+    float diff = max(dot(lightDir, norm), 0.0);
+    vec3 diffuse = light_diffuse * diff * cube_color;
 
     // specular
-    float specularStrength = 0.5;
-    vec3 viewDir = normalize(push_constants.camera_data.position - frag_pos).xyz;
-    vec3 reflectDir = reflect(light.dir.xyz, norm);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 16);
-    vec3 specular = specularStrength * spec * light.color.rgb;
-    vec3 cube_color = vec3(1.0, 1.0, 1.0);
-    vec3 result = (ambient + diffuse + specular) * cube_color;
+    vec3 viewDir = normalize(viewPos - frag_pos);
+    vec3 reflectDir = reflect(-lightDir, norm);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
+    vec3 specular = light_specular * spec * 0.5;
+    vec3 result = ambient * 0.0 + diffuse * 1.0 + specular * 1.0;
 
     out_color = vec4(result, 1.0);
 }

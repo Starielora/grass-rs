@@ -80,7 +80,7 @@ impl ApplicationHandler for App {
             "Floor",
         )));
 
-        // set init transformations. Technically I could move these to constructor
+        // set init transformations. Technically I could move these to cube constructor
         {
             cube.as_ref().borrow_mut().set_transformation(
                 glm::make_vec3(&[3.0, 2.0, 1.0]),
@@ -100,7 +100,7 @@ impl ApplicationHandler for App {
         let gui = std::rc::Rc::new(std::cell::RefCell::new(gui::Gui::new(&window, &vkctx)));
 
         let init_dir_light_data = dir_light::GPUDirLight {
-            dir: glm::make_vec4(&[-0.2, -1.0, -0.3, 0.0]),
+            dir: glm::make_vec4(&[1.0, -0.5, 0.5, 0.0]),
             color: glm::make_vec4(&[1.0, 1.0, 1.0, 0.0]),
         };
 
