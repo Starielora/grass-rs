@@ -190,21 +190,22 @@ fn create_graphics_pipeline(
     pipelines[0]
 }
 
-fn upload_vertex_buffer(
-    vertex_data: &Vec<f32>,
+fn upload_buffer<T: std::marker::Copy>(
+    vertex_data: &Vec<T>,
+    buffer_usage: vk::BufferUsageFlags,
     ctx: &vkutils::Context,
 ) -> (vk::Buffer, vk::DeviceMemory) {
-    let (vertex_buffer, vertex_buffer_memory, allocation_size) = ctx.create_buffer(
-        (vertex_data.len() * std::mem::size_of::<f32>()) as u64,
-        vk::BufferUsageFlags::VERTEX_BUFFER,
+    let (buffer, buffer_memory, allocation_size) = ctx.create_buffer(
+        (vertex_data.len() * std::mem::size_of::<T>()) as u64,
+        buffer_usage,
         vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
     );
 
     unsafe {
-        let vertex_buffer_ptr = ctx
+        let buffer_ptr = ctx
             .device
             .map_memory(
-                vertex_buffer_memory,
+                buffer_memory,
                 0,
                 vk::WHOLE_SIZE,
                 vk::MemoryMapFlags::empty(),
@@ -212,51 +213,16 @@ fn upload_vertex_buffer(
             .expect("Could not map cube buffer memory");
 
         ash::util::Align::new(
-            vertex_buffer_ptr,
-            std::mem::align_of::<f32>() as u64,
+            buffer_ptr,
+            std::mem::align_of::<T>() as u64,
             allocation_size,
         )
         .copy_from_slice(&vertex_data.as_slice());
 
-        ctx.device.unmap_memory(vertex_buffer_memory);
+        ctx.device.unmap_memory(buffer_memory);
     };
 
-    (vertex_buffer, vertex_buffer_memory)
-}
-
-// TODO this is the same as before, just different type.
-fn upload_index_buffer(
-    index_data: &Vec<u16>,
-    ctx: &vkutils::Context,
-) -> (vk::Buffer, vk::DeviceMemory) {
-    let (vertex_buffer, vertex_buffer_memory, allocation_size) = ctx.create_buffer(
-        (index_data.len() * std::mem::size_of::<u16>()) as u64,
-        vk::BufferUsageFlags::INDEX_BUFFER,
-        vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-    );
-
-    unsafe {
-        let vertex_buffer_ptr = ctx
-            .device
-            .map_memory(
-                vertex_buffer_memory,
-                0,
-                vk::WHOLE_SIZE,
-                vk::MemoryMapFlags::empty(),
-            )
-            .expect("Could not map cube buffer memory");
-
-        ash::util::Align::new(
-            vertex_buffer_ptr,
-            std::mem::align_of::<u16>() as u64,
-            allocation_size,
-        )
-        .copy_from_slice(&index_data.as_slice());
-
-        ctx.device.unmap_memory(vertex_buffer_memory);
-    };
-
-    (vertex_buffer, vertex_buffer_memory)
+    (buffer, buffer_memory)
 }
 
 impl Pipeline {
@@ -272,8 +238,10 @@ impl Pipeline {
             &ctx.render_pass,
         );
 
-        let (vertex_buffer, vertex_buffer_memory) = upload_vertex_buffer(&vertex_data, &ctx);
-        let (index_buffer, index_buffer_memory) = upload_index_buffer(&index_data, &ctx);
+        let (vertex_buffer, vertex_buffer_memory) =
+            upload_buffer(&vertex_data, vk::BufferUsageFlags::VERTEX_BUFFER, &ctx);
+        let (index_buffer, index_buffer_memory) =
+            upload_buffer(&index_data, vk::BufferUsageFlags::INDEX_BUFFER, &ctx);
 
         Self {
             device: ctx.device.clone(),
