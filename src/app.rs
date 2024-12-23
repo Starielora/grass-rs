@@ -5,12 +5,12 @@ use winit::keyboard::KeyCode;
 use winit::keyboard::PhysicalKey;
 
 use crate::camera;
-use crate::cube;
 use crate::dir_light;
 use crate::drawable;
 use crate::grid;
 use crate::gui;
 use crate::gui_scene_node::GuiSceneNode;
+use crate::mesh;
 use crate::push_constants::GPUPushConstants;
 use crate::skybox;
 use crate::vkutils;
@@ -18,10 +18,11 @@ use crate::vkutils;
 pub struct App {
     camera: camera::Camera,
     gui: Option<std::rc::Rc<std::cell::RefCell<gui::Gui>>>,
-    cube_pipeline: Option<cube::pipeline::Pipeline>,
+    mesh_pipeline: Option<mesh::pipeline::Pipeline>,
     drawables: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn drawable::Drawable>>>,
     scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
     dir_light: Option<std::rc::Rc<std::cell::RefCell<dir_light::DirLight>>>,
+    meshes: std::vec::Vec<mesh::mesh_data::MeshData>,
     vkctx: Option<vkutils::Context>,
     window: Option<winit::window::Window>,
     last_frame: std::time::Instant,
@@ -38,7 +39,7 @@ impl App {
         Self {
             window: Option::None,
             gui: Option::None,
-            cube_pipeline: Option::None,
+            mesh_pipeline: Option::None,
             drawables: std::vec::Vec::new(),
             scene_nodes: std::vec::Vec::new(),
             camera,
@@ -48,6 +49,7 @@ impl App {
             cursor_visible: false,
             push_constants: Option::None,
             dir_light: Option::None,
+            meshes: std::vec::Vec::new(),
         }
     }
 }
@@ -67,16 +69,19 @@ impl ApplicationHandler for App {
         let grid = grid::Grid::new(&vkctx.device, &vkctx.window_extent, &vkctx.render_pass)
             .expect("Could not create grid pipeline");
 
-        let cube_pipeline = cube::pipeline::Pipeline::new(&vkctx);
+        let mesh_pipeline = mesh::pipeline::Pipeline::new(&vkctx);
+        let cube_mesh = mesh::mesh_data::MeshData::new("assets/cube.gltf", &vkctx);
 
-        let cube = std::rc::Rc::new(std::cell::RefCell::new(cube::Cube::new(
-            &cube_pipeline,
+        let cube = std::rc::Rc::new(std::cell::RefCell::new(mesh::Mesh::new(
+            &cube_mesh,
+            &mesh_pipeline,
             &vkctx,
             "Cube",
         )));
 
-        let cube2 = std::rc::Rc::new(std::cell::RefCell::new(cube::Cube::new(
-            &cube_pipeline,
+        let cube2 = std::rc::Rc::new(std::cell::RefCell::new(mesh::Mesh::new(
+            &cube_mesh,
+            &mesh_pipeline,
             &vkctx,
             "Floor",
         )));
@@ -98,9 +103,9 @@ impl ApplicationHandler for App {
 
         let skybox = std::rc::Rc::new(std::cell::RefCell::new(skybox::Skybox::new(
             &vkctx,
-            cube_pipeline.vertex_buffer,
-            cube_pipeline.index_buffer,
-            cube_pipeline.indices_count,
+            cube_mesh.vertex_buffer,
+            cube_mesh.index_buffer,
+            cube_mesh.indices_count,
         )));
 
         let gui = std::rc::Rc::new(std::cell::RefCell::new(gui::Gui::new(&window, &vkctx)));
@@ -143,10 +148,12 @@ impl ApplicationHandler for App {
         self.drawables.push(gui.clone());
 
         self.gui = Some(gui);
-        self.cube_pipeline = Some(cube_pipeline);
+        self.mesh_pipeline = Some(mesh_pipeline);
         self.window = Some(window);
         self.vkctx = Some(vkctx);
         self.last_frame = std::time::Instant::now();
+
+        self.meshes.push(cube_mesh);
     }
 
     fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {

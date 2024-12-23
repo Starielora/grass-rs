@@ -1,3 +1,4 @@
+pub mod mesh_data;
 pub mod pipeline;
 
 use crate::drawable;
@@ -15,7 +16,7 @@ struct GuiData {
     pub scale: glm::Vec3,
 }
 
-pub struct Cube {
+pub struct Mesh {
     device: ash::Device,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
@@ -30,7 +31,7 @@ pub struct Cube {
     gui_data: GuiData,
 }
 
-impl std::ops::Drop for Cube {
+impl std::ops::Drop for Mesh {
     fn drop(&mut self) {
         unsafe {
             self.device.free_memory(self.model_buffer_memory, None);
@@ -39,8 +40,13 @@ impl std::ops::Drop for Cube {
     }
 }
 
-impl Cube {
-    pub fn new(cube_pipeline: &pipeline::Pipeline, ctx: &vkutils::Context, gui_name: &str) -> Self {
+impl Mesh {
+    pub fn new(
+        mesh_data: &mesh_data::MeshData,
+        mesh_pipeline: &pipeline::Pipeline,
+        ctx: &vkutils::Context,
+        gui_name: &str,
+    ) -> Self {
         static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let current_id: usize = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
@@ -71,8 +77,8 @@ impl Cube {
 
         Self {
             device: ctx.device.clone(),
-            pipeline_layout: cube_pipeline.pipeline_layout,
-            pipeline: cube_pipeline.pipeline,
+            pipeline_layout: mesh_pipeline.pipeline_layout,
+            pipeline: mesh_pipeline.pipeline,
             model_buffer,
             model_buffer_memory,
             model_buffer_ptr,
@@ -85,9 +91,9 @@ impl Cube {
                 rotation: glm::make_vec3(&[0.0, 0.0, 0.0]),
                 scale: glm::make_vec3(&[1.0, 1.0, 1.0]),
             },
-            vertex_buffer: cube_pipeline.vertex_buffer,
-            index_buffer: cube_pipeline.index_buffer,
-            indices_count: cube_pipeline.indices_count,
+            vertex_buffer: mesh_data.vertex_buffer,
+            index_buffer: mesh_data.index_buffer,
+            indices_count: mesh_data.indices_count,
         }
     }
 
@@ -103,7 +109,7 @@ impl Cube {
     }
 }
 
-impl drawable::Drawable for Cube {
+impl drawable::Drawable for Mesh {
     fn cmd_draw(&mut self, command_buffer: &vk::CommandBuffer, push_constants: &GPUPushConstants) {
         unsafe {
             let model = glm::Mat4::identity();
@@ -175,7 +181,7 @@ impl drawable::Drawable for Cube {
     }
 }
 
-impl GuiSceneNode for Cube {
+impl GuiSceneNode for Mesh {
     fn update(self: &mut Self, ui: &imgui::Ui) {
         if ui.tree_node(format!("{}", self.gui_data.name)).is_some() {
             ui.indent();
