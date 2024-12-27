@@ -17,7 +17,8 @@ impl Grid {
     pub fn new(
         device: &ash::Device,
         window_extent: &vk::Extent2D,
-        render_pass: &vk::RenderPass,
+        swapchain_format: vk::Format,
+        depth_format: vk::Format,
     ) -> Result<Grid, Box<dyn std::error::Error>> {
         let shader_main = CStr::from_bytes_with_nul(b"main\0")?;
 
@@ -84,7 +85,7 @@ impl Grid {
         };
 
         let multisample_state = vk::PipelineMultisampleStateCreateInfo {
-            rasterization_samples: vk::SampleCountFlags::TYPE_8,
+            rasterization_samples: vk::SampleCountFlags::TYPE_1,
             sample_shading_enable: vk::FALSE,
             min_sample_shading: 1.0,
             alpha_to_coverage_enable: vk::FALSE,
@@ -128,7 +129,14 @@ impl Grid {
             .push_constant_ranges(&push_constants_range);
         let pipeline_layout = unsafe { device.create_pipeline_layout(&create_info, None).unwrap() };
 
+        let color_formats = [swapchain_format];
+
+        let mut rendering_info = vk::PipelineRenderingCreateInfo::default()
+            .color_attachment_formats(&color_formats)
+            .depth_attachment_format(depth_format);
+
         let create_info = vk::GraphicsPipelineCreateInfo::default()
+            .push_next(&mut rendering_info)
             .stages(&shader_stages)
             .vertex_input_state(&vertex_input_state)
             .input_assembly_state(&input_assembly_state)
@@ -137,8 +145,7 @@ impl Grid {
             .multisample_state(&multisample_state)
             .depth_stencil_state(&depth_stencil_state)
             .color_blend_state(&color_blend_state)
-            .layout(pipeline_layout)
-            .render_pass(*render_pass);
+            .layout(pipeline_layout);
 
         let pipelines = unsafe {
             device

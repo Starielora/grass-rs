@@ -71,8 +71,6 @@ pub struct Context {
     pub depth_image: Image,
     pub depth_image_format: vk::Format,
     pub swapchain_images: Images,
-    pub render_pass: vk::RenderPass,
-    pub framebuffers: Vec<vk::Framebuffer>,
     pub camera: CameraVkData,
     pub command_pool: vk::CommandPool,
     pub command_buffers: Vec<vk::CommandBuffer>,
@@ -209,7 +207,7 @@ fn create_swapchain(
         .image_color_space(chosen_image_format.color_space)
         .image_extent(chosen_extent)
         .image_array_layers(1)
-        .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+        .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_DST)
         .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
         .queue_family_indices(&queue_family_indices)
         .pre_transform(vk::SurfaceTransformFlagsKHR::IDENTITY)
@@ -226,134 +224,6 @@ fn create_swapchain(
         surface_loader,
         swapchain_loader,
     )
-}
-
-fn create_render_pass(
-    logical_device: &ash::Device,
-    swapchain_format: vk::Format,
-    depth_format: vk::Format,
-) -> vk::RenderPass {
-    let color_attachment = vk::AttachmentDescription {
-        flags: vk::AttachmentDescriptionFlags::empty(),
-        format: swapchain_format,
-        samples: vk::SampleCountFlags::TYPE_8,
-        load_op: vk::AttachmentLoadOp::CLEAR,
-        store_op: vk::AttachmentStoreOp::STORE,
-        stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
-        stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
-        initial_layout: vk::ImageLayout::UNDEFINED,
-        final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-    };
-
-    let depth_attachment = vk::AttachmentDescription {
-        flags: vk::AttachmentDescriptionFlags::empty(),
-        format: depth_format,
-        samples: vk::SampleCountFlags::TYPE_8,
-        load_op: vk::AttachmentLoadOp::CLEAR,
-        store_op: vk::AttachmentStoreOp::STORE,
-        stencil_load_op: vk::AttachmentLoadOp::CLEAR,
-        stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
-        initial_layout: vk::ImageLayout::UNDEFINED,
-        final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-    };
-
-    let color_resolve_attachment = vk::AttachmentDescription {
-        flags: vk::AttachmentDescriptionFlags::empty(),
-        format: swapchain_format,
-        samples: vk::SampleCountFlags::TYPE_1,
-        load_op: vk::AttachmentLoadOp::DONT_CARE,
-        store_op: vk::AttachmentStoreOp::STORE,
-        stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
-        stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
-        initial_layout: vk::ImageLayout::UNDEFINED,
-        final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
-    };
-
-    let color_attachment_reference = vk::AttachmentReference {
-        attachment: 0,
-        layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-    };
-
-    let depth_attachment_reference = vk::AttachmentReference {
-        attachment: 1,
-        layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-    };
-
-    let resolve_attachment_reference = vk::AttachmentReference {
-        attachment: 2,
-        layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-    };
-
-    let color_attachment_references = [color_attachment_reference];
-    let resolve_attachment_reference = [resolve_attachment_reference];
-    let subpass = vk::SubpassDescription::default()
-        .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-        .color_attachments(&color_attachment_references)
-        .depth_stencil_attachment(&depth_attachment_reference)
-        .resolve_attachments(&resolve_attachment_reference);
-
-    let subpass_dependencies = [
-        vk::SubpassDependency {
-            src_subpass: vk::SUBPASS_EXTERNAL,
-            dst_subpass: 0,
-            src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            src_access_mask: vk::AccessFlags::empty(),
-            dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-            dependency_flags: vk::DependencyFlags::empty(),
-        },
-        vk::SubpassDependency {
-            src_subpass: vk::SUBPASS_EXTERNAL,
-            dst_subpass: 0,
-            src_stage_mask: vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
-                | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
-            dst_stage_mask: vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
-                | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
-            src_access_mask: vk::AccessFlags::empty(),
-            dst_access_mask: vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
-            dependency_flags: vk::DependencyFlags::empty(),
-        },
-    ];
-
-    let attachments = [color_attachment, depth_attachment, color_resolve_attachment];
-    let subpasses = [subpass];
-    let render_pass_create_info = vk::RenderPassCreateInfo::default()
-        .attachments(&attachments)
-        .subpasses(&subpasses)
-        .dependencies(&subpass_dependencies);
-
-    let render_pass = unsafe { logical_device.create_render_pass(&render_pass_create_info, None) }
-        .expect("Could not create render pass");
-
-    render_pass
-}
-
-fn create_framebuffers(
-    logical_device: &ash::Device,
-    render_pass: &vk::RenderPass,
-    color_image_view: &vk::ImageView,
-    depth_image_view: &vk::ImageView,
-    swapchain_image_views: &[vk::ImageView],
-    extent: &vk::Extent2D,
-) -> Vec<vk::Framebuffer> {
-    swapchain_image_views
-        .iter()
-        .map(|view| {
-            let attachments = [*color_image_view, *depth_image_view, *view];
-            let create_info = vk::FramebufferCreateInfo::default()
-                .render_pass(*render_pass)
-                .attachments(&attachments)
-                .width(extent.width)
-                .height(extent.height)
-                .layers(1);
-
-            unsafe {
-                logical_device
-                    .create_framebuffer(&create_info, None)
-                    .expect("Could not create framebuffer")
-            }
-        })
-        .collect::<Vec<_>>()
 }
 
 fn find_memory_type(
@@ -441,9 +311,9 @@ fn create_color_image(
         },
         mip_levels: 1,
         array_layers: 1,
-        samples: vk::SampleCountFlags::TYPE_8,
+        samples: vk::SampleCountFlags::TYPE_1,
         tiling: vk::ImageTiling::OPTIMAL,
-        usage: vk::ImageUsageFlags::COLOR_ATTACHMENT,
+        usage: vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC,
         sharing_mode: vk::SharingMode::EXCLUSIVE,
         initial_layout: vk::ImageLayout::UNDEFINED,
         ..Default::default()
@@ -511,7 +381,7 @@ fn create_depth_image(
         },
         mip_levels: 1,
         array_layers: 1,
-        samples: vk::SampleCountFlags::TYPE_8,
+        samples: vk::SampleCountFlags::TYPE_1,
         tiling: vk::ImageTiling::OPTIMAL,
         usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
         sharing_mode: vk::SharingMode::EXCLUSIVE,
@@ -705,8 +575,12 @@ impl Context {
             .shader_sampled_image_array_non_uniform_indexing(true)
             .descriptor_binding_sampled_image_update_after_bind(true);
 
+        let mut vk13_physical_device_features =
+            vk::PhysicalDeviceVulkan13Features::default().dynamic_rendering(true);
+
         let logical_device_create_info = vk::DeviceCreateInfo::default()
             .push_next(&mut vk12_physical_device_features)
+            .push_next(&mut vk13_physical_device_features)
             .queue_create_infos(&queue_create_infos)
             .enabled_extension_names(&device_extensions);
 
@@ -781,16 +655,6 @@ impl Context {
                     .expect("Could not create swapchain image view")
             })
             .collect::<Vec<_>>();
-
-        let render_pass = create_render_pass(&device, surface_format.format, depth_format);
-        let framebuffers = create_framebuffers(
-            &device,
-            &render_pass,
-            &color_image_view,
-            &depth_image_view,
-            &swapchain_images_views,
-            &window_extent,
-        );
 
         let (camera_data_buffer, camera_data_memory, camera_data_allocation_size) = create_buffer(
             &device,
@@ -890,8 +754,6 @@ impl Context {
                 images: swapchain_images,
                 views: swapchain_images_views,
             },
-            render_pass,
-            framebuffers,
             camera: CameraVkData {
                 buffer: camera_data_buffer,
                 buffer_address: camera_buffer_address,
@@ -927,7 +789,7 @@ impl Context {
         )
     }
 
-    pub fn set_image_layout(
+    pub fn image_barrier(
         self: &Self,
         command_buffer: vk::CommandBuffer,
         image: vk::Image,
@@ -971,6 +833,9 @@ impl Context {
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL => {
                 memory_barrier.src_access_mask = vk::AccessFlags::SHADER_READ
             }
+            vk::ImageLayout::PRESENT_SRC_KHR => {
+                memory_barrier.src_access_mask = vk::AccessFlags::empty();
+            }
             _ => todo!("TBD"),
         }
 
@@ -994,6 +859,9 @@ impl Context {
                         vk::AccessFlags::HOST_WRITE | vk::AccessFlags::TRANSFER_WRITE;
                 }
                 memory_barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
+            }
+            vk::ImageLayout::PRESENT_SRC_KHR => {
+                memory_barrier.dst_access_mask = vk::AccessFlags::empty();
             }
             _ => todo!("TBD"),
         }
@@ -1126,16 +994,12 @@ impl std::ops::Drop for Context {
                 .destroy_descriptor_pool(self.descriptor_pool, None);
             self.device.free_memory(self.camera.memory, None);
             self.device.destroy_buffer(self.camera.buffer, None);
-            self.device.destroy_render_pass(self.render_pass, None);
             self.device.free_memory(self.depth_image.memory, None);
             self.device.destroy_image_view(self.depth_image.view, None);
             self.device.destroy_image(self.depth_image.image, None);
             self.device.free_memory(self.color_image.memory, None);
             self.device.destroy_image_view(self.color_image.view, None);
             self.device.destroy_image(self.color_image.image, None);
-            self.framebuffers.iter().for_each(|fb| {
-                self.device.destroy_framebuffer(*fb, None);
-            });
             self.swapchain_images.views.iter().for_each(|iv| {
                 self.device.destroy_image_view(*iv, None);
             });

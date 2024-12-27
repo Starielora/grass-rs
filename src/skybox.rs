@@ -41,7 +41,8 @@ fn create_graphics_pipeline(
     device: &ash::Device,
     window_extent: &vk::Extent2D,
     pipeline_layout: &vk::PipelineLayout,
-    render_pass: &vk::RenderPass,
+    swapchain_format: vk::Format,
+    depth_format: vk::Format,
 ) -> vk::Pipeline {
     // todo path lol
     let mut vs_spv_file = std::fs::File::open("target/debug/skybox.vert.spv").unwrap();
@@ -140,7 +141,7 @@ fn create_graphics_pipeline(
     };
 
     let multisample_state = vk::PipelineMultisampleStateCreateInfo {
-        rasterization_samples: vk::SampleCountFlags::TYPE_8,
+        rasterization_samples: vk::SampleCountFlags::TYPE_1,
         sample_shading_enable: vk::FALSE,
         min_sample_shading: 1.0,
         alpha_to_coverage_enable: vk::FALSE,
@@ -177,7 +178,14 @@ fn create_graphics_pipeline(
         .attachments(&attachments)
         .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
+    let color_formats = [swapchain_format];
+
+    let mut rendering_info = vk::PipelineRenderingCreateInfo::default()
+        .color_attachment_formats(&color_formats)
+        .depth_attachment_format(depth_format);
+
     let create_info = vk::GraphicsPipelineCreateInfo::default()
+        .push_next(&mut rendering_info)
         .stages(&shader_stages)
         .vertex_input_state(&vertex_input_state)
         .input_assembly_state(&input_assembly_state)
@@ -186,8 +194,7 @@ fn create_graphics_pipeline(
         .multisample_state(&multisample_state)
         .depth_stencil_state(&depth_stencil_state)
         .color_blend_state(&color_blend_state)
-        .layout(*pipeline_layout)
-        .render_pass(*render_pass);
+        .layout(*pipeline_layout);
 
     let pipelines = unsafe {
         device
@@ -351,7 +358,7 @@ fn load_textures(
     // lastly copy data from staging buffer to image
     {
         let command_buffer = vk.create_command_buffer(vk::CommandBufferLevel::PRIMARY, true);
-        vk.set_image_layout(
+        vk.image_barrier(
             command_buffer,
             image,
             vk::ImageLayout::UNDEFINED,
@@ -391,7 +398,7 @@ fn load_textures(
             )
         };
 
-        vk.set_image_layout(
+        vk.image_barrier(
             command_buffer,
             image,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
@@ -426,7 +433,8 @@ impl Skybox {
             &ctx.device,
             &ctx.window_extent,
             &pipeline_layout,
-            &ctx.render_pass,
+            ctx.surface_format.format,
+            ctx.depth_image_format,
         );
 
         let skybox1_texture_files = [

@@ -66,8 +66,13 @@ impl ApplicationHandler for App {
 
         let vkctx = vkutils::Context::new(&window);
 
-        let grid = grid::Grid::new(&vkctx.device, &vkctx.window_extent, &vkctx.render_pass)
-            .expect("Could not create grid pipeline");
+        let grid = grid::Grid::new(
+            &vkctx.device,
+            &vkctx.window_extent,
+            vkctx.surface_format.format,
+            vkctx.depth_image_format,
+        )
+        .expect("Could not create grid pipeline");
 
         let mesh_pipeline = mesh::pipeline::Pipeline::new(&vkctx);
         let cube_mesh = mesh::mesh_data::MeshData::new("assets/cube.gltf", &vkctx);
@@ -204,37 +209,61 @@ impl ApplicationHandler for App {
                 .begin_command_buffer(*command_buffer, &begin_info)
         }
         .expect("Failed to begin command buffer");
-        let clear_color = vk::ClearColorValue {
-            float32: [153.0 / 255.0, 204.0 / 255.0, 255.0 / 255.0, 1.0],
-        };
 
-        let depth_clear_value = vk::ClearDepthStencilValue {
-            depth: 1.0,
-            stencil: 0,
-        };
-
-        let clear_values = [
-            vk::ClearValue { color: clear_color },
-            vk::ClearValue {
-                depth_stencil: depth_clear_value,
+        let color_clear_value = vk::ClearValue {
+            color: vk::ClearColorValue {
+                float32: [153.0 / 255.0, 204.0 / 255.0, 255.0 / 255.0, 1.0],
             },
-        ];
-        let render_pass_begin = vk::RenderPassBeginInfo::default()
-            .render_pass(vkctx.render_pass)
-            .framebuffer(vkctx.framebuffers[image_index as usize])
+        };
+
+        let depth_clear_value = vk::ClearValue {
+            depth_stencil: vk::ClearDepthStencilValue {
+                depth: 1.0,
+                stencil: 0,
+            },
+        };
+
+        let color_attachments = [vk::RenderingAttachmentInfo::default()
+            .image_view(vkctx.color_image.view)
+            .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .clear_value(color_clear_value)];
+
+        let depth_attachment = vk::RenderingAttachmentInfo::default()
+            .image_view(vkctx.depth_image.view)
+            .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .clear_value(depth_clear_value);
+
+        let rendering_info = vk::RenderingInfo::default()
             .render_area(vk::Rect2D {
                 extent: vkctx.window_extent,
                 offset: vk::Offset2D { x: 0, y: 0 },
             })
-            .clear_values(&clear_values);
+            .layer_count(1)
+            .color_attachments(&color_attachments)
+            .depth_attachment(&depth_attachment);
+
+        vkctx.image_barrier(
+            *command_buffer,
+            vkctx.color_image.image,
+            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            vk::ImageSubresourceRange::default()
+                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                .level_count(1)
+                .layer_count(vk::REMAINING_ARRAY_LAYERS),
+            Some(vk::PipelineStageFlags::TOP_OF_PIPE),
+            Some(vk::PipelineStageFlags::ALL_GRAPHICS),
+        );
 
         unsafe {
-            vkctx.device.cmd_begin_render_pass(
-                *command_buffer,
-                &render_pass_begin,
-                vk::SubpassContents::INLINE,
-            )
-        };
+            vkctx
+                .device
+                .cmd_begin_rendering(*command_buffer, &rendering_info);
+        }
 
         self.gui
             .as_mut()
@@ -247,7 +276,74 @@ impl ApplicationHandler for App {
                 .cmd_draw(&command_buffer, self.push_constants.as_ref().unwrap());
         }
 
-        unsafe { vkctx.device.cmd_end_render_pass(*command_buffer) };
+        unsafe { vkctx.device.cmd_end_rendering(*command_buffer) };
+
+        vkctx.image_barrier(
+            *command_buffer,
+            vkctx.color_image.image,
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+            vk::ImageSubresourceRange::default()
+                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                .level_count(1)
+                .layer_count(vk::REMAINING_ARRAY_LAYERS),
+            Some(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT),
+            Some(vk::PipelineStageFlags::TRANSFER),
+        );
+
+        vkctx.image_barrier(
+            *command_buffer,
+            vkctx.swapchain_images.images[image_index as usize],
+            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            vk::ImageSubresourceRange::default()
+                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                .level_count(1)
+                .layer_count(vk::REMAINING_ARRAY_LAYERS),
+            Some(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT),
+            Some(vk::PipelineStageFlags::TRANSFER),
+        );
+
+        let copy_subresource = vk::ImageSubresourceLayers::default()
+            .aspect_mask(vk::ImageAspectFlags::COLOR)
+            .mip_level(0)
+            .base_array_layer(0)
+            .layer_count(1);
+
+        let image_copy = [vk::ImageCopy::default()
+            .src_subresource(copy_subresource)
+            .dst_subresource(copy_subresource)
+            .extent(
+                vk::Extent3D::default()
+                    .width(vkctx.window_extent.width)
+                    .height(vkctx.window_extent.height)
+                    .depth(1),
+            )];
+
+        unsafe {
+            vkctx.device.cmd_copy_image(
+                *command_buffer,
+                vkctx.color_image.image,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                vkctx.swapchain_images.images[image_index as usize],
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                &image_copy,
+            );
+        }
+
+        vkctx.image_barrier(
+            *command_buffer,
+            vkctx.swapchain_images.images[image_index as usize],
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            vk::ImageLayout::PRESENT_SRC_KHR,
+            vk::ImageSubresourceRange::default()
+                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                .level_count(1)
+                .layer_count(vk::REMAINING_ARRAY_LAYERS),
+            Some(vk::PipelineStageFlags::TRANSFER),
+            Some(vk::PipelineStageFlags::BOTTOM_OF_PIPE),
+        );
+
         unsafe { vkctx.device.end_command_buffer(*command_buffer) }
             .expect("Failed to end command buffer???");
 
@@ -258,7 +354,7 @@ impl ApplicationHandler for App {
             .wait_semaphores(&acquire_semaphores)
             .command_buffers(&command_buffers)
             .signal_semaphores(&wait_semaphores)
-            .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])];
+            .wait_dst_stage_mask(&[vk::PipelineStageFlags::BOTTOM_OF_PIPE])];
         unsafe {
             vkctx
                 .device
