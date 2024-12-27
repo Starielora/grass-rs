@@ -795,18 +795,10 @@ impl Context {
         image: vk::Image,
         old_image_layout: vk::ImageLayout,
         new_image_layout: vk::ImageLayout,
+        src_stage_mask: vk::PipelineStageFlags,
+        dst_stage_mask: vk::PipelineStageFlags,
         subresource_range: vk::ImageSubresourceRange,
-        src_stage_mask: Option<vk::PipelineStageFlags>,
-        dst_stage_mask: Option<vk::PipelineStageFlags>,
     ) {
-        let src_mask = src_stage_mask
-            .or(Some(vk::PipelineStageFlags::ALL_COMMANDS))
-            .unwrap();
-
-        let dst_mask = dst_stage_mask
-            .or(Some(vk::PipelineStageFlags::ALL_COMMANDS))
-            .unwrap();
-
         let mut memory_barrier = vk::ImageMemoryBarrier::default()
             .old_layout(old_image_layout)
             .new_layout(new_image_layout)
@@ -873,8 +865,8 @@ impl Context {
         unsafe {
             self.device.cmd_pipeline_barrier(
                 command_buffer,
-                src_mask,
-                dst_mask,
+                src_stage_mask,
+                dst_stage_mask,
                 vk::DependencyFlags::empty(),
                 &mem_barriers,
                 &buffer_barriers,

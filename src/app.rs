@@ -246,17 +246,19 @@ impl ApplicationHandler for App {
             .color_attachments(&color_attachments)
             .depth_attachment(&depth_attachment);
 
+        let color_subresource_range = vk::ImageSubresourceRange::default()
+            .aspect_mask(vk::ImageAspectFlags::COLOR)
+            .level_count(1)
+            .layer_count(vk::REMAINING_ARRAY_LAYERS);
+
         vkctx.image_barrier(
             *command_buffer,
             vkctx.color_image.image,
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            vk::ImageSubresourceRange::default()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .level_count(1)
-                .layer_count(vk::REMAINING_ARRAY_LAYERS),
-            Some(vk::PipelineStageFlags::TOP_OF_PIPE),
-            Some(vk::PipelineStageFlags::ALL_GRAPHICS),
+            vk::PipelineStageFlags::TOP_OF_PIPE,
+            vk::PipelineStageFlags::ALL_GRAPHICS,
+            color_subresource_range,
         );
 
         unsafe {
@@ -283,12 +285,9 @@ impl ApplicationHandler for App {
             vkctx.color_image.image,
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
             vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-            vk::ImageSubresourceRange::default()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .level_count(1)
-                .layer_count(vk::REMAINING_ARRAY_LAYERS),
-            Some(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT),
-            Some(vk::PipelineStageFlags::TRANSFER),
+            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            vk::PipelineStageFlags::TRANSFER,
+            color_subresource_range,
         );
 
         vkctx.image_barrier(
@@ -296,12 +295,9 @@ impl ApplicationHandler for App {
             vkctx.swapchain_images.images[image_index as usize],
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            vk::ImageSubresourceRange::default()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .level_count(1)
-                .layer_count(vk::REMAINING_ARRAY_LAYERS),
-            Some(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT),
-            Some(vk::PipelineStageFlags::TRANSFER),
+            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            vk::PipelineStageFlags::TRANSFER,
+            color_subresource_range,
         );
 
         let copy_subresource = vk::ImageSubresourceLayers::default()
@@ -336,12 +332,9 @@ impl ApplicationHandler for App {
             vkctx.swapchain_images.images[image_index as usize],
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             vk::ImageLayout::PRESENT_SRC_KHR,
-            vk::ImageSubresourceRange::default()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .level_count(1)
-                .layer_count(vk::REMAINING_ARRAY_LAYERS),
-            Some(vk::PipelineStageFlags::TRANSFER),
-            Some(vk::PipelineStageFlags::BOTTOM_OF_PIPE),
+            vk::PipelineStageFlags::TRANSFER,
+            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+            color_subresource_range,
         );
 
         unsafe { vkctx.device.end_command_buffer(*command_buffer) }

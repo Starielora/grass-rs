@@ -356,6 +356,7 @@ fn load_textures(
     };
 
     // lastly copy data from staging buffer to image
+    // TODO utilize a transfer queue for this
     {
         let command_buffer = vk.create_command_buffer(vk::CommandBufferLevel::PRIMARY, true);
         vk.image_barrier(
@@ -363,9 +364,9 @@ fn load_textures(
             image,
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            vk::PipelineStageFlags::ALL_COMMANDS,
+            vk::PipelineStageFlags::ALL_COMMANDS,
             subresource_range,
-            None,
-            None,
         );
 
         let mut buffer_copy_regions = Vec::new();
@@ -403,9 +404,9 @@ fn load_textures(
             image,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            vk::PipelineStageFlags::ALL_COMMANDS,
+            vk::PipelineStageFlags::ALL_COMMANDS,
             subresource_range,
-            None,
-            None,
         );
 
         vk.flush_command_buffer(command_buffer, true);
