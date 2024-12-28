@@ -16,17 +16,24 @@ fn upload_buffer<T: std::marker::Copy>(
     buffer_usage: vk::BufferUsageFlags,
     ctx: &vkutils::Context,
 ) -> (vk::Buffer, vk::DeviceMemory) {
-    let (buffer, buffer_memory, allocation_size) = ctx.create_buffer(
+    let (staging_buffer, staging_buffer_memory, staging_buffer_allocation_size) = ctx
+        .create_buffer(
+            (vertex_data.len() * std::mem::size_of::<T>()) as u64,
+            buffer_usage | vk::BufferUsageFlags::TRANSFER_SRC,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+        );
+
+    let (device_buffer, device_buffer_memory, _device_buffer_allocation_size) = ctx.create_buffer(
         (vertex_data.len() * std::mem::size_of::<T>()) as u64,
-        buffer_usage,
-        vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+        buffer_usage | vk::BufferUsageFlags::TRANSFER_DST,
+        vk::MemoryPropertyFlags::DEVICE_LOCAL,
     );
 
     unsafe {
         let buffer_ptr = ctx
             .device
             .map_memory(
-                buffer_memory,
+                staging_buffer_memory,
                 0,
                 vk::WHOLE_SIZE,
                 vk::MemoryMapFlags::empty(),
@@ -36,14 +43,27 @@ fn upload_buffer<T: std::marker::Copy>(
         ash::util::Align::new(
             buffer_ptr,
             std::mem::align_of::<T>() as u64,
-            allocation_size,
+            staging_buffer_allocation_size,
         )
         .copy_from_slice(&vertex_data.as_slice());
 
-        ctx.device.unmap_memory(buffer_memory);
+        ctx.device.unmap_memory(staging_buffer_memory);
     };
 
-    (buffer, buffer_memory)
+    let command_buffer = ctx.create_command_buffer(vk::CommandBufferLevel::PRIMARY, true);
+    let region = [vk::BufferCopy::default().size(staging_buffer_allocation_size)];
+    unsafe {
+        ctx.device
+            .cmd_copy_buffer(command_buffer, staging_buffer, device_buffer, &region);
+    }
+    ctx.flush_command_buffer(command_buffer, true);
+
+    unsafe {
+        ctx.device.free_memory(staging_buffer_memory, None);
+        ctx.device.destroy_buffer(staging_buffer, None);
+    }
+
+    (device_buffer, device_buffer_memory)
 }
 
 impl MeshData {
