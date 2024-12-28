@@ -5,11 +5,10 @@ extern crate nalgebra_glm as glm;
 #[derive(Clone)]
 #[repr(C)]
 pub struct GPUPushConstants {
-    pub cube_vertex: vk::DeviceAddress,
-    pub cube_model: vk::DeviceAddress,
+    pub mesh_data: vk::DeviceAddress,
     pub camera_data_buffer_address: vk::DeviceAddress,
     pub dir_light_buffer_address: vk::DeviceAddress,
-    pub current_skybox: u32,
+    pub skybox_data: vk::DeviceAddress,
 }
 
 // TODO why I cannot define this as static or const array is beyond me. It says I cannot use

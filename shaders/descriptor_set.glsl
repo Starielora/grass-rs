@@ -8,23 +8,8 @@ layout(buffer_reference, std430) readonly buffer CameraData {
     mat4 projview;
 };
 
-struct VertexData {
-    float pos_x;
-    float pos_y;
-    float pos_z;
-    float norm_x;
-    float norm_y;
-    float norm_z;
-    float tex_u;
-    float tex_v;
-};
-
-layout(buffer_reference, std430) readonly buffer CubeVertexData {
-    VertexData data[];
-};
-
-layout(buffer_reference, std430) readonly buffer CubeModel {
-    mat4 matrix;
+layout(buffer_reference, std430) readonly buffer MeshData {
+    mat4 model_matrix;
 };
 
 struct DirLight {
@@ -36,11 +21,15 @@ layout(buffer_reference, std430) readonly buffer DirLightBuffer {
     DirLight data;
 };
 
+// lol
+layout(buffer_reference, std430) readonly buffer SkyboxData {
+    uint current_texture_id;
+};
+
 layout(push_constant) uniform constants
 {
-    CubeVertexData cube_vertex_data;
-    CubeModel cube_model;
+    MeshData mesh_data;
     CameraData camera_data;
     DirLightBuffer dir_light;
-    uint current_skybox;
+    SkyboxData skybox_data;
 } push_constants;

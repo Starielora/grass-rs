@@ -25,17 +25,10 @@ impl DirLight {
     pub fn new(data: GPUDirLight, vkctx: &vkutils::Context) -> DirLight {
         let device = vkctx.device.clone();
 
-        let (buffer, memory, allocation_size) = vkctx.create_buffer(
+        let (buffer, memory, allocation_size, buffer_ptr) = vkctx.create_bar_buffer(
             std::mem::size_of::<GPUDirLight>() as u64,
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
         );
-
-        let buffer_ptr = unsafe {
-            device
-                .map_memory(memory, 0, vk::WHOLE_SIZE, vk::MemoryMapFlags::empty())
-                .expect("Could not map cube buffer memory")
-        };
 
         let buffer_device_address = unsafe {
             let address_info = vk::BufferDeviceAddressInfo {
@@ -79,17 +72,21 @@ impl DirLight {
 
 impl GuiSceneNode for DirLight {
     fn update(self: &mut Self, ui: &imgui::Ui) {
-        self.update_gpu_buffer();
+        let mut changed = [false, false];
 
         if ui.tree_node("Directional light").is_some() {
             ui.indent();
-            imgui::Drag::new("Direction")
+            changed[0] = imgui::Drag::new("Direction")
                 .range(-1.0, 1.0)
                 .speed(0.1)
                 .build_array(ui, &mut self.gpu_data.dir.data.0[0]);
 
-            ui.color_edit4("Color", &mut self.gpu_data.color.data.0[0]);
+            changed[1] = ui.color_edit4("Color", &mut self.gpu_data.color.data.0[0]);
             ui.unindent();
+        }
+
+        if changed.contains(&true) {
+            self.update_gpu_buffer();
         }
     }
 }

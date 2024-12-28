@@ -80,6 +80,9 @@ pub struct Context {
     pub descriptor_pool: vk::DescriptorPool, // TODO this has to yeet from here
     pub descriptor_set: vk::DescriptorSet,
     pub descriptor_set_layout: vk::DescriptorSetLayout,
+    pub render_finished_semaphore: vk::Semaphore,
+    pub gui_finished_semaphore: vk::Semaphore,
+    pub copy_finished_semaphore: vk::Semaphore,
 }
 
 unsafe extern "system" fn debug_callback(
@@ -660,7 +663,10 @@ impl Context {
             &device,
             size_of::<GPUCameraData>() as u64,
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            // BAR buffer
+            vk::MemoryPropertyFlags::HOST_VISIBLE
+                | vk::MemoryPropertyFlags::HOST_COHERENT
+                | vk::MemoryPropertyFlags::DEVICE_LOCAL,
             &physical_device_props,
             &memory_props,
         );
@@ -703,7 +709,7 @@ impl Context {
         let command_buffer_allocate_info = vk::CommandBufferAllocateInfo {
             command_pool,
             level: vk::CommandBufferLevel::PRIMARY,
-            command_buffer_count: 1,
+            command_buffer_count: 5, // two for swapchain, one for image copy at the end, one for imgui
             ..Default::default()
         };
 
@@ -719,6 +725,16 @@ impl Context {
             .expect("Could not create semaphore");
         let wait_semaphore = unsafe { device.create_semaphore(&semaphore_create_info, None) }
             .expect("Could not create semaphore");
+
+        let render_finished_semaphore =
+            unsafe { device.create_semaphore(&semaphore_create_info, None) }
+                .expect("Failed to create semaphore");
+        let gui_finished_semaphore =
+            unsafe { device.create_semaphore(&semaphore_create_info, None) }
+                .expect("Failed to create semaphore");
+        let copy_finished_semaphore =
+            unsafe { device.create_semaphore(&semaphore_create_info, None) }
+                .expect("Failed to create semaphore");
 
         Self {
             entry,
@@ -770,7 +786,35 @@ impl Context {
             descriptor_pool,
             descriptor_set_layout,
             descriptor_set,
+            render_finished_semaphore,
+            gui_finished_semaphore,
+            copy_finished_semaphore,
         }
+    }
+
+    // create Base Address Register (BAR) buffer.
+    // DEVICE_LOCAL, HOST_VISIBLE (mappable), HOST_COHERENT
+    pub fn create_bar_buffer(
+        self: &Self,
+        size: u64,
+        usage: vk::BufferUsageFlags,
+    ) -> (vk::Buffer, vk::DeviceMemory, u64, *mut c_void) {
+        let memory_property_flags = vk::MemoryPropertyFlags::HOST_VISIBLE
+            | vk::MemoryPropertyFlags::HOST_COHERENT
+            | vk::MemoryPropertyFlags::DEVICE_LOCAL;
+
+        let (buffer, memory, size) = create_buffer(
+            &self.device,
+            size,
+            usage,
+            memory_property_flags,
+            &self.physical_device_props.props,
+            &self.physical_device_props.memory_props,
+        );
+
+        let ptr = self.map_memory(memory);
+
+        (buffer, memory, size, ptr)
     }
 
     pub fn create_buffer(
@@ -787,6 +831,63 @@ impl Context {
             &self.physical_device_props.props,
             &self.physical_device_props.memory_props,
         )
+    }
+
+    pub fn map_memory(&self, memory: vk::DeviceMemory) -> *mut c_void {
+        let buffer_ptr = unsafe {
+            self.device
+                .map_memory(memory, 0, vk::WHOLE_SIZE, vk::MemoryMapFlags::empty())
+                .expect("Could not map cube model buffer memory")
+        };
+
+        buffer_ptr
+    }
+
+    pub fn get_device_address(&self, buffer: vk::Buffer) -> u64 {
+        unsafe {
+            let address_info = vk::BufferDeviceAddressInfo {
+                buffer,
+                ..Default::default()
+            };
+            self.device.get_buffer_device_address(&address_info)
+        }
+    }
+
+    pub fn image_barrier2(
+        self: &Self,
+        command_buffer: vk::CommandBuffer,
+        image: vk::Image,
+        old_image_layout: vk::ImageLayout,
+        new_image_layout: vk::ImageLayout,
+        src_access_mask: vk::AccessFlags,
+        dst_access_mask: vk::AccessFlags,
+        src_stage_mask: vk::PipelineStageFlags,
+        dst_stage_mask: vk::PipelineStageFlags,
+        subresource_range: vk::ImageSubresourceRange,
+    ) {
+        let memory_barrier = vk::ImageMemoryBarrier::default()
+            .src_access_mask(src_access_mask)
+            .dst_access_mask(dst_access_mask)
+            .old_layout(old_image_layout)
+            .new_layout(new_image_layout)
+            .image(image)
+            .subresource_range(subresource_range);
+
+        let mem_barriers = [];
+        let buffer_barriers = [];
+        let image_barriers = [memory_barrier];
+
+        unsafe {
+            self.device.cmd_pipeline_barrier(
+                command_buffer,
+                src_stage_mask,
+                dst_stage_mask,
+                vk::DependencyFlags::empty(),
+                &mem_barriers,
+                &buffer_barriers,
+                &image_barriers,
+            );
+        }
     }
 
     pub fn image_barrier(
@@ -974,6 +1075,12 @@ impl Context {
 impl std::ops::Drop for Context {
     fn drop(&mut self) {
         unsafe {
+            self.device
+                .destroy_semaphore(self.gui_finished_semaphore, None);
+            self.device
+                .destroy_semaphore(self.copy_finished_semaphore, None);
+            self.device
+                .destroy_semaphore(self.render_finished_semaphore, None);
             self.device.destroy_semaphore(self.wait_semaphore, None);
             self.device.destroy_semaphore(self.acquire_semaphore, None);
             let command_buffers_to_free = [*self.command_buffers.first().unwrap()];

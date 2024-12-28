@@ -20,7 +20,11 @@ pub struct Skybox {
     vertex_buffer: vk::Buffer,
     index_buffer: vk::Buffer,
     indices_count: usize,
-    // gui_data: GuiData,
+    buffer: vk::Buffer,
+    buffer_memory: vk::DeviceMemory,
+    buffer_ptr: *mut std::ffi::c_void,
+    buffer_allocation_size: u64,
+    buffer_device_address: vk::DeviceAddress,
 }
 
 fn create_graphics_pipeline_layout(
@@ -516,6 +520,19 @@ impl Skybox {
                 .update_descriptor_sets(&descriptor_writes, &descriptor_copies)
         };
 
+        let (buffer, buffer_memory, buffer_allocation_size, buffer_ptr) = ctx.create_bar_buffer(
+            std::mem::size_of::<u32>() as u64,
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+        );
+
+        let buffer_device_address = unsafe {
+            let address_info = vk::BufferDeviceAddressInfo {
+                buffer,
+                ..Default::default()
+            };
+            ctx.device.get_buffer_device_address(&address_info)
+        };
+
         Self {
             device: ctx.device.clone(),
             pipeline_layout,
@@ -529,13 +546,31 @@ impl Skybox {
             vertex_buffer: cube_vertex_buffer,
             index_buffer: cube_index_buffer,
             indices_count,
+            buffer,
+            buffer_memory,
+            buffer_ptr,
+            buffer_allocation_size,
+            buffer_device_address,
         }
+    }
+
+    fn refresh_per_frame_buffer(&self) {
+        unsafe {
+            ash::util::Align::new(
+                self.buffer_ptr,
+                std::mem::align_of::<u32>() as u64,
+                self.buffer_allocation_size,
+            )
+            .copy_from_slice(&[self.current_resource_id])
+        };
     }
 }
 
 impl std::ops::Drop for Skybox {
     fn drop(&mut self) {
         unsafe {
+            self.device.free_memory(self.buffer_memory, None);
+            self.device.destroy_buffer(self.buffer, None);
             for mem in &self.image_memories {
                 self.device.free_memory(*mem, None);
             }
@@ -576,7 +611,7 @@ impl drawable::Drawable for Skybox {
             // FIXME quick hack to check if it works... these are only integers so there's no perf
             // penalty
             let mut pc = (*push_constants).clone();
-            pc.current_skybox = self.current_resource_id;
+            pc.skybox_data = self.buffer_device_address;
 
             self.device.cmd_push_constants(
                 *command_buffer,
@@ -607,15 +642,22 @@ impl drawable::Drawable for Skybox {
 
 impl GuiSceneNode for Skybox {
     fn update(self: &mut Self, ui: &imgui::Ui) {
+        let mut refresh = false;
         if ui.tree_node("Skybox").is_some() {
             ui.indent();
             if ui.selectable("daylight") {
                 self.current_resource_id = 0;
+                refresh = true;
             }
             if ui.selectable("learnopengl") {
                 self.current_resource_id = 1;
+                refresh = true;
             }
             ui.unindent();
+        }
+
+        if refresh {
+            self.refresh_per_frame_buffer();
         }
     }
 }
