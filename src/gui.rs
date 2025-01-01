@@ -24,16 +24,16 @@ impl Gui {
         );
 
         let dynamic_rendering = imgui_rs_vulkan_renderer::DynamicRendering {
-            color_attachment_format: vkctx.surface_format.format,
-            depth_attachment_format: Some(vkctx.depth_image_format),
+            color_attachment_format: vkctx.swapchain.surface_format.format,
+            depth_attachment_format: Some(vkctx.depth_image.format),
         };
 
         let imgui_renderer = imgui_rs_vulkan_renderer::Renderer::with_default_allocator(
             &vkctx.instance,
-            vkctx.physical_device,
+            vkctx.physical_device.handle,
             vkctx.device.clone(),
             vkctx.present_queue,
-            vkctx.command_pool,
+            vkctx.command_pool.handle,
             dynamic_rendering,
             &mut imguictx,
             Some(imgui_rs_vulkan_renderer::Options {

@@ -97,7 +97,7 @@ impl App {
 
         let rendering_info = vk::RenderingInfo::default()
             .render_area(vk::Rect2D {
-                extent: vkctx.window_extent,
+                extent: vkctx.swapchain.extent,
                 offset: vk::Offset2D { x: 0, y: 0 },
             })
             .layer_count(1)
@@ -109,9 +109,10 @@ impl App {
             .level_count(1)
             .layer_count(vk::REMAINING_ARRAY_LAYERS);
 
-        vkctx.image_barrier(
+        vkutils::image_barrier(
+            &vkctx.device,
             command_buffer,
-            vkctx.color_image.image,
+            vkctx.color_image.handle,
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
             vk::PipelineStageFlags::TOP_OF_PIPE,
@@ -161,7 +162,7 @@ impl App {
 
         vkctx.image_barrier2(
             command_buffer,
-            vkctx.color_image.image,
+            vkctx.color_image.handle,
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
             vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
             vk::AccessFlags::NONE,
@@ -173,7 +174,7 @@ impl App {
 
         vkctx.image_barrier2(
             command_buffer,
-            vkctx.swapchain_images.images[image_index as usize],
+            vkctx.swapchain.images[image_index as usize],
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             vk::AccessFlags::NONE,
@@ -194,17 +195,17 @@ impl App {
             .dst_subresource(copy_subresource)
             .extent(
                 vk::Extent3D::default()
-                    .width(vkctx.window_extent.width)
-                    .height(vkctx.window_extent.height)
+                    .width(vkctx.swapchain.extent.width)
+                    .height(vkctx.swapchain.extent.height)
                     .depth(1),
             )];
 
         unsafe {
             vkctx.device.cmd_copy_image(
                 command_buffer,
-                vkctx.color_image.image,
+                vkctx.color_image.handle,
                 vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                vkctx.swapchain_images.images[image_index as usize],
+                vkctx.swapchain.images[image_index as usize],
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                 &image_copy,
             );
@@ -212,7 +213,7 @@ impl App {
 
         vkctx.image_barrier2(
             command_buffer,
-            vkctx.swapchain_images.images[image_index as usize],
+            vkctx.swapchain.images[image_index as usize],
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             vk::ImageLayout::PRESENT_SRC_KHR,
             vk::AccessFlags::TRANSFER_WRITE,
@@ -225,86 +226,85 @@ impl App {
         unsafe { vkctx.device.end_command_buffer(command_buffer) }
             .expect("Failed to end command buffer???");
     }
+}
 
-    fn record_imgui_commands(&mut self, command_buffer: vk::CommandBuffer) {
-        let vkctx = &mut self.vkctx.as_mut().unwrap();
-        let device = vkctx.device.clone();
+fn record_imgui_commands(
+    vkctx: &vkutils::Context,
+    window: &winit::window::Window,
+    gui: &mut gui::Gui,
+    scene_nodes: &mut std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
+    push_constants: &GPUPushConstants,
+    command_buffer: vk::CommandBuffer,
+) {
+    // let vkctx = &mut self.vkctx.as_mut().unwrap();
+    let device = vkctx.device.clone();
 
-        let begin_info = vk::CommandBufferBeginInfo {
-            ..Default::default()
-        };
+    let begin_info = vk::CommandBufferBeginInfo {
+        ..Default::default()
+    };
 
-        unsafe {
-            device
-                .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
-                .expect("Failed to reset imgui command buffer");
-            device.begin_command_buffer(command_buffer, &begin_info)
-        }
-        .expect("Failed to begin command buffer");
-
-        let color_attachments = [vk::RenderingAttachmentInfo::default()
-            .image_view(vkctx.color_image.view)
-            .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .load_op(vk::AttachmentLoadOp::LOAD)
-            .store_op(vk::AttachmentStoreOp::STORE)];
-
-        let depth_attachment = vk::RenderingAttachmentInfo::default()
-            .image_view(vkctx.depth_image.view)
-            .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
-            .load_op(vk::AttachmentLoadOp::LOAD)
-            .store_op(vk::AttachmentStoreOp::STORE);
-
-        let rendering_info = vk::RenderingInfo::default()
-            .render_area(vk::Rect2D {
-                extent: vkctx.window_extent,
-                offset: vk::Offset2D { x: 0, y: 0 },
-            })
-            .layer_count(1)
-            .color_attachments(&color_attachments)
-            .depth_attachment(&depth_attachment);
-
-        let color_subresource_range = vk::ImageSubresourceRange::default()
-            .aspect_mask(vk::ImageAspectFlags::COLOR)
-            .level_count(1)
-            .layer_count(vk::REMAINING_ARRAY_LAYERS);
-
-        vkctx.image_barrier2(
-            command_buffer,
-            vkctx.color_image.image,
-            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            vk::AccessFlags::COLOR_ATTACHMENT_READ,
-            vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-            vk::PipelineStageFlags::FRAGMENT_SHADER,
-            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            color_subresource_range,
-        );
-
-        unsafe {
-            vkctx
-                .device
-                .cmd_begin_rendering(command_buffer, &rendering_info);
-        }
-
-        let window = self.window.as_ref().unwrap();
-        // TODO fix this in the future... is it possible to prerecord?
-        self.gui
-            .as_mut()
-            .unwrap()
-            .borrow_mut()
-            .prepare_frame(&window, &mut self.scene_nodes);
-
-        self.gui
-            .as_mut()
-            .unwrap()
-            .borrow_mut()
-            .cmd_draw(&command_buffer, self.push_constants.as_ref().unwrap());
-
-        unsafe { vkctx.device.cmd_end_rendering(command_buffer) };
-
-        unsafe { vkctx.device.end_command_buffer(command_buffer) }
-            .expect("Failed to end command buffer???");
+    unsafe {
+        device
+            .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
+            .expect("Failed to reset imgui command buffer");
+        device.begin_command_buffer(command_buffer, &begin_info)
     }
+    .expect("Failed to begin command buffer");
+
+    let color_attachments = [vk::RenderingAttachmentInfo::default()
+        .image_view(vkctx.color_image.view)
+        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+        .load_op(vk::AttachmentLoadOp::LOAD)
+        .store_op(vk::AttachmentStoreOp::STORE)];
+
+    let depth_attachment = vk::RenderingAttachmentInfo::default()
+        .image_view(vkctx.depth_image.view)
+        .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
+        .load_op(vk::AttachmentLoadOp::LOAD)
+        .store_op(vk::AttachmentStoreOp::STORE);
+
+    let rendering_info = vk::RenderingInfo::default()
+        .render_area(vk::Rect2D {
+            extent: vkctx.swapchain.extent,
+            offset: vk::Offset2D { x: 0, y: 0 },
+        })
+        .layer_count(1)
+        .color_attachments(&color_attachments)
+        .depth_attachment(&depth_attachment);
+
+    let color_subresource_range = vk::ImageSubresourceRange::default()
+        .aspect_mask(vk::ImageAspectFlags::COLOR)
+        .level_count(1)
+        .layer_count(vk::REMAINING_ARRAY_LAYERS);
+
+    vkctx.image_barrier2(
+        command_buffer,
+        vkctx.color_image.handle,
+        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        vk::AccessFlags::COLOR_ATTACHMENT_READ,
+        vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+        vk::PipelineStageFlags::FRAGMENT_SHADER,
+        vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+        color_subresource_range,
+    );
+
+    unsafe {
+        vkctx
+            .device
+            .cmd_begin_rendering(command_buffer, &rendering_info);
+    }
+
+    // let window = self.window.as_ref().unwrap();
+    // TODO fix this in the future... is it possible to prerecord?
+    gui.prepare_frame(&window, scene_nodes);
+
+    gui.cmd_draw(&command_buffer, &push_constants);
+
+    unsafe { vkctx.device.cmd_end_rendering(command_buffer) };
+
+    unsafe { vkctx.device.end_command_buffer(command_buffer) }
+        .expect("Failed to end command buffer???");
 }
 
 impl ApplicationHandler for App {
@@ -317,18 +317,18 @@ impl ApplicationHandler for App {
 
         window.set_cursor_visible(self.cursor_visible);
 
-        let vkctx = vkutils::Context::new(&window);
+        let mut vkctx = vkutils::Context::new(&window);
 
         let grid = grid::Grid::new(
             &vkctx.device,
-            &vkctx.window_extent,
-            vkctx.surface_format.format,
-            vkctx.depth_image_format,
+            &vkctx.swapchain.extent,
+            vkctx.swapchain.surface_format.format,
+            vkctx.depth_image.format,
         )
         .expect("Could not create grid pipeline");
 
         let mesh_pipeline = mesh::pipeline::Pipeline::new(&vkctx);
-        let cube_mesh = mesh::mesh_data::MeshData::new("assets/cube.gltf", &vkctx);
+        let cube_mesh = mesh::mesh_data::MeshData::new("assets/cube.gltf", &mut vkctx);
 
         let cube = std::rc::Rc::new(std::cell::RefCell::new(mesh::Mesh::new(
             &cube_mesh,
@@ -360,9 +360,9 @@ impl ApplicationHandler for App {
         }
 
         let skybox = std::rc::Rc::new(std::cell::RefCell::new(skybox::Skybox::new(
-            &vkctx,
-            cube_mesh.vertex_buffer,
-            cube_mesh.index_buffer,
+            &mut vkctx,
+            cube_mesh.vertex_buffer.handle,
+            cube_mesh.index_buffer.handle,
             cube_mesh.indices_count,
         )));
 
@@ -387,7 +387,7 @@ impl ApplicationHandler for App {
 
         self.push_constants = Some(GPUPushConstants {
             mesh_data: 0, // initialized later
-            camera_data_buffer_address: vkctx.camera.buffer_address,
+            camera_data_buffer_address: vkctx.camera_buffer.device_address.unwrap(),
             dir_light_buffer_address: self
                 .dir_light
                 .as_ref()
@@ -421,42 +421,42 @@ impl ApplicationHandler for App {
         let camera = &mut self.camera;
         let vkctx = &mut self.vkctx.as_mut().unwrap();
         let device = vkctx.device.clone();
-        let acquire_semaphore = vkctx.acquire_semaphore;
-        let wait_semaphore = vkctx.wait_semaphore;
+        let acquire_semaphore = vkctx.acquire_semaphore.handle;
+        let wait_semaphore = vkctx.wait_semaphore.handle;
         let present_queue = vkctx.present_queue;
-        let swapchain = vkctx.swapchain;
-        let swapchain_loader = vkctx.swapchain_loader.clone();
-        let render_finished_semaphore = vkctx.render_finished_semaphore;
-        let gui_finished_semaphore = vkctx.gui_finished_semaphore;
+        let render_finished_semaphore = vkctx.render_finished_semaphore.handle;
+        let gui_finished_semaphore = vkctx.gui_finished_semaphore.handle;
 
         camera.update_pos();
 
-        let (image_index, _success) = unsafe {
-            vkctx.swapchain_loader.acquire_next_image(
-                vkctx.swapchain,
-                !0,
-                vkctx.acquire_semaphore,
-                vk::Fence::null(),
-            )
-        }
-        .expect("Could not acquire image");
+        let image_index = vkctx.swapchain.acquire_next_image(
+            !0,
+            vkctx.acquire_semaphore.handle,
+            vk::Fence::null(),
+        );
 
         let command_buffer = vkctx.command_buffers[image_index as usize];
         let final_image_copy_command_buffer = vkctx.command_buffers[image_index as usize + 2];
         let imgui_command_buffer = vkctx.command_buffers[4];
 
         vkctx
-            .camera
-            .data_slice
-            .copy_from_slice(&[camera::GPUCameraData {
+            .camera_buffer
+            .update_contents(&[camera::GPUCameraData {
                 pos: glm::make_vec4(&[camera.pos.x, camera.pos.y, camera.pos.z, 0.0]),
                 projview: camera.get_projection_view(
-                    vkctx.window_extent.width as f32,
-                    vkctx.window_extent.height as f32,
+                    vkctx.swapchain.extent.width as f32,
+                    vkctx.swapchain.extent.height as f32,
                 ),
             }]);
 
-        self.record_imgui_commands(imgui_command_buffer);
+        record_imgui_commands(
+            &vkctx,
+            self.window.as_ref().unwrap(),
+            &mut self.gui.as_mut().unwrap().borrow_mut(),
+            &mut self.scene_nodes,
+            &self.push_constants.as_ref().unwrap(),
+            imgui_command_buffer,
+        );
 
         let acquire_semaphores = [acquire_semaphore];
         let draw_command_buffers = [command_buffer];
@@ -486,15 +486,9 @@ impl ApplicationHandler for App {
         unsafe { device.queue_submit(present_queue, &submits, vk::Fence::null()) }
             .expect("Failed to submit");
 
-        let swapchains = [swapchain];
-        let image_indices = [image_index];
-        let present_info = vk::PresentInfoKHR::default()
-            .swapchains(&swapchains)
-            .wait_semaphores(&wait_semaphores)
-            .image_indices(&image_indices);
-
-        unsafe { swapchain_loader.queue_present(present_queue, &present_info) }
-            .expect("Failed to queue present");
+        vkctx
+            .swapchain
+            .present(image_index, &wait_semaphores, present_queue);
 
         unsafe { device.device_wait_idle() }.expect("Failed to wait");
     }

@@ -2,7 +2,11 @@ extern crate nalgebra_glm as glm;
 
 use ash::vk;
 
-use crate::{gui_scene_node::GuiSceneNode, vkutils};
+use crate::{
+    gui_scene_node::GuiSceneNode,
+    vkutils,
+    vkutils_new::{self, vk_destroy::VkDestroy},
+};
 
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -13,60 +17,30 @@ pub struct GPUDirLight {
 
 pub struct DirLight {
     pub gpu_data: GPUDirLight,
-    buffer: vk::Buffer,
-    buffer_memory: vk::DeviceMemory,
-    buffer_allocation_size: u64,
-    buffer_ptr: *mut std::ffi::c_void,
+    buffer: vkutils_new::buffer::Buffer,
     pub buffer_device_address: vk::DeviceAddress,
-    device: ash::Device,
 }
 
 impl DirLight {
     pub fn new(data: GPUDirLight, vkctx: &vkutils::Context) -> DirLight {
-        let device = vkctx.device.clone();
-
-        let (buffer, memory, allocation_size, buffer_ptr) = vkctx.create_bar_buffer(
-            std::mem::size_of::<GPUDirLight>() as u64,
+        let buffer = vkctx.create_bar_buffer(
+            std::mem::size_of::<GPUDirLight>(),
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
 
-        let buffer_device_address = unsafe {
-            let address_info = vk::BufferDeviceAddressInfo {
-                buffer,
-                ..Default::default()
-            };
-            device.get_buffer_device_address(&address_info)
-        };
+        let buffer_device_address = buffer.device_address.unwrap();
 
-        unsafe {
-            ash::util::Align::new(
-                buffer_ptr,
-                std::mem::align_of::<GPUDirLight>() as u64,
-                allocation_size,
-            )
-            .copy_from_slice(&[data]);
-        }
+        buffer.update_contents(&[data]);
 
         Self {
             gpu_data: data,
             buffer,
-            buffer_memory: memory,
-            buffer_allocation_size: allocation_size,
-            buffer_ptr,
             buffer_device_address,
-            device: vkctx.device.clone(),
         }
     }
 
     fn update_gpu_buffer(self: &Self) {
-        unsafe {
-            ash::util::Align::new(
-                self.buffer_ptr,
-                std::mem::align_of::<GPUDirLight>() as u64,
-                self.buffer_allocation_size,
-            )
-            .copy_from_slice(&[self.gpu_data]);
-        }
+        self.buffer.update_contents(&[self.gpu_data]);
     }
 }
 
@@ -93,9 +67,6 @@ impl GuiSceneNode for DirLight {
 
 impl std::ops::Drop for DirLight {
     fn drop(&mut self) {
-        unsafe {
-            self.device.free_memory(self.buffer_memory, None);
-            self.device.destroy_buffer(self.buffer, None);
-        }
+        self.buffer.vk_destroy();
     }
 }

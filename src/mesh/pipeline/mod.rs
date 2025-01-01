@@ -196,10 +196,10 @@ impl Pipeline {
         let pipeline_layout = create_graphics_pipeline_layout(&ctx.device);
         let pipeline = create_graphics_pipeline(
             &ctx.device,
-            &ctx.window_extent,
+            &ctx.swapchain.extent,
             &pipeline_layout,
-            ctx.surface_format.format,
-            ctx.depth_image_format,
+            ctx.swapchain.surface_format.format,
+            ctx.depth_image.format,
         );
 
         Self {

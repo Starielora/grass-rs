@@ -5,6 +5,8 @@ use crate::drawable;
 use crate::gui_scene_node::GuiSceneNode;
 use crate::push_constants::GPUPushConstants;
 use crate::vkutils;
+use crate::vkutils_new;
+use crate::vkutils_new::vk_destroy::VkDestroy;
 
 use ash::vk::{self, IndexType};
 
@@ -23,20 +25,14 @@ pub struct Mesh {
     vertex_buffer: vk::Buffer,
     index_buffer: vk::Buffer,
     indices_count: usize,
-    per_frame_buffer: vk::Buffer,
-    per_frame_buffer_memory: vk::DeviceMemory,
-    per_frame_buffer_ptr: *mut std::ffi::c_void,
-    per_frame_buffer_allocation_size: u64,
+    per_frame_buffer: vkutils_new::buffer::Buffer,
     per_frame_buffer_device_address: vk::DeviceAddress,
     gui_data: GuiData,
 }
 
 impl std::ops::Drop for Mesh {
     fn drop(&mut self) {
-        unsafe {
-            self.device.free_memory(self.per_frame_buffer_memory, None);
-            self.device.destroy_buffer(self.per_frame_buffer, None);
-        }
+        self.per_frame_buffer.vk_destroy();
     }
 }
 
@@ -50,26 +46,18 @@ impl Mesh {
         static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let current_id: usize = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        let (
-            per_frame_buffer,
-            per_frame_buffer_memory,
-            per_frame_buffer_allocation_size,
-            per_frame_buffer_ptr,
-        ) = ctx.create_bar_buffer(
-            std::mem::size_of::<glm::Mat4>() as u64,
+        let per_frame_buffer = ctx.create_bar_buffer(
+            std::mem::size_of::<glm::Mat4>(),
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
 
-        let per_frame_buffer_device_address = ctx.get_device_address(per_frame_buffer);
+        let per_frame_buffer_device_address = per_frame_buffer.device_address.unwrap();
 
         Self {
             device: ctx.device.clone(),
             pipeline_layout: mesh_pipeline.pipeline_layout,
             pipeline: mesh_pipeline.pipeline,
             per_frame_buffer,
-            per_frame_buffer_memory,
-            per_frame_buffer_ptr,
-            per_frame_buffer_allocation_size,
             per_frame_buffer_device_address,
             gui_data: GuiData {
                 id: current_id,
@@ -78,8 +66,8 @@ impl Mesh {
                 rotation: glm::make_vec3(&[0.0, 0.0, 0.0]),
                 scale: glm::make_vec3(&[1.0, 1.0, 1.0]),
             },
-            vertex_buffer: mesh_data.vertex_buffer,
-            index_buffer: mesh_data.index_buffer,
+            vertex_buffer: mesh_data.vertex_buffer.handle,
+            index_buffer: mesh_data.index_buffer.handle,
             indices_count: mesh_data.indices_count,
         }
     }
@@ -122,14 +110,7 @@ impl Mesh {
 
         let model_scaled = glm::scale(&model_rotated, &self.gui_data.scale);
 
-        unsafe {
-            ash::util::Align::new(
-                self.per_frame_buffer_ptr,
-                std::mem::align_of::<glm::Mat4>() as u64,
-                self.per_frame_buffer_allocation_size,
-            )
-            .copy_from_slice(&[model_scaled])
-        };
+        self.per_frame_buffer.update_contents(&[model_scaled]);
     }
 }
 

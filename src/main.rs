@@ -2,7 +2,6 @@ use app::App;
 use winit::event_loop::{ControlFlow, EventLoop};
 
 mod app;
-mod bindless_descriptor_set;
 mod camera;
 mod dir_light;
 mod drawable;
@@ -14,6 +13,7 @@ mod mesh;
 mod push_constants;
 mod skybox;
 mod vkutils;
+mod vkutils_new;
 
 extern crate nalgebra_glm as glm;
 

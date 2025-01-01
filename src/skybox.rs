@@ -1,9 +1,10 @@
-use crate::bindless_descriptor_set;
 use crate::drawable;
 use crate::gui_scene_node::GuiSceneNode;
 use crate::push_constants::get_push_constants_range;
 use crate::push_constants::GPUPushConstants;
 use crate::vkutils;
+use crate::vkutils_new;
+use crate::vkutils_new::vk_destroy::VkDestroy;
 use ash::vk;
 use std::io::prelude::*;
 
@@ -11,19 +12,14 @@ pub struct Skybox {
     device: ash::Device,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
-    images: std::vec::Vec<vk::Image>,
-    image_views: std::vec::Vec<vk::ImageView>,
-    image_memories: std::vec::Vec<vk::DeviceMemory>,
+    images: std::vec::Vec<vkutils_new::image::Image>,
     sampler: vk::Sampler,
     descriptor_set: vk::DescriptorSet,
     current_resource_id: u32,
     vertex_buffer: vk::Buffer,
     index_buffer: vk::Buffer,
     indices_count: usize,
-    buffer: vk::Buffer,
-    buffer_memory: vk::DeviceMemory,
-    buffer_ptr: *mut std::ffi::c_void,
-    buffer_allocation_size: u64,
+    buffer: vkutils_new::buffer::Buffer,
     buffer_device_address: vk::DeviceAddress,
 }
 
@@ -217,16 +213,14 @@ fn create_graphics_pipeline(
 fn load_textures_to_staging_buffer(
     files: [&str; 6],
     vk: &vkutils::Context,
-) -> (vk::Buffer, vk::DeviceMemory, u32, u32, isize) {
+) -> (vkutils_new::buffer::Buffer, u32, u32, isize) {
     let mut texture_width: i32 = 0;
     let mut texture_height: i32 = 0;
 
     let mut staging_buffer_offset: isize = 0;
 
     // these are initialized on first image
-    let mut staging_buffer: Option<vk::Buffer> = None;
-    let mut staging_buffer_memory: Option<vk::DeviceMemory> = None;
-    let mut staging_buffer_ptr: Option<*mut std::ffi::c_void> = None;
+    let mut staging_buffer: Option<vkutils_new::buffer::Buffer> = None;
     let mut single_texture_size_in_bytes: Option<isize> = None;
 
     for path in files {
@@ -257,25 +251,13 @@ fn load_textures_to_staging_buffer(
             single_texture_size_in_bytes =
                 Some(texture_width as isize * texture_height as isize * 4); // w * h * rgba comps
             let total_size_in_bytes = single_texture_size_in_bytes.unwrap() * 6; // 6 faces
-            let (buffer, buffer_mem, _staging_buffer_allocated_size) = vk.create_buffer(
-                total_size_in_bytes as u64,
+            let buffer = vk.create_buffer(
+                total_size_in_bytes as usize,
                 vk::BufferUsageFlags::TRANSFER_SRC,
                 vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
             );
 
             staging_buffer = Some(buffer);
-            staging_buffer_memory = Some(buffer_mem);
-
-            staging_buffer_ptr = Some(unsafe {
-                vk.device
-                    .map_memory(
-                        staging_buffer_memory.unwrap(),
-                        0,
-                        vk::WHOLE_SIZE,
-                        vk::MemoryMapFlags::empty(),
-                    )
-                    .expect("Failed to map memory for skybox image staging buffer")
-            });
         } else if width != texture_width || height != texture_height {
             panic!(
                 "Skybox images size mismatch. Expected {}x{}, got {}x{}",
@@ -284,9 +266,16 @@ fn load_textures_to_staging_buffer(
         }
 
         unsafe {
+            // TODO fix this situation
+            // maybe buffer should have a function to upload at offset
             std::ptr::copy_nonoverlapping(
                 img_data,
-                staging_buffer_ptr.unwrap().offset(staging_buffer_offset) as *mut u8,
+                staging_buffer
+                    .as_ref()
+                    .unwrap()
+                    .ptr
+                    .unwrap()
+                    .offset(staging_buffer_offset) as *mut u8,
                 single_texture_size_in_bytes.unwrap() as usize,
             );
 
@@ -296,49 +285,35 @@ fn load_textures_to_staging_buffer(
         staging_buffer_offset += single_texture_size_in_bytes.unwrap();
     }
 
-    unsafe { vk.device.unmap_memory(staging_buffer_memory.unwrap()) };
+    staging_buffer.as_mut().unwrap().unmap_memory();
 
     (
         staging_buffer.unwrap(),
-        staging_buffer_memory.unwrap(),
         texture_width as u32,
         texture_height as u32,
         single_texture_size_in_bytes.unwrap(),
     )
 }
 
-fn load_textures(
-    files: [&str; 6],
-    vk: &vkutils::Context,
-) -> (vk::Image, vk::DeviceMemory, vk::ImageView) {
-    let (staging_buffer, staging_buffer_memory, width, height, single_image_size) =
+fn load_textures(files: [&str; 6], vk: &mut vkutils::Context) -> vkutils_new::image::Image {
+    let (staging_buffer, width, height, single_image_size) =
         load_textures_to_staging_buffer(files, vk);
 
     let format = vk::Format::R8G8B8A8_UNORM;
 
-    let image_create_info = vk::ImageCreateInfo::default()
-        .flags(vk::ImageCreateFlags::CUBE_COMPATIBLE)
-        .image_type(vk::ImageType::TYPE_2D)
-        .format(format)
-        .extent(vk::Extent3D {
-            width,
-            height,
-            depth: 1,
-        })
-        .mip_levels(1)
-        .array_layers(6)
-        .samples(vk::SampleCountFlags::TYPE_1)
-        .tiling(vk::ImageTiling::OPTIMAL) // TODO: change to optimal
-        .usage(vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST)
-        .initial_layout(vk::ImageLayout::UNDEFINED);
-
-    let image = unsafe {
-        vk.device
-            .create_image(&image_create_info, None)
-            .expect("Failed to create skybox image")
-    };
-
-    let image_mem = vk.allocage_image_memory(image);
+    let image = vkutils_new::image::Image::new(
+        &vk.device,
+        vk::ImageCreateFlags::CUBE_COMPATIBLE,
+        format,
+        vk::Extent2D { width, height },
+        6,
+        vk::SampleCountFlags::TYPE_1,
+        vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST,
+        vk::ImageLayout::UNDEFINED,
+        vk::ImageAspectFlags::COLOR,
+        vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        &vk.physical_device.memory_props,
+    );
 
     let subresource_range = vk::ImageSubresourceRange::default()
         .aspect_mask(vk::ImageAspectFlags::COLOR)
@@ -346,100 +321,89 @@ fn load_textures(
         .level_count(1)
         .layer_count(6);
 
-    let image_view_create_info = vk::ImageViewCreateInfo::default()
-        .image(image)
-        .view_type(vk::ImageViewType::CUBE)
-        .format(format)
-        .components(vk::ComponentMapping::default())
-        .subresource_range(subresource_range);
-
-    let image_view = unsafe {
-        vk.device
-            .create_image_view(&image_view_create_info, None)
-            .expect("Failed to create skybox image view")
-    };
-
-    // lastly copy data from staging buffer to image
     // TODO utilize a transfer queue for this
     {
-        let command_buffer = vk.create_command_buffer(vk::CommandBufferLevel::PRIMARY, true);
-        vk.image_barrier(
-            command_buffer,
-            image,
-            vk::ImageLayout::UNDEFINED,
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            vk::PipelineStageFlags::ALL_COMMANDS,
-            vk::PipelineStageFlags::ALL_COMMANDS,
-            subresource_range,
+        vkutils::execute_short_lived_command_buffer(
+            vk.device.clone(),
+            &mut vk.transient_graphics_command_pool,
+            vk.present_queue,
+            |device, command_buffer| {
+                vkutils::image_barrier(
+                    &device,
+                    command_buffer,
+                    image.handle,
+                    vk::ImageLayout::UNDEFINED,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    vk::PipelineStageFlags::ALL_COMMANDS,
+                    vk::PipelineStageFlags::ALL_COMMANDS,
+                    subresource_range,
+                );
+
+                let mut buffer_copy_regions = Vec::new();
+
+                for face in 0..6 as u64 {
+                    let image_subresource_layers = vk::ImageSubresourceLayers::default()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .mip_level(0)
+                        .base_array_layer(face as u32)
+                        .layer_count(1);
+                    let image_extent = vk::Extent3D::default()
+                        .width(width as u32)
+                        .height(height as u32)
+                        .depth(1);
+                    let copy_region = vk::BufferImageCopy::default()
+                        .image_subresource(image_subresource_layers)
+                        .image_extent(image_extent)
+                        .buffer_offset(face * single_image_size as u64);
+
+                    buffer_copy_regions.push(copy_region);
+                }
+
+                unsafe {
+                    vk.device.cmd_copy_buffer_to_image(
+                        command_buffer,
+                        staging_buffer.handle,
+                        image.handle,
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        buffer_copy_regions.as_slice(),
+                    )
+                };
+
+                vkutils::image_barrier(
+                    &device,
+                    command_buffer,
+                    image.handle,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    vk::PipelineStageFlags::ALL_COMMANDS,
+                    vk::PipelineStageFlags::ALL_COMMANDS,
+                    subresource_range,
+                );
+            },
         );
-
-        let mut buffer_copy_regions = Vec::new();
-
-        for face in 0..6 as u64 {
-            let image_subresource_layers = vk::ImageSubresourceLayers::default()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .mip_level(0)
-                .base_array_layer(face as u32)
-                .layer_count(1);
-            let image_extent = vk::Extent3D::default()
-                .width(width as u32)
-                .height(height as u32)
-                .depth(1);
-            let copy_region = vk::BufferImageCopy::default()
-                .image_subresource(image_subresource_layers)
-                .image_extent(image_extent)
-                .buffer_offset(face * single_image_size as u64);
-
-            buffer_copy_regions.push(copy_region);
-        }
-
-        unsafe {
-            vk.device.cmd_copy_buffer_to_image(
-                command_buffer,
-                staging_buffer,
-                image,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                buffer_copy_regions.as_slice(),
-            )
-        };
-
-        vk.image_barrier(
-            command_buffer,
-            image,
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            vk::PipelineStageFlags::ALL_COMMANDS,
-            vk::PipelineStageFlags::ALL_COMMANDS,
-            subresource_range,
-        );
-
-        vk.flush_command_buffer(command_buffer, true);
     }
 
     // cleanup
-    unsafe {
-        vk.device.free_memory(staging_buffer_memory, None);
-        vk.device.destroy_buffer(staging_buffer, None);
-    }
+    staging_buffer.vk_destroy();
 
-    (image, image_mem, image_view)
+    image
 }
 
 impl Skybox {
     pub fn new(
-        ctx: &vkutils::Context,
+        ctx: &mut vkutils::Context,
         cube_vertex_buffer: vk::Buffer,
         cube_index_buffer: vk::Buffer,
         indices_count: usize,
     ) -> Self {
         let pipeline_layout =
-            create_graphics_pipeline_layout(ctx.descriptor_set_layout, &ctx.device);
+            create_graphics_pipeline_layout(ctx.descriptor_set.layout, &ctx.device);
         let pipeline = create_graphics_pipeline(
             &ctx.device,
-            &ctx.window_extent,
+            &ctx.swapchain.extent,
             &pipeline_layout,
-            ctx.surface_format.format,
-            ctx.depth_image_format,
+            ctx.swapchain.surface_format.format,
+            ctx.depth_image.format,
         );
 
         let skybox1_texture_files = [
@@ -480,21 +444,19 @@ impl Skybox {
                 .expect("Failed to create image sampler")
         };
 
-        let (image1, image_memory1, image_view1) = load_textures(skybox1_texture_files, &ctx);
-        let (image2, image_memory2, image_view2) = load_textures(skybox2_texture_files, &ctx);
+        let image1 = load_textures(skybox1_texture_files, ctx);
+        let image2 = load_textures(skybox2_texture_files, ctx);
 
         let images = vec![image1, image2];
-        let views = vec![image_view1, image_view2];
-        let memories = vec![image_memory1, image_memory2];
 
         let mut descriptor_image_infos = std::vec::Vec::new();
         let mut descriptor_writes = std::vec::Vec::new();
         let mut skybox_resource_id = 0;
 
-        for view in &views {
+        for image in &images {
             let descriptor_image_info = [vk::DescriptorImageInfo::default()
                 .sampler(sampler)
-                .image_view(*view)
+                .image_view(image.view)
                 .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
 
             descriptor_image_infos.push(descriptor_image_info);
@@ -503,8 +465,8 @@ impl Skybox {
         for info in &descriptor_image_infos {
             descriptor_writes.push(
                 vk::WriteDescriptorSet::default()
-                    .dst_set(ctx.descriptor_set)
-                    .dst_binding(bindless_descriptor_set::CUBE_SAMPLER_BINDING)
+                    .dst_set(ctx.descriptor_set.handle)
+                    .dst_binding(vkutils_new::descriptor_set::bindless::CUBE_SAMPLER_BINDING)
                     .descriptor_count(1)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .dst_array_element(skybox_resource_id)
@@ -519,66 +481,40 @@ impl Skybox {
             ctx.device
                 .update_descriptor_sets(&descriptor_writes, &descriptor_copies)
         };
-
-        let (buffer, buffer_memory, buffer_allocation_size, buffer_ptr) = ctx.create_bar_buffer(
-            std::mem::size_of::<u32>() as u64,
+        let buffer = ctx.create_bar_buffer(
+            std::mem::size_of::<u32>(),
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
 
-        let buffer_device_address = unsafe {
-            let address_info = vk::BufferDeviceAddressInfo {
-                buffer,
-                ..Default::default()
-            };
-            ctx.device.get_buffer_device_address(&address_info)
-        };
+        let buffer_device_address = buffer.device_address.unwrap();
 
         Self {
             device: ctx.device.clone(),
             pipeline_layout,
             pipeline,
             images,
-            image_views: views,
-            image_memories: memories,
             sampler,
-            descriptor_set: ctx.descriptor_set,
+            descriptor_set: ctx.descriptor_set.handle,
             current_resource_id: 0,
             vertex_buffer: cube_vertex_buffer,
             index_buffer: cube_index_buffer,
             indices_count,
             buffer,
-            buffer_memory,
-            buffer_ptr,
-            buffer_allocation_size,
             buffer_device_address,
         }
     }
 
     fn refresh_per_frame_buffer(&self) {
-        unsafe {
-            ash::util::Align::new(
-                self.buffer_ptr,
-                std::mem::align_of::<u32>() as u64,
-                self.buffer_allocation_size,
-            )
-            .copy_from_slice(&[self.current_resource_id])
-        };
+        self.buffer.update_contents(&[self.current_resource_id]);
     }
 }
 
 impl std::ops::Drop for Skybox {
     fn drop(&mut self) {
         unsafe {
-            self.device.free_memory(self.buffer_memory, None);
-            self.device.destroy_buffer(self.buffer, None);
-            for mem in &self.image_memories {
-                self.device.free_memory(*mem, None);
-            }
-            for view in &self.image_views {
-                self.device.destroy_image_view(*view, None);
-            }
+            self.buffer.vk_destroy();
             for image in &self.images {
-                self.device.destroy_image(*image, None);
+                image.vk_destroy();
             }
             self.device.destroy_sampler(self.sampler, None);
             self.device
