@@ -38,7 +38,7 @@ impl Gui {
             &mut imguictx,
             Some(imgui_rs_vulkan_renderer::Options {
                 in_flight_frames: 1,
-                sample_count: vk::SampleCountFlags::TYPE_1,
+                sample_count: vk::SampleCountFlags::TYPE_8,
                 ..Default::default()
             }),
         )

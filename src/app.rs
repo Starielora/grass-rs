@@ -144,7 +144,7 @@ impl App {
             .expect("Failed to end command buffer???");
     }
 
-    fn record_image_copy_pass(
+    fn record_image_resolve_pass(
         self: &mut Self,
         command_buffer: vk::CommandBuffer,
         image_index: usize,
@@ -201,30 +201,31 @@ impl App {
             color_subresource_range,
         );
 
-        let copy_subresource = vk::ImageSubresourceLayers::default()
+        let subresource = vk::ImageSubresourceLayers::default()
             .aspect_mask(vk::ImageAspectFlags::COLOR)
             .mip_level(0)
             .base_array_layer(0)
             .layer_count(1);
 
-        let image_copy = [vk::ImageCopy::default()
-            .src_subresource(copy_subresource)
-            .dst_subresource(copy_subresource)
-            .extent(
-                vk::Extent3D::default()
-                    .width(vkctx.swapchain.extent.width)
-                    .height(vkctx.swapchain.extent.height)
-                    .depth(1),
-            )];
+        let regions = [vk::ImageResolve::default()
+            .src_subresource(subresource)
+            .src_offset(vk::Offset3D::default().z(0))
+            .dst_subresource(subresource)
+            .dst_offset(vk::Offset3D::default().z(0))
+            .extent(vk::Extent3D {
+                width: vkctx.swapchain.extent.width,
+                height: vkctx.swapchain.extent.height,
+                depth: 1,
+            })];
 
         unsafe {
-            vkctx.device.cmd_copy_image(
+            vkctx.device.cmd_resolve_image(
                 command_buffer,
                 vkctx.color_image.handle,
                 vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
                 vkctx.swapchain.images[image_index as usize],
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                &image_copy,
+                &regions,
             );
         }
 
@@ -439,8 +440,8 @@ impl ApplicationHandler for App {
 
         self.record_command_buffer(self.vkctx.as_ref().unwrap().scene_command_buffer[0]);
         self.record_command_buffer(self.vkctx.as_ref().unwrap().scene_command_buffer[1]);
-        self.record_image_copy_pass(self.vkctx.as_ref().unwrap().image_copy_command_buffer[0], 0);
-        self.record_image_copy_pass(self.vkctx.as_ref().unwrap().image_copy_command_buffer[1], 1);
+        self.record_image_resolve_pass(self.vkctx.as_ref().unwrap().resolve_command_buffer[0], 0);
+        self.record_image_resolve_pass(self.vkctx.as_ref().unwrap().resolve_command_buffer[1], 1);
     }
 
     fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
@@ -462,7 +463,7 @@ impl ApplicationHandler for App {
         );
 
         let scene_command_buffer = vkctx.scene_command_buffer[image_index as usize];
-        let final_image_copy_command_buffer = vkctx.image_copy_command_buffer[image_index as usize];
+        let final_image_copy_command_buffer = vkctx.resolve_command_buffer[image_index as usize];
         let imgui_command_buffer = vkctx.imgui_command_buffer;
 
         vkctx

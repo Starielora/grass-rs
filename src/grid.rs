@@ -85,7 +85,7 @@ impl Grid {
         };
 
         let multisample_state = vk::PipelineMultisampleStateCreateInfo {
-            rasterization_samples: vk::SampleCountFlags::TYPE_1,
+            rasterization_samples: vk::SampleCountFlags::TYPE_8,
             sample_shading_enable: vk::FALSE,
             min_sample_shading: 1.0,
             alpha_to_coverage_enable: vk::FALSE,
