@@ -32,8 +32,8 @@ impl Gui {
             &vkctx.instance,
             vkctx.physical_device.handle,
             vkctx.device.clone(),
-            vkctx.present_queue,
-            vkctx.command_pool.handle,
+            vkctx.graphics_present_queue,
+            vkctx.graphics_command_pool.handle,
             dynamic_rendering,
             &mut imguictx,
             Some(imgui_rs_vulkan_renderer::Options {

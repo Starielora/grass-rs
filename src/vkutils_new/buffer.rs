@@ -12,7 +12,7 @@ pub struct Buffer {
 
 impl Buffer {
     pub fn new(
-        device: &ash::Device,
+        device: ash::Device,
         size: usize,
         usage: vk::BufferUsageFlags,
         memory_property_flags: vk::MemoryPropertyFlags,
@@ -59,7 +59,7 @@ impl Buffer {
             allocation_size: memory_requirements.size,
             device_address,
             ptr,
-            device: device.clone(),
+            device,
         }
     }
 

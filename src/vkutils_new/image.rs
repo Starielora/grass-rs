@@ -12,14 +12,13 @@ pub struct Image {
 impl Image {
     // assume 2D images
     pub fn new(
-        device: &ash::Device,
+        device: ash::Device,
         flags: vk::ImageCreateFlags,
         format: vk::Format,
         extent: vk::Extent2D,
         array_layers: u32,
         samples: vk::SampleCountFlags,
         usage: vk::ImageUsageFlags,
-        initial_layout: vk::ImageLayout,
         aspect_flags: vk::ImageAspectFlags,
         memory_property_flags: vk::MemoryPropertyFlags,
         memory_props: &vk::PhysicalDeviceMemoryProperties,
@@ -39,7 +38,7 @@ impl Image {
             tiling: vk::ImageTiling::OPTIMAL,
             usage,
             sharing_mode: vk::SharingMode::EXCLUSIVE,
-            initial_layout,
+            initial_layout: vk::ImageLayout::UNDEFINED, // must be UNDEFINED or PREINITIALIZED
             ..Default::default()
         };
 
@@ -66,7 +65,7 @@ impl Image {
             view,
             memory,
             format,
-            device: device.clone(),
+            device,
         }
     }
 }

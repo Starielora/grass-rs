@@ -1,5 +1,7 @@
 use ash::vk;
 
+use super::vk_destroy::VkDestroy;
+
 pub struct CommandPool {
     pub handle: vk::CommandPool,
     command_buffers: std::vec::Vec<vk::CommandBuffer>,
@@ -36,7 +38,7 @@ impl CommandPool {
         let command_buffer_allocate_info = vk::CommandBufferAllocateInfo {
             command_pool: self.handle,
             level,
-            command_buffer_count: count, // two for swapchain, one for image copy at the end, one for imgui
+            command_buffer_count: count,
             ..Default::default()
         };
 
@@ -51,7 +53,7 @@ impl CommandPool {
         command_buffers
     }
 
-    pub fn free_command_buffer(&mut self, command_buffer: vk::CommandBuffer) {
+    fn free_command_buffer(&mut self, command_buffer: vk::CommandBuffer) {
         let pos_to_remove = self
             .command_buffers
             .iter()
@@ -64,6 +66,60 @@ impl CommandPool {
         unsafe {
             self.device.free_command_buffers(self.handle, &cmd_bfrs);
         }
+    }
+
+    pub fn execute_short_lived_command_buffer<F>(&mut self, queue: vk::Queue, record_cmd_buffer: F)
+    where
+        F: FnOnce(ash::Device, vk::CommandBuffer),
+    {
+        let cmd_buffer = self.allocate_command_buffers(vk::CommandBufferLevel::PRIMARY, 1)[0];
+
+        let begin_info = vk::CommandBufferBeginInfo::default();
+
+        unsafe {
+            self.device
+                .begin_command_buffer(cmd_buffer, &begin_info)
+                .expect("Failed to begin command buffer")
+        };
+
+        record_cmd_buffer(self.device.clone(), cmd_buffer);
+
+        unsafe {
+            self.device
+                .end_command_buffer(cmd_buffer)
+                .expect("Faild to end command buffer")
+        };
+
+        let cmd_buffers = [cmd_buffer];
+        let submits = [vk::SubmitInfo::default().command_buffers(&cmd_buffers)];
+        let fence = super::fence::new(self.device.clone(), false);
+
+        unsafe {
+            self.device
+                .queue_submit(queue, &submits, fence.handle)
+                .expect("Failed to submit queue");
+
+            self.device
+                .wait_for_fences(&[fence.handle], true, 10000000000)
+                .expect("Error waiting for fences");
+        };
+
+        fence.vk_destroy();
+
+        self.free_command_buffer(cmd_buffer);
+    }
+
+    pub fn transition_image_layout(
+        &mut self,
+        queue: vk::Queue,
+        image: vk::Image,
+        src: (vk::ImageLayout, vk::AccessFlags, vk::PipelineStageFlags),
+        dst: (vk::ImageLayout, vk::AccessFlags, vk::PipelineStageFlags),
+        subresource_range: vk::ImageSubresourceRange,
+    ) {
+        self.execute_short_lived_command_buffer(queue, |device, command_buffer| {
+            super::image_barrier(&device, command_buffer, image, src, dst, subresource_range);
+        });
     }
 }
 

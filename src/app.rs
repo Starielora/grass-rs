@@ -15,6 +15,7 @@ use crate::mesh;
 use crate::push_constants::GPUPushConstants;
 use crate::skybox;
 use crate::vkutils;
+use crate::vkutils_new;
 
 pub struct App {
     camera: camera::Camera,
@@ -109,14 +110,20 @@ impl App {
             .level_count(1)
             .layer_count(vk::REMAINING_ARRAY_LAYERS);
 
-        vkutils::image_barrier(
+        vkutils_new::image_barrier(
             &vkctx.device,
             command_buffer,
             vkctx.color_image.handle,
-            vk::ImageLayout::UNDEFINED,
-            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            vk::PipelineStageFlags::TOP_OF_PIPE,
-            vk::PipelineStageFlags::ALL_GRAPHICS,
+            (
+                vk::ImageLayout::UNDEFINED,
+                vk::AccessFlags::NONE,
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+            ),
+            (
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            ),
             color_subresource_range,
         );
 
@@ -160,27 +167,37 @@ impl App {
             .level_count(1)
             .layer_count(vk::REMAINING_ARRAY_LAYERS);
 
-        vkctx.image_barrier2(
+        vkutils_new::image_barrier(
+            &vkctx.device,
             command_buffer,
             vkctx.color_image.handle,
-            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-            vk::AccessFlags::NONE,
-            vk::AccessFlags::TRANSFER_READ,
-            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            vk::PipelineStageFlags::TRANSFER,
+            (
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                vk::AccessFlags::NONE,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            ),
+            (
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                vk::AccessFlags::TRANSFER_READ,
+                vk::PipelineStageFlags::TRANSFER,
+            ),
             color_subresource_range,
         );
 
-        vkctx.image_barrier2(
+        vkutils_new::image_barrier(
+            &vkctx.device,
             command_buffer,
             vkctx.swapchain.images[image_index as usize],
-            vk::ImageLayout::UNDEFINED,
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            vk::AccessFlags::NONE,
-            vk::AccessFlags::TRANSFER_WRITE,
-            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            vk::PipelineStageFlags::TRANSFER,
+            (
+                vk::ImageLayout::UNDEFINED,
+                vk::AccessFlags::NONE,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            ),
+            (
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::AccessFlags::TRANSFER_WRITE,
+                vk::PipelineStageFlags::TRANSFER,
+            ),
             color_subresource_range,
         );
 
@@ -211,15 +228,20 @@ impl App {
             );
         }
 
-        vkctx.image_barrier2(
+        vkutils_new::image_barrier(
+            &vkctx.device,
             command_buffer,
             vkctx.swapchain.images[image_index as usize],
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            vk::ImageLayout::PRESENT_SRC_KHR,
-            vk::AccessFlags::TRANSFER_WRITE,
-            vk::AccessFlags::NONE,
-            vk::PipelineStageFlags::TRANSFER,
-            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+            (
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::AccessFlags::TRANSFER_WRITE,
+                vk::PipelineStageFlags::TRANSFER,
+            ),
+            (
+                vk::ImageLayout::PRESENT_SRC_KHR,
+                vk::AccessFlags::NONE,
+                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+            ),
             color_subresource_range,
         );
 
@@ -236,7 +258,6 @@ fn record_imgui_commands(
     push_constants: &GPUPushConstants,
     command_buffer: vk::CommandBuffer,
 ) {
-    // let vkctx = &mut self.vkctx.as_mut().unwrap();
     let device = vkctx.device.clone();
 
     let begin_info = vk::CommandBufferBeginInfo {
@@ -277,15 +298,20 @@ fn record_imgui_commands(
         .level_count(1)
         .layer_count(vk::REMAINING_ARRAY_LAYERS);
 
-    vkctx.image_barrier2(
+    vkutils_new::image_barrier(
+        &vkctx.device,
         command_buffer,
         vkctx.color_image.handle,
-        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        vk::AccessFlags::COLOR_ATTACHMENT_READ,
-        vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-        vk::PipelineStageFlags::FRAGMENT_SHADER,
-        vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+        (
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            vk::AccessFlags::COLOR_ATTACHMENT_READ,
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+        ),
+        (
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+        ),
         color_subresource_range,
     );
 
@@ -411,10 +437,10 @@ impl ApplicationHandler for App {
 
         self.meshes.push(cube_mesh);
 
-        self.record_command_buffer(self.vkctx.as_ref().unwrap().command_buffers[0]);
-        self.record_command_buffer(self.vkctx.as_ref().unwrap().command_buffers[1]);
-        self.record_image_copy_pass(self.vkctx.as_ref().unwrap().command_buffers[2], 0);
-        self.record_image_copy_pass(self.vkctx.as_ref().unwrap().command_buffers[3], 1);
+        self.record_command_buffer(self.vkctx.as_ref().unwrap().scene_command_buffer[0]);
+        self.record_command_buffer(self.vkctx.as_ref().unwrap().scene_command_buffer[1]);
+        self.record_image_copy_pass(self.vkctx.as_ref().unwrap().image_copy_command_buffer[0], 0);
+        self.record_image_copy_pass(self.vkctx.as_ref().unwrap().image_copy_command_buffer[1], 1);
     }
 
     fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
@@ -423,7 +449,7 @@ impl ApplicationHandler for App {
         let device = vkctx.device.clone();
         let acquire_semaphore = vkctx.acquire_semaphore.handle;
         let wait_semaphore = vkctx.wait_semaphore.handle;
-        let present_queue = vkctx.present_queue;
+        let present_queue = vkctx.graphics_present_queue;
         let render_finished_semaphore = vkctx.render_finished_semaphore.handle;
         let gui_finished_semaphore = vkctx.gui_finished_semaphore.handle;
 
@@ -435,9 +461,9 @@ impl ApplicationHandler for App {
             vk::Fence::null(),
         );
 
-        let command_buffer = vkctx.command_buffers[image_index as usize];
-        let final_image_copy_command_buffer = vkctx.command_buffers[image_index as usize + 2];
-        let imgui_command_buffer = vkctx.command_buffers[4];
+        let scene_command_buffer = vkctx.scene_command_buffer[image_index as usize];
+        let final_image_copy_command_buffer = vkctx.image_copy_command_buffer[image_index as usize];
+        let imgui_command_buffer = vkctx.imgui_command_buffer;
 
         vkctx
             .camera_buffer
@@ -459,7 +485,7 @@ impl ApplicationHandler for App {
         );
 
         let acquire_semaphores = [acquire_semaphore];
-        let draw_command_buffers = [command_buffer];
+        let draw_command_buffers = [scene_command_buffer];
         let render_semaphores = [render_finished_semaphore];
         let gui_command_buffers = [imgui_command_buffer];
         let gui_semaphores = [gui_finished_semaphore];

@@ -302,14 +302,13 @@ fn load_textures(files: [&str; 6], vk: &mut vkutils::Context) -> vkutils_new::im
     let format = vk::Format::R8G8B8A8_UNORM;
 
     let image = vkutils_new::image::Image::new(
-        &vk.device,
+        vk.device.clone(),
         vk::ImageCreateFlags::CUBE_COMPATIBLE,
         format,
         vk::Extent2D { width, height },
         6,
         vk::SampleCountFlags::TYPE_1,
         vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST,
-        vk::ImageLayout::UNDEFINED,
         vk::ImageAspectFlags::COLOR,
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
         &vk.physical_device.memory_props,
@@ -321,67 +320,70 @@ fn load_textures(files: [&str; 6], vk: &mut vkutils::Context) -> vkutils_new::im
         .level_count(1)
         .layer_count(6);
 
-    // TODO utilize a transfer queue for this
-    {
-        vkutils::execute_short_lived_command_buffer(
-            vk.device.clone(),
-            &mut vk.transient_graphics_command_pool,
-            vk.present_queue,
-            |device, command_buffer| {
-                vkutils::image_barrier(
-                    &device,
+    vk.transient_graphics_command_pool.transition_image_layout(
+        vk.graphics_present_queue,
+        image.handle,
+        (
+            vk::ImageLayout::UNDEFINED,
+            vk::AccessFlags::NONE,
+            vk::PipelineStageFlags::TOP_OF_PIPE,
+        ),
+        (
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            vk::AccessFlags::TRANSFER_WRITE,
+            vk::PipelineStageFlags::TRANSFER,
+        ),
+        subresource_range,
+    );
+
+    vk.transient_transfer_command_pool
+        .execute_short_lived_command_buffer(vk.transfer_queue, |device, command_buffer| {
+            let mut buffer_copy_regions = Vec::new();
+
+            for face in 0..6 as u64 {
+                let image_subresource_layers = vk::ImageSubresourceLayers::default()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .mip_level(0)
+                    .base_array_layer(face as u32)
+                    .layer_count(1);
+                let image_extent = vk::Extent3D::default()
+                    .width(width as u32)
+                    .height(height as u32)
+                    .depth(1);
+                let copy_region = vk::BufferImageCopy::default()
+                    .image_subresource(image_subresource_layers)
+                    .image_extent(image_extent)
+                    .buffer_offset(face * single_image_size as u64);
+
+                buffer_copy_regions.push(copy_region);
+            }
+
+            unsafe {
+                device.cmd_copy_buffer_to_image(
                     command_buffer,
-                    image.handle,
-                    vk::ImageLayout::UNDEFINED,
-                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    vk::PipelineStageFlags::ALL_COMMANDS,
-                    vk::PipelineStageFlags::ALL_COMMANDS,
-                    subresource_range,
-                );
-
-                let mut buffer_copy_regions = Vec::new();
-
-                for face in 0..6 as u64 {
-                    let image_subresource_layers = vk::ImageSubresourceLayers::default()
-                        .aspect_mask(vk::ImageAspectFlags::COLOR)
-                        .mip_level(0)
-                        .base_array_layer(face as u32)
-                        .layer_count(1);
-                    let image_extent = vk::Extent3D::default()
-                        .width(width as u32)
-                        .height(height as u32)
-                        .depth(1);
-                    let copy_region = vk::BufferImageCopy::default()
-                        .image_subresource(image_subresource_layers)
-                        .image_extent(image_extent)
-                        .buffer_offset(face * single_image_size as u64);
-
-                    buffer_copy_regions.push(copy_region);
-                }
-
-                unsafe {
-                    vk.device.cmd_copy_buffer_to_image(
-                        command_buffer,
-                        staging_buffer.handle,
-                        image.handle,
-                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                        buffer_copy_regions.as_slice(),
-                    )
-                };
-
-                vkutils::image_barrier(
-                    &device,
-                    command_buffer,
+                    staging_buffer.handle,
                     image.handle,
                     vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    vk::PipelineStageFlags::ALL_COMMANDS,
-                    vk::PipelineStageFlags::ALL_COMMANDS,
-                    subresource_range,
-                );
-            },
-        );
-    }
+                    buffer_copy_regions.as_slice(),
+                )
+            };
+        });
+
+    vk.transient_graphics_command_pool.transition_image_layout(
+        vk.graphics_present_queue,
+        image.handle,
+        (
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            vk::AccessFlags::TRANSFER_WRITE,
+            vk::PipelineStageFlags::TRANSFER,
+        ),
+        (
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            vk::AccessFlags::SHADER_READ,
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+        ),
+        subresource_range,
+    );
 
     // cleanup
     staging_buffer.vk_destroy();

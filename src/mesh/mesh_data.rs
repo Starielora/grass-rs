@@ -30,11 +30,8 @@ fn upload_buffer<T: std::marker::Copy>(
     staging_buffer.update_contents(&vertex_data.as_slice());
     staging_buffer.unmap_memory();
 
-    vkutils::execute_short_lived_command_buffer(
-        ctx.device.clone(),
-        &mut ctx.transient_graphics_command_pool,
-        ctx.present_queue,
-        |device, command_buffer| {
+    ctx.transient_transfer_command_pool
+        .execute_short_lived_command_buffer(ctx.transfer_queue, |device, command_buffer| {
             let region = [vk::BufferCopy::default().size(staging_buffer.allocation_size)];
             unsafe {
                 device.cmd_copy_buffer(
@@ -44,8 +41,7 @@ fn upload_buffer<T: std::marker::Copy>(
                     &region,
                 );
             }
-        },
-    );
+        });
 
     staging_buffer.vk_destroy();
 
