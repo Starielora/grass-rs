@@ -23,7 +23,6 @@ pub struct Context {
     pub transient_transfer_command_pool: vkutils_new::command_pool::CommandPool,
     pub transient_graphics_command_pool: vkutils_new::command_pool::CommandPool,
     pub scene_command_buffer: [vk::CommandBuffer; 2],
-    pub resolve_command_buffer: [vk::CommandBuffer; 2],
     pub imgui_command_buffer: vk::CommandBuffer,
     pub acquire_semaphore: vkutils_new::semaphore::Semaphore,
     pub wait_semaphore: vkutils_new::semaphore::Semaphore,
@@ -124,7 +123,7 @@ impl Context {
         );
 
         let graphics_command_buffers =
-            command_pool.allocate_command_buffers(vk::CommandBufferLevel::PRIMARY, 4); // two for swapchain, two for image copy at the end
+            command_pool.allocate_command_buffers(vk::CommandBufferLevel::PRIMARY, 2);
         let imgui_command_buffer = transient_graphics_command_pool
             .allocate_command_buffers(vk::CommandBufferLevel::PRIMARY, 1)[0]; // This one is reset and recorded each frame
 
@@ -150,7 +149,6 @@ impl Context {
             transient_transfer_command_pool,
             transient_graphics_command_pool,
             scene_command_buffer: [graphics_command_buffers[0], graphics_command_buffers[1]],
-            resolve_command_buffer: [graphics_command_buffers[2], graphics_command_buffers[3]],
             imgui_command_buffer,
             acquire_semaphore,
             wait_semaphore,

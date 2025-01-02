@@ -143,112 +143,6 @@ impl App {
         unsafe { vkctx.device.end_command_buffer(command_buffer) }
             .expect("Failed to end command buffer???");
     }
-
-    fn record_image_resolve_pass(
-        self: &mut Self,
-        command_buffer: vk::CommandBuffer,
-        image_index: usize,
-    ) {
-        let vkctx = &mut self.vkctx.as_mut().unwrap();
-
-        let begin_info = vk::CommandBufferBeginInfo {
-            ..Default::default()
-        };
-
-        unsafe {
-            vkctx
-                .device
-                .begin_command_buffer(command_buffer, &begin_info)
-        }
-        .expect("Failed to begin command buffer");
-
-        let color_subresource_range = vk::ImageSubresourceRange::default()
-            .aspect_mask(vk::ImageAspectFlags::COLOR)
-            .level_count(1)
-            .layer_count(vk::REMAINING_ARRAY_LAYERS);
-
-        vkutils_new::image_barrier(
-            &vkctx.device,
-            command_buffer,
-            vkctx.color_image.handle,
-            (
-                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                vk::AccessFlags::NONE,
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            ),
-            (
-                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                vk::AccessFlags::TRANSFER_READ,
-                vk::PipelineStageFlags::TRANSFER,
-            ),
-            color_subresource_range,
-        );
-
-        vkutils_new::image_barrier(
-            &vkctx.device,
-            command_buffer,
-            vkctx.swapchain.images[image_index as usize],
-            (
-                vk::ImageLayout::UNDEFINED,
-                vk::AccessFlags::NONE,
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            ),
-            (
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                vk::AccessFlags::TRANSFER_WRITE,
-                vk::PipelineStageFlags::TRANSFER,
-            ),
-            color_subresource_range,
-        );
-
-        let subresource = vk::ImageSubresourceLayers::default()
-            .aspect_mask(vk::ImageAspectFlags::COLOR)
-            .mip_level(0)
-            .base_array_layer(0)
-            .layer_count(1);
-
-        let regions = [vk::ImageResolve::default()
-            .src_subresource(subresource)
-            .src_offset(vk::Offset3D::default().z(0))
-            .dst_subresource(subresource)
-            .dst_offset(vk::Offset3D::default().z(0))
-            .extent(vk::Extent3D {
-                width: vkctx.swapchain.extent.width,
-                height: vkctx.swapchain.extent.height,
-                depth: 1,
-            })];
-
-        unsafe {
-            vkctx.device.cmd_resolve_image(
-                command_buffer,
-                vkctx.color_image.handle,
-                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                vkctx.swapchain.images[image_index as usize],
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                &regions,
-            );
-        }
-
-        vkutils_new::image_barrier(
-            &vkctx.device,
-            command_buffer,
-            vkctx.swapchain.images[image_index as usize],
-            (
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                vk::AccessFlags::TRANSFER_WRITE,
-                vk::PipelineStageFlags::TRANSFER,
-            ),
-            (
-                vk::ImageLayout::PRESENT_SRC_KHR,
-                vk::AccessFlags::NONE,
-                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-            ),
-            color_subresource_range,
-        );
-
-        unsafe { vkctx.device.end_command_buffer(command_buffer) }
-            .expect("Failed to end command buffer???");
-    }
 }
 
 fn record_imgui_commands(
@@ -257,6 +151,8 @@ fn record_imgui_commands(
     gui: &mut gui::Gui,
     scene_nodes: &mut std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
     push_constants: &GPUPushConstants,
+    resolve_image: vk::Image,
+    resolve_image_view: vk::ImageView,
     command_buffer: vk::CommandBuffer,
 ) {
     let device = vkctx.device.clone();
@@ -273,11 +169,36 @@ fn record_imgui_commands(
     }
     .expect("Failed to begin command buffer");
 
+    let color_subresource_range = vk::ImageSubresourceRange::default()
+        .aspect_mask(vk::ImageAspectFlags::COLOR)
+        .level_count(1)
+        .layer_count(vk::REMAINING_ARRAY_LAYERS);
+
+    vkutils_new::image_barrier(
+        &vkctx.device,
+        command_buffer,
+        resolve_image,
+        (
+            vk::ImageLayout::UNDEFINED,
+            vk::AccessFlags::NONE,
+            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+        ),
+        (
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            vk::AccessFlags::TRANSFER_WRITE,
+            vk::PipelineStageFlags::TRANSFER,
+        ),
+        color_subresource_range,
+    );
+
     let color_attachments = [vk::RenderingAttachmentInfo::default()
         .image_view(vkctx.color_image.view)
         .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
         .load_op(vk::AttachmentLoadOp::LOAD)
-        .store_op(vk::AttachmentStoreOp::STORE)];
+        .store_op(vk::AttachmentStoreOp::STORE)
+        .resolve_mode(vk::ResolveModeFlags::AVERAGE)
+        .resolve_image_view(resolve_image_view)
+        .resolve_image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)];
 
     let depth_attachment = vk::RenderingAttachmentInfo::default()
         .image_view(vkctx.depth_image.view)
@@ -329,6 +250,23 @@ fn record_imgui_commands(
     gui.cmd_draw(&command_buffer, &push_constants);
 
     unsafe { vkctx.device.cmd_end_rendering(command_buffer) };
+
+    vkutils_new::image_barrier(
+        &vkctx.device,
+        command_buffer,
+        resolve_image,
+        (
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            vk::AccessFlags::TRANSFER_WRITE,
+            vk::PipelineStageFlags::TRANSFER,
+        ),
+        (
+            vk::ImageLayout::PRESENT_SRC_KHR,
+            vk::AccessFlags::NONE,
+            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+        ),
+        color_subresource_range,
+    );
 
     unsafe { vkctx.device.end_command_buffer(command_buffer) }
         .expect("Failed to end command buffer???");
@@ -440,8 +378,6 @@ impl ApplicationHandler for App {
 
         self.record_command_buffer(self.vkctx.as_ref().unwrap().scene_command_buffer[0]);
         self.record_command_buffer(self.vkctx.as_ref().unwrap().scene_command_buffer[1]);
-        self.record_image_resolve_pass(self.vkctx.as_ref().unwrap().resolve_command_buffer[0], 0);
-        self.record_image_resolve_pass(self.vkctx.as_ref().unwrap().resolve_command_buffer[1], 1);
     }
 
     fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
@@ -452,7 +388,6 @@ impl ApplicationHandler for App {
         let wait_semaphore = vkctx.wait_semaphore.handle;
         let present_queue = vkctx.graphics_present_queue;
         let render_finished_semaphore = vkctx.render_finished_semaphore.handle;
-        let gui_finished_semaphore = vkctx.gui_finished_semaphore.handle;
 
         camera.update_pos();
 
@@ -463,7 +398,6 @@ impl ApplicationHandler for App {
         );
 
         let scene_command_buffer = vkctx.scene_command_buffer[image_index as usize];
-        let final_image_copy_command_buffer = vkctx.resolve_command_buffer[image_index as usize];
         let imgui_command_buffer = vkctx.imgui_command_buffer;
 
         vkctx
@@ -482,6 +416,8 @@ impl ApplicationHandler for App {
             &mut self.gui.as_mut().unwrap().borrow_mut(),
             &mut self.scene_nodes,
             &self.push_constants.as_ref().unwrap(),
+            vkctx.swapchain.images[image_index as usize],
+            vkctx.swapchain.views[image_index as usize],
             imgui_command_buffer,
         );
 
@@ -489,8 +425,6 @@ impl ApplicationHandler for App {
         let draw_command_buffers = [scene_command_buffer];
         let render_semaphores = [render_finished_semaphore];
         let gui_command_buffers = [imgui_command_buffer];
-        let gui_semaphores = [gui_finished_semaphore];
-        let final_image_command_buffers = [final_image_copy_command_buffer];
         let wait_semaphores = [wait_semaphore];
 
         let submits = [
@@ -498,17 +432,12 @@ impl ApplicationHandler for App {
                 .wait_semaphores(&acquire_semaphores)
                 .command_buffers(&draw_command_buffers)
                 .signal_semaphores(&render_semaphores)
-                .wait_dst_stage_mask(&[vk::PipelineStageFlags::BOTTOM_OF_PIPE]),
+                .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT]),
             vk::SubmitInfo::default()
                 .wait_semaphores(&render_semaphores)
                 .command_buffers(&gui_command_buffers)
-                .signal_semaphores(&gui_semaphores)
-                .wait_dst_stage_mask(&[vk::PipelineStageFlags::BOTTOM_OF_PIPE]),
-            vk::SubmitInfo::default()
-                .wait_semaphores(&gui_semaphores)
-                .command_buffers(&final_image_command_buffers)
                 .signal_semaphores(&wait_semaphores)
-                .wait_dst_stage_mask(&[vk::PipelineStageFlags::BOTTOM_OF_PIPE]),
+                .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT]),
         ];
         unsafe { device.queue_submit(present_queue, &submits, vk::Fence::null()) }
             .expect("Failed to submit");
