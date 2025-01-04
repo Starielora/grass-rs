@@ -2,10 +2,7 @@ use std::ffi::CStr;
 
 use ash::vk;
 
-use crate::{
-    drawable,
-    push_constants::{get_push_constants_range, GPUPushConstants},
-};
+use crate::push_constants::GPUPushConstants;
 
 pub struct Grid {
     pipeline: vk::Pipeline,
@@ -19,6 +16,7 @@ impl Grid {
         window_extent: &vk::Extent2D,
         swapchain_format: vk::Format,
         depth_format: vk::Format,
+        pipeline_layout: vk::PipelineLayout,
     ) -> Result<Grid, Box<dyn std::error::Error>> {
         let shader_main = CStr::from_bytes_with_nul(b"main\0")?;
 
@@ -122,13 +120,6 @@ impl Grid {
             .attachments(&attachments)
             .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
-        let layouts = [];
-        let push_constants_range = get_push_constants_range();
-        let create_info = vk::PipelineLayoutCreateInfo::default()
-            .set_layouts(&layouts)
-            .push_constant_ranges(&push_constants_range);
-        let pipeline_layout = unsafe { device.create_pipeline_layout(&create_info, None).unwrap() };
-
         let color_formats = [swapchain_format];
 
         let mut rendering_info = vk::PipelineRenderingCreateInfo::default()
@@ -164,23 +155,17 @@ impl Grid {
             pipeline_layout,
         })
     }
-}
 
-impl drawable::Drawable for Grid {
-    fn cmd_draw(
-        self: &mut Self,
-        command_buffer: &vk::CommandBuffer,
-        push_constants: &GPUPushConstants,
-    ) {
+    pub fn record(&self, command_buffer: vk::CommandBuffer, push_constants: &mut GPUPushConstants) {
         unsafe {
             self.device.cmd_bind_pipeline(
-                *command_buffer,
+                command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline,
             );
 
             self.device.cmd_push_constants(
-                *command_buffer,
+                command_buffer,
                 self.pipeline_layout,
                 vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
                 0,
@@ -190,7 +175,7 @@ impl drawable::Drawable for Grid {
                 ),
             );
 
-            self.device.cmd_draw(*command_buffer, 6, 1, 0, 0);
+            self.device.cmd_draw(command_buffer, 6, 1, 0, 0);
         }
     }
 }
@@ -198,8 +183,6 @@ impl drawable::Drawable for Grid {
 impl std::ops::Drop for Grid {
     fn drop(&mut self) {
         unsafe {
-            self.device
-                .destroy_pipeline_layout(self.pipeline_layout, None);
             self.device.destroy_pipeline(self.pipeline, None);
         }
     }

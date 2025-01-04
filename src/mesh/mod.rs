@@ -21,7 +21,6 @@ struct GuiData {
 pub struct Mesh {
     device: ash::Device,
     pipeline_layout: vk::PipelineLayout,
-    pipeline: vk::Pipeline,
     vertex_buffer: vk::Buffer,
     index_buffer: vk::Buffer,
     indices_count: usize,
@@ -37,12 +36,7 @@ impl std::ops::Drop for Mesh {
 }
 
 impl Mesh {
-    pub fn new(
-        mesh_data: &mesh_data::MeshData,
-        mesh_pipeline: &pipeline::Pipeline,
-        ctx: &vkutils::Context,
-        gui_name: &str,
-    ) -> Self {
+    pub fn new(mesh_data: &mesh_data::MeshData, ctx: &vkutils::Context, gui_name: &str) -> Self {
         static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let current_id: usize = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
@@ -55,8 +49,7 @@ impl Mesh {
 
         Self {
             device: ctx.device.clone(),
-            pipeline_layout: mesh_pipeline.pipeline_layout,
-            pipeline: mesh_pipeline.pipeline,
+            pipeline_layout: ctx.bindless_descriptor_set.pipeline_layout,
             per_frame_buffer,
             per_frame_buffer_device_address,
             gui_data: GuiData {
@@ -115,24 +108,22 @@ impl Mesh {
 }
 
 impl drawable::Drawable for Mesh {
-    fn cmd_draw(&mut self, command_buffer: &vk::CommandBuffer, push_constants: &GPUPushConstants) {
+    fn cmd_draw(
+        &mut self,
+        command_buffer: vk::CommandBuffer,
+        _pipeline: vk::Pipeline,
+        push_constants: &mut GPUPushConstants,
+    ) {
         unsafe {
-            self.device.cmd_bind_pipeline(
-                *command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline,
-            );
-
-            let mut pc = (*push_constants).clone();
-            pc.mesh_data = self.per_frame_buffer_device_address;
+            push_constants.mesh_data = self.per_frame_buffer_device_address;
 
             self.device.cmd_push_constants(
-                *command_buffer,
+                command_buffer,
                 self.pipeline_layout,
                 vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
                 0,
                 std::slice::from_raw_parts(
-                    (&pc as *const GPUPushConstants) as *const u8,
+                    (push_constants as *const GPUPushConstants) as *const u8,
                     std::mem::size_of::<GPUPushConstants>(),
                 ),
             );
@@ -140,15 +131,15 @@ impl drawable::Drawable for Mesh {
             let vertex_buffers = [self.vertex_buffer];
             let offsets = [0];
             self.device
-                .cmd_bind_vertex_buffers(*command_buffer, 0, &vertex_buffers, &offsets);
+                .cmd_bind_vertex_buffers(command_buffer, 0, &vertex_buffers, &offsets);
             self.device.cmd_bind_index_buffer(
-                *command_buffer,
+                command_buffer,
                 self.index_buffer,
                 0,
                 IndexType::UINT16,
             );
             self.device
-                .cmd_draw_indexed(*command_buffer, self.indices_count as u32, 1, 0, 0, 0);
+                .cmd_draw_indexed(command_buffer, self.indices_count as u32, 1, 0, 0, 0);
         }
     }
 }

@@ -18,7 +18,7 @@ bitflags! {
 #[derive(Debug)]
 pub struct Camera {
     pub pos: glm::Vec3,
-    dir: glm::Vec3,
+    pub dir: glm::Vec3,
     up: glm::Vec3,
 
     speed: f32,
@@ -144,12 +144,13 @@ impl Camera {
     pub fn view(&self) -> glm::Mat4 {
         let target = self.pos + self.dir;
 
-        glm::look_at_lh(&self.pos, &target, &self.up)
+        let mut scale = glm::Mat4::identity();
+        scale.m22 = -1.0;
+
+        scale * glm::look_at_lh(&self.pos, &target, &self.up)
     }
 
     pub fn get_projection_view(&self, w: f32, h: f32) -> glm::Mat4 {
-        let mut scale = glm::Mat4::identity();
-        scale.m22 = -1.0;
-        scale * Camera::projection(w, h) * self.view()
+        Camera::projection(w, h) * self.view()
     }
 }

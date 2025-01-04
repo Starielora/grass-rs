@@ -2,16 +2,19 @@ pub mod bindless {
 
     use ash::vk;
 
-    use crate::vkutils_new::vk_destroy;
+    use crate::{push_constants::get_push_constants_range, vkutils_new::vk_destroy};
 
     pub const CUBE_SAMPLER_BINDING: u32 = 0;
+    pub const DEPTH_SAMPLER_BINDING: u32 = 1;
 
-    const CUBE_SAMPLER_COUNT: u32 = 32;
+    const CUBE_SAMPLER_COUNT: u32 = 2;
+    const DEPTH_SAMPLER_COUNT: u32 = 2;
 
     pub struct DescriptorSet {
         pool: vk::DescriptorPool,
         pub layout: vk::DescriptorSetLayout,
         pub handle: vk::DescriptorSet,
+        pub pipeline_layout: vk::PipelineLayout,
         device: ash::Device,
     }
 
@@ -21,11 +24,13 @@ pub mod bindless {
             let descriptor_set_layout = create_descriptor_set_layout(&device);
             let descriptor_set =
                 allocate_descriptor_set(descriptor_pool, descriptor_set_layout, &device);
+            let pipeline_layout = create_pipeline_layout(&device, descriptor_set_layout);
 
             Self {
                 pool: descriptor_pool,
                 layout: descriptor_set_layout,
                 handle: descriptor_set,
+                pipeline_layout,
                 device,
             }
         }
@@ -34,6 +39,8 @@ pub mod bindless {
     impl vk_destroy::VkDestroy for DescriptorSet {
         fn vk_destroy(&self) {
             unsafe {
+                self.device
+                    .destroy_pipeline_layout(self.pipeline_layout, None);
                 self.device.destroy_descriptor_set_layout(self.layout, None);
                 self.device.destroy_descriptor_pool(self.pool, None);
             }
@@ -41,9 +48,14 @@ pub mod bindless {
     }
 
     fn create_descriptor_pool(device: &ash::Device) -> vk::DescriptorPool {
-        let descriptor_pool_sizes = [vk::DescriptorPoolSize::default()
-            .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(CUBE_SAMPLER_COUNT)];
+        let descriptor_pool_sizes = [
+            vk::DescriptorPoolSize::default()
+                .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(CUBE_SAMPLER_COUNT),
+            vk::DescriptorPoolSize::default()
+                .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(CUBE_SAMPLER_COUNT),
+        ];
 
         let descriptor_pool_create_info = vk::DescriptorPoolCreateInfo::default()
             .flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND)
@@ -60,14 +72,25 @@ pub mod bindless {
     }
 
     fn create_descriptor_set_layout(device: &ash::Device) -> vk::DescriptorSetLayout {
-        let bindings = [vk::DescriptorSetLayoutBinding::default()
-            .binding(0)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(CUBE_SAMPLER_COUNT)
-            .stage_flags(vk::ShaderStageFlags::ALL)];
+        let bindings = [
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(CUBE_SAMPLER_BINDING)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(CUBE_SAMPLER_COUNT)
+                .stage_flags(vk::ShaderStageFlags::ALL),
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(DEPTH_SAMPLER_BINDING)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(DEPTH_SAMPLER_COUNT)
+                .stage_flags(vk::ShaderStageFlags::ALL),
+        ];
 
-        let binding_flags = [vk::DescriptorBindingFlags::PARTIALLY_BOUND
-            | vk::DescriptorBindingFlags::UPDATE_AFTER_BIND];
+        let binding_flags = [
+            vk::DescriptorBindingFlags::PARTIALLY_BOUND
+                | vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
+            vk::DescriptorBindingFlags::PARTIALLY_BOUND
+                | vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
+        ];
         let mut binding_flags_create_info =
             vk::DescriptorSetLayoutBindingFlagsCreateInfo::default().binding_flags(&binding_flags);
 
@@ -103,5 +126,21 @@ pub mod bindless {
         };
 
         descriptor_set[0]
+    }
+
+    fn create_pipeline_layout(
+        device: &ash::Device,
+        set_layout: vk::DescriptorSetLayout,
+    ) -> vk::PipelineLayout {
+        let set_layouts = [set_layout];
+        let push_constants_range = get_push_constants_range();
+        let create_info = vk::PipelineLayoutCreateInfo::default()
+            .set_layouts(&set_layouts)
+            .push_constant_ranges(&push_constants_range);
+        unsafe {
+            device
+                .create_pipeline_layout(&create_info, None)
+                .expect("Failed to create pipeline layout")
+        }
     }
 }

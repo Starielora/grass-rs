@@ -63,13 +63,13 @@ impl Gui {
     ) {
         // handle_window_event is private so I have to wrap this shit, even though handle_event
         // calls only handle_window_event
-        let ev = winit::event::Event::<()>::WindowEvent {
+        let ev: winit::event::Event<_> = winit::event::Event::WindowEvent {
             window_id,
             event: event.clone(),
         };
 
         self.platform
-            .handle_event(self.imguictx.io_mut(), &window, &ev);
+            .handle_event::<()>(self.imguictx.io_mut(), &window, &ev);
     }
 
     pub fn prepare_frame(
@@ -94,9 +94,14 @@ impl Gui {
 }
 
 impl drawable::Drawable for Gui {
-    fn cmd_draw(self: &mut Self, command_buffer: &vk::CommandBuffer, _: &GPUPushConstants) {
+    fn cmd_draw(
+        self: &mut Self,
+        command_buffer: vk::CommandBuffer,
+        _pipeline: vk::Pipeline,
+        _: &mut GPUPushConstants,
+    ) {
         self.imgui_renderer
-            .cmd_draw(*command_buffer, self.imguictx.render())
+            .cmd_draw(command_buffer, self.imguictx.render())
             .expect("Could not draw imgui");
     }
 }

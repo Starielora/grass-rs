@@ -9,6 +9,7 @@ pub mod fence;
 pub mod image;
 pub mod instance;
 pub mod physical_device;
+pub mod pipeline;
 pub mod semaphore;
 pub mod swapchain;
 pub mod vk_destroy;
@@ -49,4 +50,18 @@ pub fn image_barrier(
             &image_barriers,
         );
     }
+}
+
+pub fn color_subresource_range() -> vk::ImageSubresourceRange {
+    vk::ImageSubresourceRange::default()
+        .aspect_mask(vk::ImageAspectFlags::COLOR)
+        .level_count(1)
+        .layer_count(vk::REMAINING_ARRAY_LAYERS)
+}
+
+pub fn depth_subresource_range() -> vk::ImageSubresourceRange {
+    vk::ImageSubresourceRange::default()
+        .aspect_mask(vk::ImageAspectFlags::DEPTH)
+        .level_count(1)
+        .layer_count(vk::REMAINING_ARRAY_LAYERS)
 }

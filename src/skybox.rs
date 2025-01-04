@@ -1,6 +1,4 @@
-use crate::drawable;
 use crate::gui_scene_node::GuiSceneNode;
-use crate::push_constants::get_push_constants_range;
 use crate::push_constants::GPUPushConstants;
 use crate::vkutils;
 use crate::vkutils_new;
@@ -21,20 +19,6 @@ pub struct Skybox {
     indices_count: usize,
     buffer: vkutils_new::buffer::Buffer,
     buffer_device_address: vk::DeviceAddress,
-}
-
-fn create_graphics_pipeline_layout(
-    descriptor_set_layout: vk::DescriptorSetLayout,
-    device: &ash::Device,
-) -> vk::PipelineLayout {
-    let set_layouts = [descriptor_set_layout];
-    let push_constants_range = get_push_constants_range();
-    let create_info = vk::PipelineLayoutCreateInfo::default()
-        .set_layouts(&set_layouts)
-        .push_constant_ranges(&push_constants_range);
-    let pipeline_layout = unsafe { device.create_pipeline_layout(&create_info, None).unwrap() };
-
-    pipeline_layout
 }
 
 fn create_graphics_pipeline(
@@ -398,8 +382,7 @@ impl Skybox {
         cube_index_buffer: vk::Buffer,
         indices_count: usize,
     ) -> Self {
-        let pipeline_layout =
-            create_graphics_pipeline_layout(ctx.descriptor_set.layout, &ctx.device);
+        let pipeline_layout = ctx.bindless_descriptor_set.pipeline_layout;
         let pipeline = create_graphics_pipeline(
             &ctx.device,
             &ctx.swapchain.extent,
@@ -467,7 +450,7 @@ impl Skybox {
         for info in &descriptor_image_infos {
             descriptor_writes.push(
                 vk::WriteDescriptorSet::default()
-                    .dst_set(ctx.descriptor_set.handle)
+                    .dst_set(ctx.bindless_descriptor_set.handle)
                     .dst_binding(vkutils_new::descriptor_set::bindless::CUBE_SAMPLER_BINDING)
                     .descriptor_count(1)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
@@ -496,13 +479,60 @@ impl Skybox {
             pipeline,
             images,
             sampler,
-            descriptor_set: ctx.descriptor_set.handle,
+            descriptor_set: ctx.bindless_descriptor_set.handle,
             current_resource_id: 0,
             vertex_buffer: cube_vertex_buffer,
             index_buffer: cube_index_buffer,
             indices_count,
             buffer,
             buffer_device_address,
+        }
+    }
+
+    pub fn record(&self, command_buffer: vk::CommandBuffer, push_constants: &mut GPUPushConstants) {
+        unsafe {
+            let sets = [self.descriptor_set];
+            let dynamic_offsets = [];
+            self.device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline_layout,
+                0,
+                &sets,
+                &dynamic_offsets,
+            );
+
+            self.device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline,
+            );
+
+            push_constants.skybox_data = self.buffer_device_address;
+
+            self.device.cmd_push_constants(
+                command_buffer,
+                self.pipeline_layout,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                0,
+                std::slice::from_raw_parts(
+                    (push_constants as *const GPUPushConstants) as *const u8,
+                    std::mem::size_of::<GPUPushConstants>(),
+                ),
+            );
+
+            let vertex_buffers = [self.vertex_buffer];
+            let offsets = [0];
+            self.device
+                .cmd_bind_vertex_buffers(command_buffer, 0, &vertex_buffers, &offsets);
+            self.device.cmd_bind_index_buffer(
+                command_buffer,
+                self.index_buffer,
+                0,
+                vk::IndexType::UINT16,
+            );
+            self.device
+                .cmd_draw_indexed(command_buffer, self.indices_count as u32, 1, 0, 0, 0);
         }
     }
 
@@ -519,61 +549,7 @@ impl std::ops::Drop for Skybox {
                 image.vk_destroy();
             }
             self.device.destroy_sampler(self.sampler, None);
-            self.device
-                .destroy_pipeline_layout(self.pipeline_layout, None);
             self.device.destroy_pipeline(self.pipeline, None);
-        }
-    }
-}
-
-impl drawable::Drawable for Skybox {
-    fn cmd_draw(&mut self, command_buffer: &vk::CommandBuffer, push_constants: &GPUPushConstants) {
-        unsafe {
-            let sets = [self.descriptor_set];
-            let dynamic_offsets = [];
-            self.device.cmd_bind_descriptor_sets(
-                *command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline_layout,
-                0,
-                &sets,
-                &dynamic_offsets,
-            );
-
-            self.device.cmd_bind_pipeline(
-                *command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline,
-            );
-
-            // FIXME quick hack to check if it works... these are only integers so there's no perf
-            // penalty
-            let mut pc = (*push_constants).clone();
-            pc.skybox_data = self.buffer_device_address;
-
-            self.device.cmd_push_constants(
-                *command_buffer,
-                self.pipeline_layout,
-                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
-                0,
-                std::slice::from_raw_parts(
-                    (&pc as *const GPUPushConstants) as *const u8,
-                    std::mem::size_of::<GPUPushConstants>(),
-                ),
-            );
-
-            let vertex_buffers = [self.vertex_buffer];
-            let offsets = [0];
-            self.device
-                .cmd_bind_vertex_buffers(*command_buffer, 0, &vertex_buffers, &offsets);
-            self.device.cmd_bind_index_buffer(
-                *command_buffer,
-                self.index_buffer,
-                0,
-                vk::IndexType::UINT16,
-            );
-            self.device
-                .cmd_draw_indexed(*command_buffer, self.indices_count as u32, 1, 0, 0, 0);
         }
     }
 }
