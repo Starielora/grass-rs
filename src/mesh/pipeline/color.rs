@@ -1,4 +1,4 @@
-use crate::push_constants::GPUPushConstants;
+use crate::vkutils_new::push_constants::GPUPushConstants;
 use ash::vk;
 
 pub fn record(

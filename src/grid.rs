@@ -2,7 +2,7 @@ use std::ffi::CStr;
 
 use ash::vk;
 
-use crate::push_constants::GPUPushConstants;
+use crate::vkutils_new::push_constants::GPUPushConstants;
 
 pub struct Grid {
     pipeline: vk::Pipeline,

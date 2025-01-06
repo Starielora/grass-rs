@@ -12,6 +12,7 @@ pub struct Swapchain {
     swapchain_device: ash::khr::swapchain::Device,
     pub images: std::vec::Vec<vk::Image>,
     pub views: std::vec::Vec<vk::ImageView>,
+    pub acquire_semaphore: vk::Semaphore,
 }
 
 impl Swapchain {
@@ -53,6 +54,13 @@ impl Swapchain {
         let (images, views) =
             get_images(&device, &swapchain_device, swapchain, surface_format.format);
 
+        let acquire_semaphore = unsafe {
+            let create_info = vk::SemaphoreCreateInfo::default();
+            device
+                .create_semaphore(&create_info, None)
+                .expect("Failed to create semaphore")
+        };
+
         Self {
             device: device.clone(),
             surface,
@@ -63,22 +71,19 @@ impl Swapchain {
             swapchain_device,
             images,
             views,
+            acquire_semaphore,
         }
     }
 
-    pub fn acquire_next_image(
-        &self,
-        timeout: u64,
-        semaphore: vk::Semaphore,
-        fence: vk::Fence,
-    ) -> u32 {
+    pub fn acquire_next_image(&self, timeout: u64, fence: vk::Fence) -> (u32, vk::Semaphore) {
+        // TODO swapchain recreation
         let (image_index, _is_suboptimal) = unsafe {
             self.swapchain_device
-                .acquire_next_image(self.swapchain, timeout, semaphore, fence)
+                .acquire_next_image(self.swapchain, timeout, self.acquire_semaphore, fence)
                 .expect("Failed to acquire next swapchain image.")
         };
 
-        image_index
+        (image_index, self.acquire_semaphore)
     }
 
     pub fn present(&self, image_index: u32, wait_semaphores: &[vk::Semaphore], queue: vk::Queue) {

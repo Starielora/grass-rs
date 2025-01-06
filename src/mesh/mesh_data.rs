@@ -49,6 +49,18 @@ fn upload_buffer<T: std::marker::Copy>(
 }
 
 impl MeshData {
+    pub fn new2(gltf_file_path: &str, ctx: &vkutils_new::context::VulkanContext) -> Self {
+        let (vertex_data, index_data) = gltf_loader::load(gltf_file_path);
+
+        let vertex_buffer = ctx.upload_buffer(&vertex_data, vk::BufferUsageFlags::VERTEX_BUFFER);
+        let index_buffer = ctx.upload_buffer(&index_data, vk::BufferUsageFlags::INDEX_BUFFER);
+
+        Self {
+            vertex_buffer,
+            index_buffer,
+            indices_count: index_data.len(),
+        }
+    }
     pub fn new(gltf_file_path: &str, ctx: &mut vkutils::Context) -> Self {
         let (vertex_data, index_data) = gltf_loader::load(gltf_file_path);
 

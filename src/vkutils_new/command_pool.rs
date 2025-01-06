@@ -35,6 +35,18 @@ impl CommandPool {
         level: vk::CommandBufferLevel,
         count: u32,
     ) -> std::vec::Vec<vk::CommandBuffer> {
+        let command_buffers = self.allocate_unmanaged_command_buffers(level, count);
+
+        self.command_buffers.extend(&command_buffers);
+
+        command_buffers
+    }
+
+    fn allocate_unmanaged_command_buffers(
+        &self,
+        level: vk::CommandBufferLevel,
+        count: u32,
+    ) -> std::vec::Vec<vk::CommandBuffer> {
         let command_buffer_allocate_info = vk::CommandBufferAllocateInfo {
             command_pool: self.handle,
             level,
@@ -48,8 +60,6 @@ impl CommandPool {
         }
         .expect("Failed to allocate command buffer");
 
-        self.command_buffers.extend(&command_buffers);
-
         command_buffers
     }
 
@@ -62,17 +72,22 @@ impl CommandPool {
 
         self.command_buffers.remove(pos_to_remove);
 
+        self.free_unmanaged_command_buffer(command_buffer);
+    }
+
+    fn free_unmanaged_command_buffer(&self, command_buffer: vk::CommandBuffer) {
         let cmd_bfrs = [command_buffer];
         unsafe {
             self.device.free_command_buffers(self.handle, &cmd_bfrs);
         }
     }
 
-    pub fn execute_short_lived_command_buffer<F>(&mut self, queue: vk::Queue, record_cmd_buffer: F)
+    pub fn execute_short_lived_command_buffer<F>(&self, queue: vk::Queue, record_cmd_buffer: F)
     where
         F: FnOnce(ash::Device, vk::CommandBuffer),
     {
-        let cmd_buffer = self.allocate_command_buffers(vk::CommandBufferLevel::PRIMARY, 1)[0];
+        let cmd_buffer =
+            self.allocate_unmanaged_command_buffers(vk::CommandBufferLevel::PRIMARY, 1)[0];
 
         let begin_info = vk::CommandBufferBeginInfo::default();
 
@@ -106,11 +121,11 @@ impl CommandPool {
 
         fence.vk_destroy();
 
-        self.free_command_buffer(cmd_buffer);
+        self.free_unmanaged_command_buffer(cmd_buffer);
     }
 
     pub fn transition_image_layout(
-        &mut self,
+        &self,
         queue: vk::Queue,
         image: vk::Image,
         src: (vk::ImageLayout, vk::AccessFlags, vk::PipelineStageFlags),

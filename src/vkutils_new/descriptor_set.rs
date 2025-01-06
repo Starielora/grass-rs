@@ -2,7 +2,8 @@ pub mod bindless {
 
     use ash::vk;
 
-    use crate::{push_constants::get_push_constants_range, vkutils_new::vk_destroy};
+    use crate::vkutils_new::push_constants;
+    use crate::vkutils_new::vk_destroy;
 
     pub const CUBE_SAMPLER_BINDING: u32 = 0;
     pub const DEPTH_SAMPLER_BINDING: u32 = 1;
@@ -32,6 +33,50 @@ pub mod bindless {
                 handle: descriptor_set,
                 pipeline_layout,
                 device,
+            }
+        }
+
+        pub fn update_sampler2d(
+            &self,
+            image_view: vk::ImageView,
+            sampler: vk::Sampler,
+            image_layout: vk::ImageLayout,
+            dst_array_element: u32,
+        ) {
+            let descriptor_image_info = [vk::DescriptorImageInfo::default()
+                .sampler(sampler)
+                .image_view(image_view)
+                .image_layout(image_layout)];
+
+            let descriptor_writes = [vk::WriteDescriptorSet::default()
+                .dst_set(self.handle)
+                .dst_binding(DEPTH_SAMPLER_BINDING)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .dst_array_element(dst_array_element)
+                .image_info(&descriptor_image_info)];
+
+            let descriptor_copies = [];
+            unsafe {
+                self.device
+                    .update_descriptor_sets(&descriptor_writes, &descriptor_copies)
+            };
+        }
+
+        pub fn cmd_bind(
+            &self,
+            command_buffer: vk::CommandBuffer,
+            bind_point: vk::PipelineBindPoint,
+        ) {
+            unsafe {
+                self.device.cmd_bind_descriptor_sets(
+                    command_buffer,
+                    bind_point,
+                    self.pipeline_layout,
+                    0,
+                    &[self.handle],
+                    &[],
+                );
             }
         }
     }
@@ -133,7 +178,7 @@ pub mod bindless {
         set_layout: vk::DescriptorSetLayout,
     ) -> vk::PipelineLayout {
         let set_layouts = [set_layout];
-        let push_constants_range = get_push_constants_range();
+        let push_constants_range = push_constants::get_range();
         let create_info = vk::PipelineLayoutCreateInfo::default()
             .set_layouts(&set_layouts)
             .push_constant_ranges(&push_constants_range);

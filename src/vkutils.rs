@@ -3,7 +3,7 @@ use std::mem::size_of;
 use ash::{vk, Entry};
 
 use crate::camera::GPUCameraData;
-use crate::push_constants::GPUPushConstants;
+use crate::vkutils_new::push_constants::GPUPushConstants;
 use crate::vkutils_new::vk_destroy::VkDestroy;
 use crate::{depth_map_display_pipeline, vkutils_new};
 
@@ -186,6 +186,13 @@ impl Context {
             &self.physical_device.props,
             &self.physical_device.memory_props,
         )
+    }
+
+    pub fn create_bar_storage_buffer(self: &Self, size: usize) -> vkutils_new::buffer::Buffer {
+        let usage =
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS;
+
+        self.create_bar_buffer(size, usage)
     }
 
     pub fn create_buffer(

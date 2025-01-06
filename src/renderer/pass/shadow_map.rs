@@ -1,20 +1,75 @@
-use crate::vkutils_new;
 use crate::vkutils_new::push_constants::GPUPushConstants;
+use crate::{mesh, vkutils_new};
 use ash::vk;
 
-pub fn record(
+pub struct ShadowMapPass {
+    pub command_buffers: [vk::CommandBuffer; 2],
+    pub output_depth_image: vkutils_new::image::Image,
+
+    pipeline: vk::Pipeline,
+}
+
+impl ShadowMapPass {
+    pub fn new(
+        ctx: &mut vkutils_new::context::VulkanContext,
+        light_pov_camera_buffer_device_address: vk::DeviceAddress,
+        meshes: &[mesh::Mesh],
+    ) -> Self {
+        let command_buffers = ctx
+            .graphics_command_pool
+            .allocate_command_buffers(vk::CommandBufferLevel::PRIMARY, 2);
+
+        let command_buffers = [command_buffers[0], command_buffers[1]];
+
+        let depth_image = ctx.create_image(
+            ctx.depth_format,
+            ctx.swapchain.extent,
+            1,
+            vk::SampleCountFlags::TYPE_8,
+            vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+            vk::ImageAspectFlags::DEPTH,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        );
+
+        let extent = ctx.swapchain.extent;
+        let pipeline_layout = ctx.bindless_descriptor_set.pipeline_layout;
+        let pipeline = create_pipeline(&ctx.device, &extent, pipeline_layout, ctx.depth_format);
+
+        for command_buffer in command_buffers {
+            record(
+                &ctx.device,
+                command_buffer,
+                pipeline,
+                pipeline_layout,
+                extent,
+                (depth_image.handle, depth_image.view),
+                light_pov_camera_buffer_device_address,
+                meshes,
+            );
+        }
+
+        Self {
+            command_buffers,
+            output_depth_image: depth_image,
+            pipeline,
+        }
+    }
+}
+
+fn record(
     device: &ash::Device,
     command_buffer: vk::CommandBuffer,
     pipeline: vk::Pipeline,
-    swapchain_extent: vk::Extent2D,
-    camera_pov_depth_image: (vk::Image, vk::ImageView),
-    camera_data_buffer_address: vk::DeviceAddress,
-    push_constants: &mut GPUPushConstants,
-    drawables: &[std::rc::Rc<std::cell::RefCell<dyn crate::drawable::Drawable>>],
+    pipeline_layout: vk::PipelineLayout,
+    extent: vk::Extent2D,
+    light_pov_depth_image: (vk::Image, vk::ImageView),
+    light_camera_data_buffer_address: vk::DeviceAddress,
+    meshes: &[mesh::Mesh],
 ) {
-    let (camera_pov_depth_image, camera_pov_depth_image_view) = camera_pov_depth_image;
+    let (camera_pov_depth_image, camera_pov_depth_image_view) = light_pov_depth_image;
 
-    push_constants.camera_data_buffer_address = camera_data_buffer_address;
+    let mut push_constants = GPUPushConstants::default();
+    push_constants.camera_data_buffer_address = light_camera_data_buffer_address;
 
     let begin_info = vk::CommandBufferBeginInfo::default();
     unsafe {
@@ -54,7 +109,7 @@ pub fn record(
 
     let rendering_info = vk::RenderingInfo::default()
         .render_area(vk::Rect2D {
-            extent: swapchain_extent,
+            extent,
             offset: vk::Offset2D { x: 0, y: 0 },
         })
         .layer_count(1)
@@ -65,20 +120,27 @@ pub fn record(
         device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline);
     }
 
-    for d in drawables {
-        d.borrow_mut()
-            .cmd_draw(command_buffer, pipeline, push_constants);
+    for mesh in meshes {
+        mesh.cmd_draw2(
+            &device,
+            command_buffer,
+            pipeline_layout,
+            &mut push_constants,
+        );
     }
 
-    unsafe { device.cmd_end_rendering(command_buffer) };
-
-    unsafe { device.end_command_buffer(command_buffer) }.expect("Failed to end command buffer");
+    unsafe {
+        device.cmd_end_rendering(command_buffer);
+        device
+            .end_command_buffer(command_buffer)
+            .expect("Failed to end command buffer");
+    }
 }
 
-pub(super) fn create(
+fn create_pipeline(
     device: &ash::Device,
-    window_extent: &vk::Extent2D,
-    pipeline_layout: &vk::PipelineLayout,
+    extent: &vk::Extent2D,
+    pipeline_layout: vk::PipelineLayout,
     depth_format: vk::Format,
 ) -> vk::Pipeline {
     // todo path lol
@@ -132,14 +194,14 @@ pub(super) fn create(
     };
 
     let viewport = vk::Viewport {
-        width: window_extent.width as f32,
-        height: window_extent.height as f32,
+        width: extent.width as f32,
+        height: extent.height as f32,
         max_depth: 1.0,
         ..Default::default()
     };
 
     let scissors = vk::Rect2D {
-        extent: *window_extent,
+        extent: *extent,
         ..Default::default()
     };
 
@@ -196,7 +258,7 @@ pub(super) fn create(
         .multisample_state(&multisample_state)
         .depth_stencil_state(&depth_stencil_state)
         .color_blend_state(&color_blend_state)
-        .layout(*pipeline_layout);
+        .layout(pipeline_layout);
 
     let pipelines = unsafe {
         device

@@ -13,7 +13,7 @@ use crate::grid;
 use crate::gui;
 use crate::gui_scene_node::GuiSceneNode;
 use crate::mesh;
-use crate::push_constants::GPUPushConstants;
+use crate::renderer;
 use crate::skybox;
 use crate::vkutils;
 use crate::vkutils_new;
@@ -29,12 +29,13 @@ pub struct App {
     scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
     dir_light: Option<std::rc::Rc<std::cell::RefCell<dir_light::DirLight>>>,
     meshes: std::vec::Vec<mesh::mesh_data::MeshData>,
-    vkctx: Option<vkutils::Context>,
+    vkctx: Option<vkutils_new::context::VulkanContext>,
+    renderer: Option<renderer::Renderer>,
     window: Option<winit::window::Window>,
     last_frame: std::time::Instant,
     keyboard_modifiers_state: winit::event::Modifiers,
     cursor_visible: bool,
-    push_constants: Option<GPUPushConstants>,
+    push_constants: Option<vkutils_new::push_constants::GPUPushConstants>,
 }
 
 impl App {
@@ -53,6 +54,7 @@ impl App {
             scene_nodes: std::vec::Vec::new(),
             camera,
             vkctx: Option::None,
+            renderer: Option::None,
             last_frame: std::time::Instant::now(),
             keyboard_modifiers_state: winit::event::Modifiers::default(),
             cursor_visible: false,
@@ -63,126 +65,125 @@ impl App {
     }
 }
 
-fn record_imgui_commands(
-    vkctx: &vkutils::Context,
-    window: &winit::window::Window,
-    gui: &mut gui::Gui,
-    scene_nodes: &mut std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
-    push_constants: &mut GPUPushConstants,
-    resolve_image: vk::Image,
-    resolve_image_view: vk::ImageView,
-    command_buffer: vk::CommandBuffer,
-    pipeline: vk::Pipeline,
-) {
-    let device = vkctx.device.clone();
-
-    let begin_info = vk::CommandBufferBeginInfo {
-        ..Default::default()
-    };
-
-    unsafe {
-        device
-            .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
-            .expect("Failed to reset imgui command buffer");
-        device.begin_command_buffer(command_buffer, &begin_info)
-    }
-    .expect("Failed to begin command buffer");
-
-    let color_subresource_range = vk::ImageSubresourceRange::default()
-        .aspect_mask(vk::ImageAspectFlags::COLOR)
-        .level_count(1)
-        .layer_count(vk::REMAINING_ARRAY_LAYERS);
-
-    vkutils_new::image_barrier(
-        &vkctx.device,
-        command_buffer,
-        resolve_image,
-        (
-            vk::ImageLayout::UNDEFINED,
-            vk::AccessFlags::NONE,
-            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-        ),
-        (
-            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            vk::AccessFlags::TRANSFER_WRITE,
-            vk::PipelineStageFlags::TRANSFER,
-        ),
-        color_subresource_range,
-    );
-
-    let color_attachments = [vk::RenderingAttachmentInfo::default()
-        .image_view(vkctx.color_image.view)
-        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-        .load_op(vk::AttachmentLoadOp::LOAD)
-        .store_op(vk::AttachmentStoreOp::STORE)
-        .resolve_mode(vk::ResolveModeFlags::AVERAGE)
-        .resolve_image_view(resolve_image_view)
-        .resolve_image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)];
-
-    let rendering_info = vk::RenderingInfo::default()
-        .render_area(vk::Rect2D {
-            extent: vkctx.swapchain.extent,
-            offset: vk::Offset2D { x: 0, y: 0 },
-        })
-        .layer_count(1)
-        .color_attachments(&color_attachments);
-
-    let color_subresource_range = vk::ImageSubresourceRange::default()
-        .aspect_mask(vk::ImageAspectFlags::COLOR)
-        .level_count(1)
-        .layer_count(vk::REMAINING_ARRAY_LAYERS);
-
-    vkutils_new::image_barrier(
-        &vkctx.device,
-        command_buffer,
-        vkctx.color_image.handle,
-        (
-            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            vk::AccessFlags::COLOR_ATTACHMENT_READ,
-            vk::PipelineStageFlags::FRAGMENT_SHADER,
-        ),
-        (
-            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-        ),
-        color_subresource_range,
-    );
-
-    unsafe {
-        vkctx
-            .device
-            .cmd_begin_rendering(command_buffer, &rendering_info);
-    }
-
-    // let window = self.window.as_ref().unwrap();
-    // TODO fix this in the future... is it possible to prerecord?
-    gui.prepare_frame(&window, scene_nodes);
-
-    gui.cmd_draw(command_buffer, pipeline, push_constants);
-
-    unsafe { vkctx.device.cmd_end_rendering(command_buffer) };
-
-    vkutils_new::image_barrier(
-        &vkctx.device,
-        command_buffer,
-        resolve_image,
-        (
-            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            vk::AccessFlags::TRANSFER_WRITE,
-            vk::PipelineStageFlags::TRANSFER,
-        ),
-        (
-            vk::ImageLayout::PRESENT_SRC_KHR,
-            vk::AccessFlags::NONE,
-            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-        ),
-        color_subresource_range,
-    );
-
-    unsafe { vkctx.device.end_command_buffer(command_buffer) }
-        .expect("Failed to end command buffer???");
-}
+// fn record_imgui_commands(
+//     vkctx: &vkutils::Context,
+//     window: &winit::window::Window,
+//     gui: &mut gui::Gui,
+//     scene_nodes: &mut std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
+//     push_constants: &mut vkutils_new::push_constants::GPUPushConstants,
+//     resolve_image: vk::Image,
+//     resolve_image_view: vk::ImageView,
+//     command_buffer: vk::CommandBuffer,
+//     pipeline: vk::Pipeline,
+// ) {
+//     let device = vkctx.device.clone();
+//
+//     let begin_info = vk::CommandBufferBeginInfo {
+//         ..Default::default()
+//     };
+//
+//     unsafe {
+//         device
+//             .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
+//             .expect("Failed to reset imgui command buffer");
+//         device.begin_command_buffer(command_buffer, &begin_info)
+//     }
+//     .expect("Failed to begin command buffer");
+//
+//     let color_subresource_range = vk::ImageSubresourceRange::default()
+//         .aspect_mask(vk::ImageAspectFlags::COLOR)
+//         .level_count(1)
+//         .layer_count(vk::REMAINING_ARRAY_LAYERS);
+//
+//     vkutils_new::image_barrier(
+//         &vkctx.device,
+//         command_buffer,
+//         resolve_image,
+//         (
+//             vk::ImageLayout::UNDEFINED,
+//             vk::AccessFlags::NONE,
+//             vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+//         ),
+//         (
+//             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+//             vk::AccessFlags::TRANSFER_WRITE,
+//             vk::PipelineStageFlags::TRANSFER,
+//         ),
+//         color_subresource_range,
+//     );
+//
+//     let color_attachments = [vk::RenderingAttachmentInfo::default()
+//         .image_view(vkctx.color_image.view)
+//         .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+//         .load_op(vk::AttachmentLoadOp::LOAD)
+//         .store_op(vk::AttachmentStoreOp::STORE)
+//         .resolve_mode(vk::ResolveModeFlags::AVERAGE)
+//         .resolve_image_view(resolve_image_view)
+//         .resolve_image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)];
+//
+//     let rendering_info = vk::RenderingInfo::default()
+//         .render_area(vk::Rect2D {
+//             extent: vkctx.swapchain.extent,
+//             offset: vk::Offset2D { x: 0, y: 0 },
+//         })
+//         .layer_count(1)
+//         .color_attachments(&color_attachments);
+//
+//     let color_subresource_range = vk::ImageSubresourceRange::default()
+//         .aspect_mask(vk::ImageAspectFlags::COLOR)
+//         .level_count(1)
+//         .layer_count(vk::REMAINING_ARRAY_LAYERS);
+//
+//     vkutils_new::image_barrier(
+//         &vkctx.device,
+//         command_buffer,
+//         vkctx.color_image.handle,
+//         (
+//             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+//             vk::AccessFlags::COLOR_ATTACHMENT_READ,
+//             vk::PipelineStageFlags::FRAGMENT_SHADER,
+//         ),
+//         (
+//             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+//             vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+//             vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+//         ),
+//         color_subresource_range,
+//     );
+//
+//     unsafe {
+//         vkctx
+//             .device
+//             .cmd_begin_rendering(command_buffer, &rendering_info);
+//     }
+//
+//     // TODO fix this in the future... is it possible to prerecord?
+//     gui.prepare_frame(&window, scene_nodes);
+//
+//     gui.cmd_draw(command_buffer, pipeline, push_constants);
+//
+//     unsafe { vkctx.device.cmd_end_rendering(command_buffer) };
+//
+//     vkutils_new::image_barrier(
+//         &vkctx.device,
+//         command_buffer,
+//         resolve_image,
+//         (
+//             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+//             vk::AccessFlags::TRANSFER_WRITE,
+//             vk::PipelineStageFlags::TRANSFER,
+//         ),
+//         (
+//             vk::ImageLayout::PRESENT_SRC_KHR,
+//             vk::AccessFlags::NONE,
+//             vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+//         ),
+//         color_subresource_range,
+//     );
+//
+//     unsafe { vkctx.device.end_command_buffer(command_buffer) }
+//         .expect("Failed to end command buffer???");
+// }
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
@@ -194,141 +195,143 @@ impl ApplicationHandler for App {
 
         window.set_cursor_visible(self.cursor_visible);
 
-        let mut vkctx = vkutils::Context::new(&window);
+        let mut vkctx = vkutils_new::context::VulkanContext::new(&window);
+        let mut renderer = renderer::Renderer::new(&mut vkctx);
 
-        let grid = grid::Grid::new(
-            &vkctx.device,
-            &vkctx.swapchain.extent,
-            vkctx.swapchain.surface_format.format,
-            vkctx.depth_image.format,
-            vkctx.bindless_descriptor_set.pipeline_layout,
-        )
-        .expect("Could not create grid pipeline");
+        // let mut vkctx = vkutils::Context::new(&window);
 
-        let mesh_pipeline = mesh::pipeline::new(&vkctx);
-        let mesh_depth_pipeline = mesh::pipeline::new_shadow_map(&vkctx);
-        let cube_mesh = mesh::mesh_data::MeshData::new("assets/cube.gltf", &mut vkctx);
+        // let grid = grid::Grid::new(
+        //     &vkctx.device,
+        //     &vkctx.swapchain.extent,
+        //     vkctx.swapchain.surface_format.format,
+        //     vkctx.depth_image.format,
+        //     vkctx.bindless_descriptor_set.pipeline_layout,
+        // )
+        // .expect("Could not create grid pipeline");
+        //
+        // let mesh_pipeline = mesh::pipeline::new(&vkctx);
+        // let mesh_depth_pipeline = mesh::pipeline::new_shadow_map(&vkctx);
+        // let cube_mesh = mesh::mesh_data::MeshData::new("assets/cube.gltf", &mut vkctx);
+        //
+        // let cube = std::rc::Rc::new(std::cell::RefCell::new(mesh::Mesh::new(
+        //     &cube_mesh, &vkctx, "Cube",
+        // )));
+        //
+        // let cube2 = std::rc::Rc::new(std::cell::RefCell::new(mesh::Mesh::new(
+        //     &cube_mesh, &vkctx, "Floor",
+        // )));
+        //
+        // // set init transformations. Technically I could move these to cube constructor
+        // {
+        //     cube.as_ref().borrow_mut().set_transformation(
+        //         glm::make_vec3(&[3.0, 2.0, 1.0]),
+        //         glm::make_vec3(&[0.0, 0.0, 0.0]),
+        //         glm::make_vec3(&[1.0, 1.0, 1.0]),
+        //     );
+        //
+        //     cube2.as_ref().borrow_mut().set_transformation(
+        //         glm::make_vec3(&[0.0, 0.0, 0.0]),
+        //         glm::make_vec3(&[0.0, 0.0, 0.0]),
+        //         glm::make_vec3(&[10.0, 0.5, 10.0]),
+        //     );
+        // }
+        //
+        // let init_dir_light_data = dir_light::GPUDirLight {
+        //     dir: glm::make_vec4(&[1.0, -0.5, 0.5, 0.0]),
+        //     color: glm::make_vec4(&[1.0, 1.0, 1.0, 0.0]),
+        // };
+        //
+        // let dir_light = dir_light::DirLight::new(init_dir_light_data, &vkctx);
+        //
+        // let mut push_constants = vkutils_new::push_constants::GPUPushConstants {
+        //     mesh_data: 0, // initialized later
+        //     camera_data_buffer_address: vkctx.camera_buffer.device_address.unwrap(),
+        //     dir_light_buffer_address: dir_light.buffer_device_address,
+        //     skybox_data: 0, //initialized later
+        // };
+        //
+        // let skybox = skybox::Skybox::new(
+        //     &mut vkctx,
+        //     cube_mesh.vertex_buffer.handle,
+        //     cube_mesh.index_buffer.handle,
+        //     cube_mesh.indices_count,
+        // );
 
-        let cube = std::rc::Rc::new(std::cell::RefCell::new(mesh::Mesh::new(
-            &cube_mesh, &vkctx, "Cube",
-        )));
+        let gui = std::rc::Rc::new(std::cell::RefCell::new(gui::Gui::new2(&window, &vkctx)));
 
-        let cube2 = std::rc::Rc::new(std::cell::RefCell::new(mesh::Mesh::new(
-            &cube_mesh, &vkctx, "Floor",
-        )));
+        // let depth_map_display_pipeline = depth_map_display_pipeline::DepthMapDisplayPipeline::new(
+        //     &vkctx,
+        //     dir_light.depth_image.view,
+        // );
+        //
+        // vkctx.render_shadow_map_to_swapchain_image(
+        //     &depth_map_display_pipeline,
+        //     (dir_light.depth_image.handle, dir_light.depth_image.view),
+        // );
+        //
+        // // TODO it's own type for this particular pipeline
+        // let meshes: [std::rc::Rc<std::cell::RefCell<dyn Drawable>>; 2] =
+        //     [cube.clone(), cube2.clone()];
+        //
+        // vkctx.render_scene(
+        //     &skybox,
+        //     &grid,
+        //     &mut push_constants,
+        //     mesh_pipeline.handle,
+        //     &meshes,
+        // );
+        //
+        // vkctx.render_shadow_map(
+        //     &mut push_constants,
+        //     mesh_depth_pipeline.handle,
+        //     (dir_light.depth_image.handle, dir_light.depth_image.view),
+        //     dir_light.camera_buffer.device_address.unwrap(),
+        //     &meshes,
+        // );
+        //
+        // push_constants.camera_data_buffer_address = vkctx.camera_buffer.device_address.unwrap();
+        //
+        // let dir_light = std::rc::Rc::new(std::cell::RefCell::new(dir_light));
+        //
+        // let skybox = std::rc::Rc::new(std::cell::RefCell::new(skybox));
+        // self.scene_nodes.push(dir_light.clone());
+        // self.scene_nodes.push(cube.clone());
+        // self.scene_nodes.push(cube2.clone());
+        // self.scene_nodes.push(skybox.clone());
 
-        // set init transformations. Technically I could move these to cube constructor
-        {
-            cube.as_ref().borrow_mut().set_transformation(
-                glm::make_vec3(&[3.0, 2.0, 1.0]),
-                glm::make_vec3(&[0.0, 0.0, 0.0]),
-                glm::make_vec3(&[1.0, 1.0, 1.0]),
-            );
+        // self.dir_light = Some(dir_light.clone());
 
-            cube2.as_ref().borrow_mut().set_transformation(
-                glm::make_vec3(&[0.0, 0.0, 0.0]),
-                glm::make_vec3(&[0.0, 0.0, 0.0]),
-                glm::make_vec3(&[10.0, 0.5, 10.0]),
-            );
-        }
+        // self.push_constants = Some(push_constants);
+        // self.grid = Some(grid);
+        // self.skybox = Some(skybox);
 
-        let init_dir_light_data = dir_light::GPUDirLight {
-            dir: glm::make_vec4(&[1.0, -0.5, 0.5, 0.0]),
-            color: glm::make_vec4(&[1.0, 1.0, 1.0, 0.0]),
-        };
-
-        let dir_light = dir_light::DirLight::new(init_dir_light_data, &vkctx);
-
-        let mut push_constants = GPUPushConstants {
-            mesh_data: 0, // initialized later
-            camera_data_buffer_address: vkctx.camera_buffer.device_address.unwrap(),
-            dir_light_buffer_address: dir_light.buffer_device_address,
-            skybox_data: 0, //initialized later
-        };
-
-        let skybox = skybox::Skybox::new(
-            &mut vkctx,
-            cube_mesh.vertex_buffer.handle,
-            cube_mesh.index_buffer.handle,
-            cube_mesh.indices_count,
-        );
-
-        let gui = std::rc::Rc::new(std::cell::RefCell::new(gui::Gui::new(&window, &vkctx)));
-
-        let depth_map_display_pipeline = depth_map_display_pipeline::DepthMapDisplayPipeline::new(
-            &vkctx,
-            dir_light.depth_image.view,
-        );
-
-        vkctx.render_shadow_map_to_swapchain_image(
-            &depth_map_display_pipeline,
-            (dir_light.depth_image.handle, dir_light.depth_image.view),
-        );
-
-        // TODO it's own type for this particular pipeline
-        let meshes: [std::rc::Rc<std::cell::RefCell<dyn Drawable>>; 2] =
-            [cube.clone(), cube2.clone()];
-
-        vkctx.render_scene(
-            &skybox,
-            &grid,
-            &mut push_constants,
-            mesh_pipeline.handle,
-            &meshes,
-        );
-
-        vkctx.render_shadow_map(
-            &mut push_constants,
-            mesh_depth_pipeline.handle,
-            (dir_light.depth_image.handle, dir_light.depth_image.view),
-            dir_light.camera_buffer.device_address.unwrap(),
-            &meshes,
-        );
-
-        push_constants.camera_data_buffer_address = vkctx.camera_buffer.device_address.unwrap();
-
-        let dir_light = std::rc::Rc::new(std::cell::RefCell::new(dir_light));
-
-        let skybox = std::rc::Rc::new(std::cell::RefCell::new(skybox));
-        self.scene_nodes.push(dir_light.clone());
-        self.scene_nodes.push(cube.clone());
-        self.scene_nodes.push(cube2.clone());
-        self.scene_nodes.push(skybox.clone());
-
-        self.dir_light = Some(dir_light.clone());
-
-        self.push_constants = Some(push_constants);
-        self.grid = Some(grid);
-        self.skybox = Some(skybox);
-
-        self.gui = Some(gui);
-        self.mesh_pipeline = Some(mesh_pipeline);
-        self.mesh_depth_pipeline = Some(mesh_depth_pipeline);
-        self.depth_map_display_pipeline = Some(depth_map_display_pipeline);
-        self.window = Some(window);
         self.vkctx = Some(vkctx);
+        self.renderer = Some(renderer);
+        self.gui = Some(gui);
+        // self.mesh_pipeline = Some(mesh_pipeline);
+        // self.mesh_depth_pipeline = Some(mesh_depth_pipeline);
+        // self.depth_map_display_pipeline = Some(depth_map_display_pipeline);
+        self.window = Some(window);
+        // self.vkctx = Some(vkctx);
         self.last_frame = std::time::Instant::now();
 
-        self.meshes.push(cube_mesh);
+        // self.meshes.push(cube_mesh);
     }
 
     fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
         let camera = &mut self.camera;
-        let vkctx = &mut self.vkctx.as_mut().unwrap();
+        let vkctx = self.vkctx.as_mut().unwrap();
         let device = vkctx.device.clone();
+        let renderer = self.renderer.as_mut().unwrap();
+        let mut gui = self.gui.as_mut().unwrap().borrow_mut();
 
         camera.update_pos();
 
-        let image_index = vkctx.swapchain.acquire_next_image(
-            !0,
-            vkctx.acquire_semaphore.handle,
-            vk::Fence::null(),
-        );
-
-        let imgui_command_buffer = vkctx.imgui_command_buffer;
+        let (image_index, acquire_semaphore) =
+            vkctx.swapchain.acquire_next_image(!0, vk::Fence::null());
 
         vkctx
-            .camera_buffer
+            .camera_data_buffer
             .update_contents(&[camera::GPUCameraData {
                 pos: glm::make_vec4(&[camera.pos.x, camera.pos.y, camera.pos.z, 0.0]),
                 projview: camera.get_projection_view(
@@ -337,20 +340,16 @@ impl ApplicationHandler for App {
                 ),
             }]);
 
-        record_imgui_commands(
-            &vkctx,
-            self.window.as_ref().unwrap(),
-            &mut self.gui.as_mut().unwrap().borrow_mut(),
-            &mut self.scene_nodes,
-            self.push_constants.as_mut().unwrap(),
-            vkctx.swapchain.images[image_index as usize],
-            vkctx.swapchain.views[image_index as usize],
-            imgui_command_buffer,
-            self.mesh_pipeline.as_mut().unwrap().handle,
-        );
+        gui.prepare_frame(self.window.as_ref().unwrap(), &mut self.scene_nodes);
+        renderer.record_imgui_pass(image_index, &vkctx, &mut gui);
 
-        // vkctx.submit_and_present_shadow_map(image_index);
-        vkctx.submit_and_present_scene(image_index);
+        let queue = vkctx.graphics_present_queue;
+        let render_finished_semaphore =
+            renderer.submit(&vkctx.device, queue, image_index, acquire_semaphore);
+
+        vkctx
+            .swapchain
+            .present(image_index, &[render_finished_semaphore], queue);
 
         unsafe { device.device_wait_idle() }.expect("Failed to wait");
     }

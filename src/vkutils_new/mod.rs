@@ -1,5 +1,6 @@
 pub mod buffer;
 pub mod command_pool;
+pub mod context;
 pub mod debug_utils;
 pub mod descriptor_set;
 pub mod device;
@@ -10,6 +11,8 @@ pub mod image;
 pub mod instance;
 pub mod physical_device;
 pub mod pipeline;
+pub mod push_constants;
+pub mod sampler;
 pub mod semaphore;
 pub mod swapchain;
 pub mod vk_destroy;
