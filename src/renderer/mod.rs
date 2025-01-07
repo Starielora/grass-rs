@@ -1,6 +1,7 @@
 mod depth_map_render;
 mod pass;
 mod scene_render;
+mod target_render_picker;
 
 use crate::{
     camera::GPUCameraData,
@@ -11,6 +12,7 @@ use crate::{
     vkutils_new::{self, vk_destroy::VkDestroy},
 };
 use ash::vk;
+use target_render_picker::TargetRender;
 
 struct Passes {
     _shadow_map: pass::shadow_map::ShadowMapPass,
@@ -33,8 +35,7 @@ pub struct Renderer {
     submits: Submits,
 
     _grid: grid::Grid,
-    // TODO
-    scene_pass: bool,
+    picker: std::rc::Rc<std::cell::RefCell<target_render_picker::TargetRenderPicker>>,
 }
 
 impl std::ops::Drop for Renderer {
@@ -134,12 +135,19 @@ impl Renderer {
             ui_pass.command_buffers.clone(),
         );
 
+        let picker = std::rc::Rc::new(std::cell::RefCell::new(
+            target_render_picker::TargetRenderPicker {
+                target_render: TargetRender::Scene,
+            },
+        ));
+
         let mut gui_scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>> =
             vec![];
 
         {
             gui_scene_nodes.push(std::rc::Rc::new(std::cell::RefCell::new(dir_light)));
             gui_scene_nodes.push(std::rc::Rc::new(std::cell::RefCell::new(skybox)));
+            gui_scene_nodes.push(picker.clone());
 
             for mesh in meshes {
                 gui_scene_nodes.push(std::rc::Rc::new(std::cell::RefCell::new(mesh)));
@@ -160,7 +168,7 @@ impl Renderer {
                 scene_color_render: scene_render,
             },
             _grid: grid,
-            scene_pass: true,
+            picker,
             gui_scene_nodes,
         }
     }
@@ -171,12 +179,15 @@ impl Renderer {
         ctx: &vkutils_new::context::VulkanContext,
         gui: &mut gui::Gui,
     ) {
-        let src_image = if self.scene_pass {
-            let img = &self.passes.scene.render_target;
-            (img.handle, img.view)
-        } else {
-            let img = &self.passes.depth_display.render_target;
-            (img.handle, img.view)
+        let src_image = match self.picker.borrow().target_render {
+            TargetRender::Scene => {
+                let img = &self.passes.scene.render_target;
+                (img.handle, img.view)
+            }
+            TargetRender::ShadowMap => {
+                let img = &self.passes.depth_display.render_target;
+                (img.handle, img.view)
+            }
         };
 
         let swapchain_image = (
@@ -196,20 +207,19 @@ impl Renderer {
         image_index: u32,
         swapchain_acquire_semaphore: vk::Semaphore,
     ) -> vk::Semaphore {
-        if self.scene_pass {
-            self.submits.scene_color_render.submit(
+        match self.picker.borrow().target_render {
+            TargetRender::Scene => self.submits.scene_color_render.submit(
                 device,
                 queue,
                 swapchain_acquire_semaphore,
                 image_index as usize,
-            )
-        } else {
-            self.submits.shadow_map_render.submit(
+            ),
+            TargetRender::ShadowMap => self.submits.shadow_map_render.submit(
                 device,
                 queue,
                 swapchain_acquire_semaphore,
                 image_index as usize,
-            )
+            ),
         }
     }
 }
