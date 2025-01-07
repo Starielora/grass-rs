@@ -1,4 +1,4 @@
-use crate::vkutils_new;
+use crate::vkutils;
 use ash::vk;
 
 struct CommandBuffers {
@@ -34,7 +34,7 @@ impl std::ops::Drop for ColorSceneRender {
 
 impl ColorSceneRender {
     pub fn new(
-        ctx: &mut vkutils_new::context::VulkanContext,
+        ctx: &mut vkutils::context::VulkanContext,
         shadow_map_command_buffers: [vk::CommandBuffer; 2],
         scene_command_buffers: [vk::CommandBuffer; 2],
         imgui_command_buffers: [vk::CommandBuffer; 2],

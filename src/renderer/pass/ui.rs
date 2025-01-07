@@ -1,13 +1,13 @@
 use ash::vk;
 
-use crate::{gui, vkutils_new};
+use crate::{gui, vkutils};
 
 pub struct UiPass {
     pub command_buffers: [vk::CommandBuffer; 2],
 }
 
 impl UiPass {
-    pub fn new(ctx: &mut vkutils_new::context::VulkanContext) -> Self {
+    pub fn new(ctx: &mut vkutils::context::VulkanContext) -> Self {
         let command_buffers = ctx
             .graphics_command_pool
             .allocate_command_buffers(vk::CommandBufferLevel::PRIMARY, 2);
@@ -20,7 +20,7 @@ impl UiPass {
     pub fn record(
         &self,
         image_index: u32,
-        ctx: &vkutils_new::context::VulkanContext,
+        ctx: &vkutils::context::VulkanContext,
         src_image: (vk::Image, vk::ImageView),
         resolve_image: (vk::Image, vk::ImageView),
         gui: &mut gui::Gui,
@@ -45,7 +45,7 @@ impl UiPass {
             .level_count(1)
             .layer_count(vk::REMAINING_ARRAY_LAYERS);
 
-        vkutils_new::image_barrier(
+        vkutils::image_barrier(
             &device,
             command_buffer,
             resolve_image.0,
@@ -84,7 +84,7 @@ impl UiPass {
             .level_count(1)
             .layer_count(vk::REMAINING_ARRAY_LAYERS);
 
-        vkutils_new::image_barrier(
+        vkutils::image_barrier(
             &device,
             command_buffer,
             src_image.0,
@@ -109,7 +109,7 @@ impl UiPass {
 
         unsafe { device.cmd_end_rendering(command_buffer) };
 
-        vkutils_new::image_barrier(
+        vkutils::image_barrier(
             &device,
             command_buffer,
             resolve_image.0,

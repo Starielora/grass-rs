@@ -5,7 +5,7 @@ use ash::vk;
 use crate::{
     camera::{self, GPUCameraData},
     gui_scene_node::GuiSceneNode,
-    vkutils_new::{self, vk_destroy::VkDestroy},
+    vkutils::{self, vk_destroy::VkDestroy},
 };
 
 #[repr(C)]
@@ -17,14 +17,14 @@ pub struct GPUDirLight {
 
 pub struct DirLight {
     pub gpu_data: GPUDirLight,
-    buffer: vkutils_new::buffer::Buffer,
+    buffer: vkutils::buffer::Buffer,
     pub buffer_device_address: vk::DeviceAddress,
-    pub camera_buffer: vkutils_new::buffer::Buffer,
-    pub depth_image: vkutils_new::image::Image,
+    pub camera_buffer: vkutils::buffer::Buffer,
+    pub depth_image: vkutils::image::Image,
 }
 
 impl DirLight {
-    pub fn new(data: GPUDirLight, ctx: &vkutils_new::context::VulkanContext) -> Self {
+    pub fn new(data: GPUDirLight, ctx: &vkutils::context::VulkanContext) -> Self {
         let buffer = ctx.create_bar_buffer(
             std::mem::size_of::<GPUDirLight>(),
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
@@ -66,7 +66,7 @@ impl DirLight {
     }
 }
 
-fn update_camera_buffer(buffer: &vkutils_new::buffer::Buffer, gpu_camera_data: &GPUDirLight) {
+fn update_camera_buffer(buffer: &vkutils::buffer::Buffer, gpu_camera_data: &GPUDirLight) {
     let mut camera = camera::Camera::new();
 
     // TODO I don't quite like this function. Maybe it shouldn't be recreated and recalculated each

@@ -7,13 +7,13 @@ use winit::keyboard::PhysicalKey;
 use crate::camera;
 use crate::gui;
 use crate::renderer;
-use crate::vkutils_new;
+use crate::vkutils;
 
 pub struct App {
     camera: camera::Camera,
     gui: Option<gui::Gui>,
     renderer: Option<renderer::Renderer>,
-    vkctx: Option<vkutils_new::context::VulkanContext>,
+    vkctx: Option<vkutils::context::VulkanContext>,
     window: Option<std::rc::Rc<winit::window::Window>>,
     last_frame: std::time::Instant,
     keyboard_modifiers_state: winit::event::Modifiers,
@@ -50,7 +50,7 @@ impl ApplicationHandler for App {
 
         window.set_cursor_visible(self.cursor_visible);
 
-        let mut vkctx = vkutils_new::context::VulkanContext::new(&window);
+        let mut vkctx = vkutils::context::VulkanContext::new(&window);
         let renderer = renderer::Renderer::new(&mut vkctx);
 
         // TODO I don't quite like this dependency gui->renderer->gui

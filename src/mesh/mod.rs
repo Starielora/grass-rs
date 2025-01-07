@@ -1,9 +1,9 @@
 pub mod mesh_data;
 
 use crate::gui_scene_node::GuiSceneNode;
-use crate::vkutils_new;
-use crate::vkutils_new::push_constants::GPUPushConstants;
-use crate::vkutils_new::vk_destroy::VkDestroy;
+use crate::vkutils;
+use crate::vkutils::push_constants::GPUPushConstants;
+use crate::vkutils::vk_destroy::VkDestroy;
 
 use ash::vk::{self, IndexType};
 
@@ -19,7 +19,7 @@ pub struct Mesh {
     vertex_buffer: vk::Buffer,
     index_buffer: vk::Buffer,
     indices_count: usize,
-    per_frame_buffer: vkutils_new::buffer::Buffer,
+    per_frame_buffer: vkutils::buffer::Buffer,
     per_frame_buffer_device_address: vk::DeviceAddress,
     gui_data: GuiData,
 }
@@ -33,7 +33,7 @@ impl std::ops::Drop for Mesh {
 impl Mesh {
     pub fn new(
         mesh_data: &mesh_data::MeshData,
-        ctx: &vkutils_new::context::VulkanContext,
+        ctx: &vkutils::context::VulkanContext,
         gui_name: &str,
     ) -> Self {
         static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

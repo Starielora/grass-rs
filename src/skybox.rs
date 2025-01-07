@@ -1,7 +1,7 @@
 use crate::gui_scene_node::GuiSceneNode;
-use crate::vkutils_new;
-use crate::vkutils_new::push_constants::GPUPushConstants;
-use crate::vkutils_new::vk_destroy::VkDestroy;
+use crate::vkutils;
+use crate::vkutils::push_constants::GPUPushConstants;
+use crate::vkutils::vk_destroy::VkDestroy;
 use ash::vk;
 use std::io::prelude::*;
 
@@ -9,14 +9,14 @@ pub struct Skybox {
     device: ash::Device,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
-    images: std::vec::Vec<vkutils_new::image::Image>,
+    images: std::vec::Vec<vkutils::image::Image>,
     sampler: vk::Sampler,
     descriptor_set: vk::DescriptorSet,
     current_resource_id: u32,
     vertex_buffer: vk::Buffer,
     index_buffer: vk::Buffer,
     indices_count: usize,
-    buffer: vkutils_new::buffer::Buffer,
+    buffer: vkutils::buffer::Buffer,
     buffer_device_address: vk::DeviceAddress,
 }
 
@@ -195,15 +195,15 @@ fn create_graphics_pipeline(
 
 fn load_textures_to_staging_buffer2(
     files: [&str; 6],
-    vk: &vkutils_new::context::VulkanContext,
-) -> (vkutils_new::buffer::Buffer, u32, u32, isize) {
+    vk: &vkutils::context::VulkanContext,
+) -> (vkutils::buffer::Buffer, u32, u32, isize) {
     let mut texture_width: i32 = 0;
     let mut texture_height: i32 = 0;
 
     let mut staging_buffer_offset: isize = 0;
 
     // these are initialized on first image
-    let mut staging_buffer: Option<vkutils_new::buffer::Buffer> = None;
+    let mut staging_buffer: Option<vkutils::buffer::Buffer> = None;
     let mut single_texture_size_in_bytes: Option<isize> = None;
 
     for path in files {
@@ -278,16 +278,13 @@ fn load_textures_to_staging_buffer2(
     )
 }
 
-fn load_textures(
-    files: [&str; 6],
-    vk: &vkutils_new::context::VulkanContext,
-) -> vkutils_new::image::Image {
+fn load_textures(files: [&str; 6], vk: &vkutils::context::VulkanContext) -> vkutils::image::Image {
     let (staging_buffer, width, height, single_image_size) =
         load_textures_to_staging_buffer2(files, vk);
 
     let format = vk::Format::R8G8B8A8_UNORM;
 
-    let image = vkutils_new::image::Image::new(
+    let image = vkutils::image::Image::new(
         vk.device.clone(),
         vk::ImageCreateFlags::CUBE_COMPATIBLE,
         format,
@@ -379,7 +376,7 @@ fn load_textures(
 
 impl Skybox {
     pub fn new(
-        ctx: &vkutils_new::context::VulkanContext,
+        ctx: &vkutils::context::VulkanContext,
         cube_vertex_buffer: vk::Buffer,
         cube_index_buffer: vk::Buffer,
         indices_count: usize,
@@ -453,7 +450,7 @@ impl Skybox {
             descriptor_writes.push(
                 vk::WriteDescriptorSet::default()
                     .dst_set(ctx.bindless_descriptor_set.handle)
-                    .dst_binding(vkutils_new::descriptor_set::bindless::CUBE_SAMPLER_BINDING)
+                    .dst_binding(vkutils::descriptor_set::bindless::CUBE_SAMPLER_BINDING)
                     .descriptor_count(1)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .dst_array_element(skybox_resource_id)

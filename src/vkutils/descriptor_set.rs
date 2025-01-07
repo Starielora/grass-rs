@@ -2,8 +2,8 @@ pub mod bindless {
 
     use ash::vk;
 
-    use crate::vkutils_new::push_constants;
-    use crate::vkutils_new::vk_destroy;
+    use crate::vkutils::push_constants;
+    use crate::vkutils::vk_destroy;
 
     pub const CUBE_SAMPLER_BINDING: u32 = 0;
     pub const DEPTH_SAMPLER_BINDING: u32 = 1;

@@ -2,14 +2,14 @@ use ash::vk;
 
 use crate::{
     grid, mesh, skybox,
-    vkutils_new::{self, push_constants::GPUPushConstants, vk_destroy::VkDestroy},
+    vkutils::{self, push_constants::GPUPushConstants, vk_destroy::VkDestroy},
 };
 
 pub struct SceneColorPass {
     pub command_buffers: [vk::CommandBuffer; 2],
     // TODO double buffering
-    pub render_target: vkutils_new::image::Image,
-    pub depth_image: vkutils_new::image::Image,
+    pub render_target: vkutils::image::Image,
+    pub depth_image: vkutils::image::Image,
 
     pipeline: vk::Pipeline,
     device: ash::Device,
@@ -27,7 +27,7 @@ impl std::ops::Drop for SceneColorPass {
 
 impl SceneColorPass {
     pub fn new(
-        ctx: &mut vkutils_new::context::VulkanContext,
+        ctx: &mut vkutils::context::VulkanContext,
         skybox: &skybox::Skybox,
         grid: &grid::Grid,
         camera_data_buffer_address: vk::DeviceAddress,
@@ -224,7 +224,7 @@ fn record_image_barriers_for_scene_rendering(
         .level_count(1)
         .layer_count(vk::REMAINING_ARRAY_LAYERS);
 
-    vkutils_new::image_barrier(
+    vkutils::image_barrier(
         device,
         command_buffer,
         color_image,
@@ -241,7 +241,7 @@ fn record_image_barriers_for_scene_rendering(
         color_subresource_range,
     );
 
-    vkutils_new::image_barrier(
+    vkutils::image_barrier(
         device,
         command_buffer,
         depth_image,
@@ -255,7 +255,7 @@ fn record_image_barriers_for_scene_rendering(
             vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
             vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
         ),
-        vkutils_new::depth_subresource_range(),
+        vkutils::depth_subresource_range(),
     );
 }
 

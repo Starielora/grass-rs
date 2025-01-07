@@ -1,12 +1,12 @@
 use ash::vk;
 
-use crate::vkutils_new::{self, vk_destroy::VkDestroy};
+use crate::vkutils::{self, vk_destroy::VkDestroy};
 
 pub struct DepthMapDisplayPass {
     pub command_buffers: [vk::CommandBuffer; 2],
-    pub render_target: vkutils_new::image::Image,
+    pub render_target: vkutils::image::Image,
     pipeline: vk::Pipeline,
-    sampler: vkutils_new::sampler::Sampler,
+    sampler: vkutils::sampler::Sampler,
     device: ash::Device,
 }
 
@@ -22,7 +22,7 @@ impl std::ops::Drop for DepthMapDisplayPass {
 
 impl DepthMapDisplayPass {
     pub fn new(
-        ctx: &mut vkutils_new::context::VulkanContext,
+        ctx: &mut vkutils::context::VulkanContext,
         src_depth_map: (vk::Image, vk::ImageView),
     ) -> Self {
         let command_buffers = ctx
@@ -83,7 +83,7 @@ impl DepthMapDisplayPass {
         }
 
         // TODO shouldn't be here
-        let shadow_map_sampler = vkutils_new::sampler::Sampler::new(ctx.device.clone());
+        let shadow_map_sampler = vkutils::sampler::Sampler::new(ctx.device.clone());
         ctx.bindless_descriptor_set.update_sampler2d(
             src_depth_map.1,
             shadow_map_sampler.handle,
@@ -109,7 +109,7 @@ fn record(
     color_image: (vk::Image, vk::ImageView),
     extent: vk::Extent2D,
 ) {
-    vkutils_new::image_barrier(
+    vkutils::image_barrier(
         &device,
         command_buffer,
         color_image.0,
@@ -123,7 +123,7 @@ fn record(
             vk::AccessFlags::SHADER_WRITE,
             vk::PipelineStageFlags::FRAGMENT_SHADER,
         ),
-        vkutils_new::color_subresource_range(),
+        vkutils::color_subresource_range(),
     );
 
     let color_attachments = [vk::RenderingAttachmentInfo::default()

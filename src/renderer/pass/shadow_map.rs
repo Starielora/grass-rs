@@ -1,11 +1,11 @@
-use crate::vkutils_new::push_constants::GPUPushConstants;
-use crate::vkutils_new::vk_destroy::VkDestroy;
-use crate::{mesh, vkutils_new};
+use crate::vkutils::push_constants::GPUPushConstants;
+use crate::vkutils::vk_destroy::VkDestroy;
+use crate::{mesh, vkutils};
 use ash::vk;
 
 pub struct ShadowMapPass {
     pub command_buffers: [vk::CommandBuffer; 2],
-    pub output_depth_image: vkutils_new::image::Image,
+    pub output_depth_image: vkutils::image::Image,
 
     pipeline: vk::Pipeline,
     device: ash::Device,
@@ -22,7 +22,7 @@ impl std::ops::Drop for ShadowMapPass {
 
 impl ShadowMapPass {
     pub fn new(
-        ctx: &mut vkutils_new::context::VulkanContext,
+        ctx: &mut vkutils::context::VulkanContext,
         light_pov_camera_buffer_device_address: vk::DeviceAddress,
         meshes: &[mesh::Mesh],
     ) -> Self {
@@ -90,7 +90,7 @@ fn record(
             .expect("Failed to begin command buffer.");
     }
 
-    vkutils_new::image_barrier(
+    vkutils::image_barrier(
         &device,
         command_buffer,
         camera_pov_depth_image,
@@ -104,7 +104,7 @@ fn record(
             vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
             vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
         ),
-        vkutils_new::depth_subresource_range(),
+        vkutils::depth_subresource_range(),
     );
 
     let depth_attachment = vk::RenderingAttachmentInfo::default()

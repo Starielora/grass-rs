@@ -1,16 +1,16 @@
 use crate::gltf_loader;
-use crate::vkutils_new;
-use crate::vkutils_new::vk_destroy::VkDestroy;
+use crate::vkutils;
+use crate::vkutils::vk_destroy::VkDestroy;
 use ash::vk;
 
 pub struct MeshData {
-    pub vertex_buffer: vkutils_new::buffer::Buffer, // TODO this would be better to be mod private. I need to move skybox
-    pub index_buffer: vkutils_new::buffer::Buffer,
+    pub vertex_buffer: vkutils::buffer::Buffer, // TODO this would be better to be mod private. I need to move skybox
+    pub index_buffer: vkutils::buffer::Buffer,
     pub indices_count: usize,
 }
 
 impl MeshData {
-    pub fn new(gltf_file_path: &str, ctx: &vkutils_new::context::VulkanContext) -> Self {
+    pub fn new(gltf_file_path: &str, ctx: &vkutils::context::VulkanContext) -> Self {
         let (vertex_data, index_data) = gltf_loader::load(gltf_file_path);
 
         let vertex_buffer = ctx.upload_buffer(&vertex_data, vk::BufferUsageFlags::VERTEX_BUFFER);

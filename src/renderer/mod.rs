@@ -9,7 +9,7 @@ use crate::{
     grid, gui,
     gui_scene_node::GuiSceneNode,
     mesh, skybox,
-    vkutils_new::{self, vk_destroy::VkDestroy},
+    vkutils::{self, vk_destroy::VkDestroy},
 };
 use ash::vk;
 use target_render_picker::TargetRender;
@@ -27,7 +27,7 @@ struct Submits {
 }
 
 pub struct Renderer {
-    pub camera_data_buffer: vkutils_new::buffer::Buffer,
+    pub camera_data_buffer: vkutils::buffer::Buffer,
 
     pub gui_scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
     _cube_mesh_data: mesh::mesh_data::MeshData,
@@ -45,7 +45,7 @@ impl std::ops::Drop for Renderer {
 }
 
 impl Renderer {
-    pub fn new(ctx: &mut vkutils_new::context::VulkanContext) -> Self {
+    pub fn new(ctx: &mut vkutils::context::VulkanContext) -> Self {
         let camera_data_buffer = ctx.create_bar_buffer(
             size_of::<GPUCameraData>(),
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
@@ -176,7 +176,7 @@ impl Renderer {
     pub fn record_imgui_pass(
         &self,
         image_index: u32,
-        ctx: &vkutils_new::context::VulkanContext,
+        ctx: &vkutils::context::VulkanContext,
         gui: &mut gui::Gui,
     ) {
         let src_image = match self.picker.borrow().target_render {

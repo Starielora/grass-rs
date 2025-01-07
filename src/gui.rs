@@ -1,5 +1,5 @@
 use crate::gui_scene_node::GuiSceneNode;
-use crate::vkutils_new;
+use crate::vkutils;
 use ash::vk;
 
 pub struct Gui {
@@ -13,7 +13,7 @@ pub struct Gui {
 impl Gui {
     pub fn new(
         window: std::rc::Rc<winit::window::Window>,
-        ctx: &vkutils_new::context::VulkanContext,
+        ctx: &vkutils::context::VulkanContext,
         nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
     ) -> Self {
         let mut imguictx = imgui::Context::create();

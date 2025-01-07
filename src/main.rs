@@ -11,7 +11,7 @@ mod gui_scene_node;
 mod mesh;
 mod renderer;
 mod skybox;
-mod vkutils_new;
+mod vkutils;
 
 extern crate nalgebra_glm as glm;
 
