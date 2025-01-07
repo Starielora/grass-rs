@@ -1,7 +1,5 @@
 use ash::vk;
 
-use crate::camera::GPUCameraData;
-
 use super::{
     buffer, command_pool, debug_utils, descriptor_set, device, device_queue, image, instance,
     physical_device, semaphore, swapchain, vk_destroy::VkDestroy,
@@ -22,8 +20,6 @@ pub struct VulkanContext {
     pub transient_transfer_command_pool: command_pool::CommandPool,
     pub transient_graphics_command_pool: command_pool::CommandPool,
     pub depth_format: vk::Format,
-    // TODO move this to renderer
-    pub camera_data_buffer: buffer::Buffer,
 }
 
 impl VulkanContext {
@@ -77,18 +73,6 @@ impl VulkanContext {
             physical_device.graphics_queue_family_index,
         );
 
-        let camera_data_buffer = buffer::Buffer::new(
-            device.clone(),
-            size_of::<GPUCameraData>(),
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-            // BAR buffer
-            vk::MemoryPropertyFlags::HOST_VISIBLE
-                | vk::MemoryPropertyFlags::HOST_COHERENT
-                | vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            &physical_device.props,
-            &physical_device.memory_props,
-        );
-
         Self {
             entry,
             instance,
@@ -103,7 +87,6 @@ impl VulkanContext {
             transient_transfer_command_pool,
             transient_graphics_command_pool,
             depth_format: vk::Format::D32_SFLOAT, // TODO query from device,
-            camera_data_buffer,
         }
     }
 
@@ -167,10 +150,6 @@ impl VulkanContext {
             &self.physical_device.props,
             &self.physical_device.memory_props,
         )
-    }
-
-    pub fn create_semaphore(&self) -> semaphore::Semaphore {
-        semaphore::Semaphore::new(self.device.clone())
     }
 
     pub fn create_semaphore_vk(&self) -> vk::Semaphore {

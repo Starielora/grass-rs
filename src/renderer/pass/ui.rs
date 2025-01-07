@@ -105,10 +105,7 @@ impl UiPass {
             device.cmd_begin_rendering(command_buffer, &rendering_info);
         }
 
-        // TODO fix this in the future... is it possible to prerecord?
-        // gui.prepare_frame(&window, scene_nodes);
-
-        gui.cmd_draw2(command_buffer);
+        gui.cmd_draw(command_buffer);
 
         unsafe { device.cmd_end_rendering(command_buffer) };
 

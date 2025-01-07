@@ -5,13 +5,15 @@ mod scene_render;
 use crate::{
     camera::GPUCameraData,
     dir_light::{self, GPUDirLight},
-    grid, gui, mesh, skybox,
-    vkutils_new::{self},
+    grid, gui,
+    gui_scene_node::GuiSceneNode,
+    mesh, skybox,
+    vkutils_new::{self, vk_destroy::VkDestroy},
 };
 use ash::vk;
 
 struct Passes {
-    shadow_map: pass::shadow_map::ShadowMapPass,
+    _shadow_map: pass::shadow_map::ShadowMapPass,
     scene: pass::scene::SceneColorPass,
     depth_display: pass::depth_map_display::DepthMapDisplayPass,
     ui: pass::ui::UiPass,
@@ -23,18 +25,22 @@ struct Submits {
 }
 
 pub struct Renderer {
-    camera_data_buffer: vkutils_new::buffer::Buffer,
+    pub camera_data_buffer: vkutils_new::buffer::Buffer,
 
-    cube_mesh_data: mesh::mesh_data::MeshData,
-    meshes: std::vec::Vec<mesh::Mesh>,
-    dir_light: dir_light::DirLight,
+    pub gui_scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
+    _cube_mesh_data: mesh::mesh_data::MeshData,
     passes: Passes,
     submits: Submits,
 
-    // TODO do something with this shit
-    skybox: skybox::Skybox,
-    grid: grid::Grid,
+    _grid: grid::Grid,
+    // TODO
     scene_pass: bool,
+}
+
+impl std::ops::Drop for Renderer {
+    fn drop(&mut self) {
+        self.camera_data_buffer.vk_destroy();
+    }
 }
 
 impl Renderer {
@@ -44,10 +50,10 @@ impl Renderer {
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
 
-        let cube_mesh_data = mesh::mesh_data::MeshData::new2("assets/cube.gltf", &ctx);
+        let cube_mesh_data = mesh::mesh_data::MeshData::new("assets/cube.gltf", &ctx);
         let mut meshes = vec![
-            mesh::Mesh::new2(&cube_mesh_data, &ctx, "Cube"),
-            mesh::Mesh::new2(&cube_mesh_data, &ctx, "Floor"),
+            mesh::Mesh::new(&cube_mesh_data, &ctx, "Cube"),
+            mesh::Mesh::new(&cube_mesh_data, &ctx, "Floor"),
         ];
 
         // set init transformations. Technically I could move these to cube constructor
@@ -65,7 +71,7 @@ impl Renderer {
             );
         }
 
-        let dir_light = dir_light::DirLight::new2(
+        let dir_light = dir_light::DirLight::new(
             GPUDirLight {
                 dir: glm::make_vec4(&[1.0, -0.5, 0.5, 0.0]),
                 color: glm::make_vec4(&[1.0, 1.0, 1.0, 0.0]),
@@ -97,7 +103,7 @@ impl Renderer {
             ui_pass.command_buffers.clone(),
         );
 
-        let skybox = skybox::Skybox::new2(
+        let skybox = skybox::Skybox::new(
             &ctx,
             cube_mesh_data.vertex_buffer.handle,
             cube_mesh_data.index_buffer.handle,
@@ -116,6 +122,7 @@ impl Renderer {
             ctx,
             &skybox,
             &grid,
+            camera_data_buffer.device_address.unwrap(),
             dir_light.buffer_device_address,
             &meshes,
         );
@@ -127,13 +134,23 @@ impl Renderer {
             ui_pass.command_buffers.clone(),
         );
 
+        let mut gui_scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>> =
+            vec![];
+
+        {
+            gui_scene_nodes.push(std::rc::Rc::new(std::cell::RefCell::new(dir_light)));
+            gui_scene_nodes.push(std::rc::Rc::new(std::cell::RefCell::new(skybox)));
+
+            for mesh in meshes {
+                gui_scene_nodes.push(std::rc::Rc::new(std::cell::RefCell::new(mesh)));
+            }
+        }
+
         Self {
             camera_data_buffer,
-            cube_mesh_data,
-            meshes,
-            dir_light,
+            _cube_mesh_data: cube_mesh_data,
             passes: Passes {
-                shadow_map: shadow_map_pass,
+                _shadow_map: shadow_map_pass,
                 scene: scene_pass,
                 depth_display: depth_map_display_pass,
                 ui: ui_pass,
@@ -142,9 +159,9 @@ impl Renderer {
                 shadow_map_render,
                 scene_color_render: scene_render,
             },
-            skybox,
-            grid,
+            _grid: grid,
             scene_pass: true,
+            gui_scene_nodes,
         }
     }
 

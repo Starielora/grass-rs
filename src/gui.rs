@@ -1,18 +1,21 @@
 use crate::gui_scene_node::GuiSceneNode;
-use crate::vkutils_new::push_constants::GPUPushConstants;
-use crate::{vkutils, vkutils_new};
+use crate::vkutils_new;
 use ash::vk;
-
-use crate::drawable;
 
 pub struct Gui {
     platform: imgui_winit_support::WinitPlatform,
     imguictx: imgui::Context,
     imgui_renderer: imgui_rs_vulkan_renderer::Renderer,
+    window: std::rc::Rc<winit::window::Window>,
+    scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
 }
 
 impl Gui {
-    pub fn new2(window: &winit::window::Window, ctx: &vkutils_new::context::VulkanContext) -> Self {
+    pub fn new(
+        window: std::rc::Rc<winit::window::Window>,
+        ctx: &vkutils_new::context::VulkanContext,
+        nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
+    ) -> Self {
         let mut imguictx = imgui::Context::create();
         imguictx.set_ini_filename(None);
 
@@ -37,7 +40,7 @@ impl Gui {
             dynamic_rendering,
             &mut imguictx,
             Some(imgui_rs_vulkan_renderer::Options {
-                in_flight_frames: 1,
+                in_flight_frames: 2,
                 sample_count: vk::SampleCountFlags::TYPE_8,
                 ..Default::default()
             }),
@@ -48,45 +51,8 @@ impl Gui {
             platform,
             imguictx,
             imgui_renderer,
-        }
-    }
-
-    pub fn new(window: &winit::window::Window, vkctx: &vkutils::Context) -> Self {
-        let mut imguictx = imgui::Context::create();
-        imguictx.set_ini_filename(None);
-
-        let mut platform = imgui_winit_support::WinitPlatform::new(&mut imguictx);
-        platform.attach_window(
-            imguictx.io_mut(),
-            &window,
-            imgui_winit_support::HiDpiMode::Rounded,
-        );
-
-        let dynamic_rendering = imgui_rs_vulkan_renderer::DynamicRendering {
-            color_attachment_format: vkctx.swapchain.surface_format.format,
-            depth_attachment_format: Some(vkctx.depth_image.format),
-        };
-
-        let imgui_renderer = imgui_rs_vulkan_renderer::Renderer::with_default_allocator(
-            &vkctx.instance,
-            vkctx.physical_device.handle,
-            vkctx.device.clone(),
-            vkctx.graphics_present_queue,
-            vkctx.graphics_command_pool.handle,
-            dynamic_rendering,
-            &mut imguictx,
-            Some(imgui_rs_vulkan_renderer::Options {
-                in_flight_frames: 1,
-                sample_count: vk::SampleCountFlags::TYPE_8,
-                ..Default::default()
-            }),
-        )
-        .expect("Could not create imgui renderer");
-
-        Self {
-            platform,
-            imguictx,
-            imgui_renderer,
+            window,
+            scene_nodes: nodes,
         }
     }
 
@@ -96,7 +62,6 @@ impl Gui {
 
     pub fn handle_winit_window_event(
         self: &mut Self,
-        window: &winit::window::Window,
         window_id: winit::window::WindowId,
         event: &winit::event::WindowEvent,
     ) {
@@ -108,43 +73,27 @@ impl Gui {
         };
 
         self.platform
-            .handle_event::<()>(self.imguictx.io_mut(), &window, &ev);
+            .handle_event::<()>(self.imguictx.io_mut(), &self.window, &ev);
     }
 
-    pub fn prepare_frame(
-        self: &mut Self,
-        window: &winit::window::Window,
-        scene_nodes: &mut std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
-    ) {
+    pub fn prepare_frame(self: &mut Self) {
         let ui = self.imguictx.frame();
+        let nodes_iter = self.scene_nodes.iter_mut();
 
         ui.window("Scene")
             .size([300.0, 500.0], imgui::Condition::FirstUseEver)
             .build(|| {
-                for node in scene_nodes {
+                for node in nodes_iter {
                     node.borrow_mut().update(ui);
                 }
             });
 
         self.platform
-            .prepare_frame(self.imguictx.io_mut(), &window)
+            .prepare_frame(self.imguictx.io_mut(), &self.window)
             .expect("Failed to prepare frame.");
     }
 
-    pub fn cmd_draw2(&mut self, command_buffer: vk::CommandBuffer) {
-        self.imgui_renderer
-            .cmd_draw(command_buffer, self.imguictx.render())
-            .expect("Could not draw imgui");
-    }
-}
-
-impl drawable::Drawable for Gui {
-    fn cmd_draw(
-        self: &mut Self,
-        command_buffer: vk::CommandBuffer,
-        _pipeline: vk::Pipeline,
-        _: &mut GPUPushConstants,
-    ) {
+    pub fn cmd_draw(&mut self, command_buffer: vk::CommandBuffer) {
         self.imgui_renderer
             .cmd_draw(command_buffer, self.imguictx.render())
             .expect("Could not draw imgui");

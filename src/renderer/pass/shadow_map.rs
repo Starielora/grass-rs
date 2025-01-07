@@ -1,4 +1,5 @@
 use crate::vkutils_new::push_constants::GPUPushConstants;
+use crate::vkutils_new::vk_destroy::VkDestroy;
 use crate::{mesh, vkutils_new};
 use ash::vk;
 
@@ -7,6 +8,16 @@ pub struct ShadowMapPass {
     pub output_depth_image: vkutils_new::image::Image,
 
     pipeline: vk::Pipeline,
+    device: ash::Device,
+}
+
+impl std::ops::Drop for ShadowMapPass {
+    fn drop(&mut self) {
+        self.output_depth_image.vk_destroy();
+        unsafe {
+            self.device.destroy_pipeline(self.pipeline, None);
+        }
+    }
 }
 
 impl ShadowMapPass {
@@ -52,6 +63,7 @@ impl ShadowMapPass {
             command_buffers,
             output_depth_image: depth_image,
             pipeline,
+            device: ctx.device.clone(),
         }
     }
 }
@@ -121,7 +133,7 @@ fn record(
     }
 
     for mesh in meshes {
-        mesh.cmd_draw2(
+        mesh.cmd_draw(
             &device,
             command_buffer,
             pipeline_layout,

@@ -108,6 +108,7 @@ impl vk_destroy::VkDestroy for Swapchain {
             self.swapchain_device
                 .destroy_swapchain(self.swapchain, None);
             self.surface_instance.destroy_surface(self.surface, None);
+            self.device.destroy_semaphore(self.acquire_semaphore, None);
         }
     }
 }

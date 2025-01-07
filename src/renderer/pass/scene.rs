@@ -2,7 +2,7 @@ use ash::vk;
 
 use crate::{
     grid, mesh, skybox,
-    vkutils_new::{self, push_constants::GPUPushConstants},
+    vkutils_new::{self, push_constants::GPUPushConstants, vk_destroy::VkDestroy},
 };
 
 pub struct SceneColorPass {
@@ -12,6 +12,17 @@ pub struct SceneColorPass {
     pub depth_image: vkutils_new::image::Image,
 
     pipeline: vk::Pipeline,
+    device: ash::Device,
+}
+
+impl std::ops::Drop for SceneColorPass {
+    fn drop(&mut self) {
+        self.render_target.vk_destroy();
+        self.depth_image.vk_destroy();
+        unsafe {
+            self.device.destroy_pipeline(self.pipeline, None);
+        }
+    }
 }
 
 impl SceneColorPass {
@@ -19,6 +30,7 @@ impl SceneColorPass {
         ctx: &mut vkutils_new::context::VulkanContext,
         skybox: &skybox::Skybox,
         grid: &grid::Grid,
+        camera_data_buffer_address: vk::DeviceAddress,
         dir_light_data_buffer_address: vk::DeviceAddress,
         meshes: &[mesh::Mesh],
     ) -> Self {
@@ -70,7 +82,7 @@ impl SceneColorPass {
                 &grid,
                 pipeline,
                 pipeline_layout,
-                ctx.camera_data_buffer.device_address.unwrap(),
+                camera_data_buffer_address,
                 dir_light_data_buffer_address,
                 meshes,
             );
@@ -81,6 +93,7 @@ impl SceneColorPass {
             render_target,
             depth_image,
             pipeline,
+            device: ctx.device.clone(),
         }
     }
 }
@@ -134,7 +147,7 @@ fn record(
     }
 
     for mesh in meshes {
-        mesh.cmd_draw2(
+        mesh.cmd_draw(
             &device,
             command_buffer,
             pipeline_layout,

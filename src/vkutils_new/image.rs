@@ -5,7 +5,6 @@ pub struct Image {
     pub handle: vk::Image,
     pub view: vk::ImageView,
     pub memory: vk::DeviceMemory,
-    pub format: vk::Format,
     device: ash::Device,
 }
 
@@ -64,7 +63,6 @@ impl Image {
             handle: image,
             view,
             memory,
-            format,
             device,
         }
     }

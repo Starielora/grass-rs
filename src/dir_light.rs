@@ -5,7 +5,6 @@ use ash::vk;
 use crate::{
     camera::{self, GPUCameraData},
     gui_scene_node::GuiSceneNode,
-    vkutils,
     vkutils_new::{self, vk_destroy::VkDestroy},
 };
 
@@ -25,7 +24,7 @@ pub struct DirLight {
 }
 
 impl DirLight {
-    pub fn new2(data: GPUDirLight, ctx: &vkutils_new::context::VulkanContext) -> Self {
+    pub fn new(data: GPUDirLight, ctx: &vkutils_new::context::VulkanContext) -> Self {
         let buffer = ctx.create_bar_buffer(
             std::mem::size_of::<GPUDirLight>(),
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
@@ -50,46 +49,6 @@ impl DirLight {
             vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
             vk::ImageAspectFlags::DEPTH,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
-        );
-
-        Self {
-            gpu_data: data,
-            buffer,
-            buffer_device_address,
-            camera_buffer,
-            depth_image,
-        }
-    }
-
-    pub fn new(data: GPUDirLight, vkctx: &vkutils::Context) -> DirLight {
-        let buffer = vkctx.create_bar_buffer(
-            std::mem::size_of::<GPUDirLight>(),
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-        );
-
-        let buffer_device_address = buffer.device_address.unwrap();
-
-        buffer.update_contents(&[data]);
-
-        let camera_buffer = vkctx.create_bar_buffer(
-            std::mem::size_of::<GPUCameraData>(),
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-        );
-
-        update_camera_buffer(&camera_buffer, &data);
-
-        let depth_image = vkutils_new::image::Image::new(
-            vkctx.device.clone(),
-            vk::ImageCreateFlags::empty(),
-            vk::Format::D32_SFLOAT, // TODO cleanup situation with depth format as I'm hardcoding
-            // it everywhere T_T
-            vkctx.swapchain.extent.clone(),
-            1,
-            vk::SampleCountFlags::TYPE_8,
-            vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
-            vk::ImageAspectFlags::DEPTH,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            &vkctx.physical_device.memory_props,
         );
 
         Self {

@@ -63,18 +63,6 @@ impl CommandPool {
         command_buffers
     }
 
-    fn free_command_buffer(&mut self, command_buffer: vk::CommandBuffer) {
-        let pos_to_remove = self
-            .command_buffers
-            .iter()
-            .position(|&cmdbuf| cmdbuf == command_buffer)
-            .unwrap_or_else(|| panic!("Failed to find command buffer in this pool."));
-
-        self.command_buffers.remove(pos_to_remove);
-
-        self.free_unmanaged_command_buffer(command_buffer);
-    }
-
     fn free_unmanaged_command_buffer(&self, command_buffer: vk::CommandBuffer) {
         let cmd_bfrs = [command_buffer];
         unsafe {

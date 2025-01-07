@@ -10,7 +10,6 @@ pub mod fence;
 pub mod image;
 pub mod instance;
 pub mod physical_device;
-pub mod pipeline;
 pub mod push_constants;
 pub mod sampler;
 pub mod semaphore;

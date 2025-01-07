@@ -16,6 +16,20 @@ struct Semaphores {
 pub struct ColorSceneRender {
     command_buffers: CommandBuffers,
     semaphores: Semaphores,
+    device: ash::Device,
+}
+
+impl std::ops::Drop for ColorSceneRender {
+    fn drop(&mut self) {
+        unsafe {
+            self.device
+                .destroy_semaphore(self.semaphores.shadow_map_draw_finished, None);
+            self.device
+                .destroy_semaphore(self.semaphores.scene_render_finished, None);
+            self.device
+                .destroy_semaphore(self.semaphores.gui_finished, None);
+        }
+    }
 }
 
 impl ColorSceneRender {
@@ -36,6 +50,7 @@ impl ColorSceneRender {
                 scene_render_finished: ctx.create_semaphore_vk(),
                 gui_finished: ctx.create_semaphore_vk(),
             },
+            device: ctx.device.clone(),
         }
     }
 

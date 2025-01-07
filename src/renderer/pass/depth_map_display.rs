@@ -1,12 +1,23 @@
 use ash::vk;
 
-use crate::vkutils_new;
+use crate::vkutils_new::{self, vk_destroy::VkDestroy};
 
 pub struct DepthMapDisplayPass {
     pub command_buffers: [vk::CommandBuffer; 2],
     pub render_target: vkutils_new::image::Image,
     pipeline: vk::Pipeline,
     sampler: vkutils_new::sampler::Sampler,
+    device: ash::Device,
+}
+
+impl std::ops::Drop for DepthMapDisplayPass {
+    fn drop(&mut self) {
+        self.render_target.vk_destroy();
+        self.sampler.vk_destroy();
+        unsafe {
+            self.device.destroy_pipeline(self.pipeline, None);
+        }
+    }
 }
 
 impl DepthMapDisplayPass {
@@ -85,6 +96,7 @@ impl DepthMapDisplayPass {
             render_target: depth_display_render_target,
             pipeline,
             sampler: shadow_map_sampler,
+            device: ctx.device.clone(),
         }
     }
 }

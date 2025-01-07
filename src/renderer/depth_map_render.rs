@@ -19,6 +19,19 @@ pub struct DepthMapRender {
     device: ash::Device,
 }
 
+impl std::ops::Drop for DepthMapRender {
+    fn drop(&mut self) {
+        unsafe {
+            self.device
+                .destroy_semaphore(self.semaphores.shadow_map_draw_finished, None);
+            self.device
+                .destroy_semaphore(self.semaphores.depth_map_render_finished, None);
+            self.device
+                .destroy_semaphore(self.semaphores.gui_finished, None);
+        }
+    }
+}
+
 impl DepthMapRender {
     pub fn new(
         ctx: &mut vkutils_new::context::VulkanContext,

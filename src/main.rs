@@ -3,9 +3,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 
 mod app;
 mod camera;
-mod depth_map_display_pipeline;
 mod dir_light;
-mod drawable;
 mod gltf_loader;
 mod grid;
 mod gui;
@@ -13,7 +11,6 @@ mod gui_scene_node;
 mod mesh;
 mod renderer;
 mod skybox;
-mod vkutils;
 mod vkutils_new;
 
 extern crate nalgebra_glm as glm;
