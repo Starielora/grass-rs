@@ -159,9 +159,9 @@ impl Renderer {
             vec![];
 
         {
+            gui_scene_nodes.push(picker.clone());
             gui_scene_nodes.push(std::rc::Rc::new(std::cell::RefCell::new(dir_light)));
             gui_scene_nodes.push(std::rc::Rc::new(std::cell::RefCell::new(skybox)));
-            gui_scene_nodes.push(picker.clone());
 
             for mesh in meshes {
                 gui_scene_nodes.push(std::rc::Rc::new(std::cell::RefCell::new(mesh)));

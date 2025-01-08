@@ -137,7 +137,12 @@ impl GuiSceneNode for Mesh {
     fn update(self: &mut Self, ui: &imgui::Ui) {
         let mut changed = [false, false, false];
 
-        if ui.tree_node(format!("{}", self.gui_data.name)).is_some() {
+        if ui
+            .tree_node_config(format!("{}", self.gui_data.name))
+            .opened(true, imgui::Condition::Appearing)
+            .push()
+            .is_some()
+        {
             ui.indent();
             changed[0] = imgui::Drag::new(format!("Translation##{}", self.gui_data.id))
                 .range(-50.0, 50.0)

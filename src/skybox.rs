@@ -556,7 +556,12 @@ impl std::ops::Drop for Skybox {
 impl GuiSceneNode for Skybox {
     fn update(self: &mut Self, ui: &imgui::Ui) {
         let mut refresh = false;
-        if ui.tree_node("Skybox").is_some() {
+        if ui
+            .tree_node_config("Skybox")
+            .opened(true, imgui::Condition::Appearing)
+            .push()
+            .is_some()
+        {
             ui.indent();
             if ui.selectable("daylight") {
                 self.current_resource_id = 0;

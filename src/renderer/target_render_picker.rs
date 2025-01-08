@@ -12,7 +12,12 @@ pub struct TargetRenderPicker {
 
 impl gui_scene_node::GuiSceneNode for TargetRenderPicker {
     fn update(self: &mut Self, ui: &imgui::Ui) {
-        if ui.tree_node("Target render").is_some() {
+        if ui
+            .tree_node_config("Target render")
+            .opened(true, imgui::Condition::Appearing)
+            .push()
+            .is_some()
+        {
             ui.indent();
             if ui.selectable("Scene") {
                 self.target_render = TargetRender::Scene;

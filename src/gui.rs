@@ -88,6 +88,9 @@ impl Gui {
                 }
             });
 
+        // let mut show = true;
+        // ui.show_demo_window(&mut show);
+
         self.platform
             .prepare_frame(self.imguictx.io_mut(), &self.window)
             .expect("Failed to prepare frame.");
