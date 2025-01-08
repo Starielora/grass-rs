@@ -33,4 +33,5 @@ layout(push_constant) uniform constants
     CameraData camera_data;
     DirLightBuffer dir_light;
     SkyboxData skybox_data;
+    uint depth_sampler_index;
 } push_constants;

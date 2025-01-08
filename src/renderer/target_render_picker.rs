@@ -2,6 +2,7 @@ use crate::gui_scene_node;
 
 pub enum TargetRender {
     Scene,
+    SceneDepth,
     ShadowMap,
 }
 
@@ -15,6 +16,9 @@ impl gui_scene_node::GuiSceneNode for TargetRenderPicker {
             ui.indent();
             if ui.selectable("Scene") {
                 self.target_render = TargetRender::Scene;
+            }
+            if ui.selectable("Scene depth") {
+                self.target_render = TargetRender::SceneDepth;
             }
             if ui.selectable("Shadow map") {
                 self.target_render = TargetRender::ShadowMap;

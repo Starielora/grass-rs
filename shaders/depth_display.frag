@@ -18,6 +18,6 @@ float LinearizeDepth(float depth)
 void main() {
     
     // TODO parameterize resource_id
-	float depth = texture(depth_textures[0], in_uv).r;
+	float depth = texture(depth_textures[push_constants.depth_sampler_index], in_uv).r;
     out_color = vec4(vec3(1.0 - LinearizeDepth(depth)), 1.0);
 }

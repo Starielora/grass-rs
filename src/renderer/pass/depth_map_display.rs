@@ -1,6 +1,6 @@
 use ash::vk;
 
-use crate::vkutils::{self, vk_destroy::VkDestroy};
+use crate::vkutils::{self, push_constants::GPUPushConstants, vk_destroy::VkDestroy};
 
 pub struct DepthMapDisplayPass {
     pub command_buffers: [vk::CommandBuffer; 2],
@@ -51,6 +51,17 @@ impl DepthMapDisplayPass {
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
         );
 
+        static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let resource_id: u32 = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // TODO could be one sampler for multiple images
+        let shadow_map_sampler = vkutils::sampler::Sampler::new(ctx.device.clone());
+        ctx.bindless_descriptor_set.update_sampler2d(
+            src_depth_map.1,
+            shadow_map_sampler.handle,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            resource_id,
+        );
+
         for command_buffer in command_buffers {
             unsafe {
                 let begin_info = vk::CommandBufferBeginInfo::default();
@@ -66,6 +77,7 @@ impl DepthMapDisplayPass {
                 &ctx.device,
                 command_buffer,
                 pipeline,
+                ctx.bindless_descriptor_set.pipeline_layout,
                 // TODO double buffering
                 src_depth_map,
                 (
@@ -73,6 +85,7 @@ impl DepthMapDisplayPass {
                     depth_display_render_target.view,
                 ),
                 ctx.swapchain.extent,
+                resource_id,
             );
 
             unsafe {
@@ -81,15 +94,6 @@ impl DepthMapDisplayPass {
                     .expect("Failed to end command buffer");
             }
         }
-
-        // TODO shouldn't be here
-        let shadow_map_sampler = vkutils::sampler::Sampler::new(ctx.device.clone());
-        ctx.bindless_descriptor_set.update_sampler2d(
-            src_depth_map.1,
-            shadow_map_sampler.handle,
-            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            0, // TODO resource id
-        );
 
         Self {
             command_buffers,
@@ -105,9 +109,11 @@ fn record(
     device: &ash::Device,
     command_buffer: vk::CommandBuffer,
     pipeline: vk::Pipeline,
+    pipeline_layout: vk::PipelineLayout,
     src_depth_image: (vk::Image, vk::ImageView),
     color_image: (vk::Image, vk::ImageView),
     extent: vk::Extent2D,
+    sampler_id: u32,
 ) {
     vkutils::image_barrier(
         &device,
@@ -152,7 +158,20 @@ fn record(
         .color_attachments(&color_attachments)
         .depth_attachment(&depth_attachment);
 
+    let mut push_constants = GPUPushConstants::default();
+    push_constants.depth_sampler_index = sampler_id;
+
     unsafe {
+        device.cmd_push_constants(
+            command_buffer,
+            pipeline_layout,
+            vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+            0,
+            std::slice::from_raw_parts(
+                (&push_constants as *const GPUPushConstants) as *const u8,
+                std::mem::size_of::<GPUPushConstants>(),
+            ),
+        );
         device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline);
         device.cmd_begin_rendering(command_buffer, &rendering_info);
         device.cmd_draw(command_buffer, 3, 1, 0, 0);

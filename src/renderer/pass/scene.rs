@@ -66,7 +66,7 @@ impl SceneColorPass {
             extent,
             1,
             vk::SampleCountFlags::TYPE_8,
-            vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+            vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
             vk::ImageAspectFlags::DEPTH,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
         );

@@ -17,13 +17,15 @@ use target_render_picker::TargetRender;
 struct Passes {
     _shadow_map: pass::shadow_map::ShadowMapPass,
     scene: pass::scene::SceneColorPass,
-    depth_display: pass::depth_map_display::DepthMapDisplayPass,
+    scene_depth_map_display: pass::depth_map_display::DepthMapDisplayPass,
+    shadow_map_display: pass::depth_map_display::DepthMapDisplayPass,
     ui: pass::ui::UiPass,
 }
 
 struct Submits {
     shadow_map_render: depth_map_render::DepthMapRender,
     scene_color_render: scene_render::ColorSceneRender,
+    scene_depth_render: depth_map_render::DepthMapRender,
 }
 
 pub struct Renderer {
@@ -89,7 +91,7 @@ impl Renderer {
             &meshes,
         );
 
-        let depth_map_display_pass = pass::depth_map_display::DepthMapDisplayPass::new(
+        let shadow_map_display_pass = pass::depth_map_display::DepthMapDisplayPass::new(
             ctx,
             (
                 shadow_map_pass.output_depth_image.handle,
@@ -100,7 +102,7 @@ impl Renderer {
         let shadow_map_render = depth_map_render::DepthMapRender::new(
             ctx,
             shadow_map_pass.command_buffers.clone(),
-            depth_map_display_pass.command_buffers.clone(),
+            shadow_map_display_pass.command_buffers.clone(),
             ui_pass.command_buffers.clone(),
         );
 
@@ -135,6 +137,18 @@ impl Renderer {
             ui_pass.command_buffers.clone(),
         );
 
+        let scene_depth_map_display_pass = pass::depth_map_display::DepthMapDisplayPass::new(
+            ctx,
+            (scene_pass.depth_image.handle, scene_pass.depth_image.view),
+        );
+
+        let scene_depth_render = depth_map_render::DepthMapRender::new(
+            ctx,
+            scene_pass.command_buffers.clone(),
+            scene_depth_map_display_pass.command_buffers.clone(),
+            ui_pass.command_buffers.clone(),
+        );
+
         let picker = std::rc::Rc::new(std::cell::RefCell::new(
             target_render_picker::TargetRenderPicker {
                 target_render: TargetRender::Scene,
@@ -160,12 +174,14 @@ impl Renderer {
             passes: Passes {
                 _shadow_map: shadow_map_pass,
                 scene: scene_pass,
-                depth_display: depth_map_display_pass,
+                shadow_map_display: shadow_map_display_pass,
                 ui: ui_pass,
+                scene_depth_map_display: scene_depth_map_display_pass,
             },
             submits: Submits {
                 shadow_map_render,
                 scene_color_render: scene_render,
+                scene_depth_render,
             },
             _grid: grid,
             picker,
@@ -185,7 +201,11 @@ impl Renderer {
                 (img.handle, img.view)
             }
             TargetRender::ShadowMap => {
-                let img = &self.passes.depth_display.render_target;
+                let img = &self.passes.shadow_map_display.render_target;
+                (img.handle, img.view)
+            }
+            TargetRender::SceneDepth => {
+                let img = &self.passes.scene_depth_map_display.render_target;
                 (img.handle, img.view)
             }
         };
@@ -215,6 +235,12 @@ impl Renderer {
                 image_index as usize,
             ),
             TargetRender::ShadowMap => self.submits.shadow_map_render.submit(
+                device,
+                queue,
+                swapchain_acquire_semaphore,
+                image_index as usize,
+            ),
+            TargetRender::SceneDepth => self.submits.scene_depth_render.submit(
                 device,
                 queue,
                 swapchain_acquire_semaphore,
