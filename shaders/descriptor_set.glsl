@@ -31,6 +31,7 @@ layout(push_constant) uniform constants
 {
     MeshData mesh_data;
     CameraData camera_data;
+    CameraData dir_light_camera_data;
     DirLightBuffer dir_light;
     SkyboxData skybox_data;
     uint depth_sampler_index;

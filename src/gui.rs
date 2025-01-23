@@ -1,4 +1,5 @@
-use crate::gui_scene_node::GuiSceneNode;
+use crate::camera::Camera;
+use crate::gui_scene_node::{GuiCameraNode, GuiSceneNode};
 use crate::vkutils;
 use ash::vk;
 
@@ -8,13 +9,15 @@ pub struct Gui {
     imgui_renderer: imgui_rs_vulkan_renderer::Renderer,
     window: std::rc::Rc<winit::window::Window>,
     scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
+    //camera_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiCameraNode>>>,
 }
 
 impl Gui {
     pub fn new(
         window: std::rc::Rc<winit::window::Window>,
         ctx: &vkutils::context::VulkanContext,
-        nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
+        scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
+        //camera_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiCameraNode>>>,
     ) -> Self {
         let mut imguictx = imgui::Context::create();
         imguictx.set_ini_filename(None);
@@ -52,7 +55,7 @@ impl Gui {
             imguictx,
             imgui_renderer,
             window,
-            scene_nodes: nodes,
+            scene_nodes,
         }
     }
 
@@ -76,20 +79,29 @@ impl Gui {
             .handle_event::<()>(self.imguictx.io_mut(), &self.window, &ev);
     }
 
-    pub fn prepare_frame(self: &mut Self) {
+    pub fn prepare_frame(self: &mut Self, camera: &mut Camera) {
         let ui = self.imguictx.frame();
-        let nodes_iter = self.scene_nodes.iter_mut();
 
+        ui.window("Camera")
+            .size([300.0, 400.0], imgui::Condition::FirstUseEver)
+            .position([0.0, 0.0], imgui::Condition::FirstUseEver)
+            .build(|| {
+                camera.update(ui);
+            });
+
+        let scene_nodes_iter = self.scene_nodes.iter_mut();
         ui.window("Scene")
             .size([300.0, 500.0], imgui::Condition::FirstUseEver)
+            .position([0.0, 400.0], imgui::Condition::FirstUseEver)
             .build(|| {
-                for node in nodes_iter {
+                for node in scene_nodes_iter {
                     node.borrow_mut().update(ui);
                 }
             });
 
-        // let mut show = true;
-        // ui.show_demo_window(&mut show);
+        //let mut show = true;
+        //ui.show_demo_window(&mut show);
+        //ui.show_metrics_window(&mut show);
 
         self.platform
             .prepare_frame(self.imguictx.io_mut(), &self.window)

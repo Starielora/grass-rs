@@ -32,6 +32,9 @@ impl SceneColorPass {
         grid: &grid::Grid,
         camera_data_buffer_address: vk::DeviceAddress,
         dir_light_data_buffer_address: vk::DeviceAddress,
+        dir_light_camera_buffer_address: vk::DeviceAddress,
+        shadow_map: (vk::Image, vk::ImageView),
+        sampler: vk::Sampler,
         meshes: &[mesh::Mesh],
     ) -> Self {
         let command_buffers = ctx
@@ -71,12 +74,22 @@ impl SceneColorPass {
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
         );
 
+        // TODO hardocded. This should be common with depth_map_display,
+        let resource_id = 2;
+        ctx.bindless_descriptor_set.update_sampler2d(
+            shadow_map.1,
+            sampler,
+            vk::ImageLayout::DEPTH_READ_ONLY_OPTIMAL,
+            resource_id,
+        );
+
         for command_buffer in command_buffers {
             record(
                 &ctx.device,
                 command_buffer,
                 (render_target.handle, render_target.view),
                 (depth_image.handle, depth_image.view),
+                (shadow_map.0, shadow_map.1),
                 extent,
                 &skybox,
                 &grid,
@@ -84,6 +97,8 @@ impl SceneColorPass {
                 pipeline_layout,
                 camera_data_buffer_address,
                 dir_light_data_buffer_address,
+                dir_light_camera_buffer_address,
+                resource_id,
                 meshes,
             );
         }
@@ -103,6 +118,7 @@ fn record(
     command_buffer: vk::CommandBuffer,
     color_image: (vk::Image, vk::ImageView),
     depth_image: (vk::Image, vk::ImageView),
+    shadow_map_image: (vk::Image, vk::ImageView),
     extent: vk::Extent2D,
     skybox: &crate::skybox::Skybox,
     grid: &crate::grid::Grid,
@@ -110,6 +126,8 @@ fn record(
     pipeline_layout: vk::PipelineLayout,
     camera_buffer_address: vk::DeviceAddress,
     dir_light_buffer_address: vk::DeviceAddress,
+    dir_light_camera_buffer_address: vk::DeviceAddress,
+    depth_sampler_index: u32,
     meshes: &[mesh::Mesh],
 ) {
     let begin_info = vk::CommandBufferBeginInfo {
@@ -126,6 +144,7 @@ fn record(
         command_buffer,
         color_image.0,
         depth_image.0,
+        shadow_map_image.0,
     );
 
     begin_scene_rendering(
@@ -139,6 +158,8 @@ fn record(
     let mut push_constants = GPUPushConstants::default();
     push_constants.camera_data_buffer_address = camera_buffer_address;
     push_constants.dir_light_buffer_address = dir_light_buffer_address;
+    push_constants.dir_light_camera_buffer_address = dir_light_camera_buffer_address;
+    push_constants.depth_sampler_index = depth_sampler_index;
 
     skybox.record(command_buffer, &mut push_constants);
 
@@ -218,11 +239,29 @@ fn record_image_barriers_for_scene_rendering(
     command_buffer: vk::CommandBuffer,
     color_image: vk::Image,
     depth_image: vk::Image,
+    shadow_map_image: vk::Image,
 ) {
     let color_subresource_range = vk::ImageSubresourceRange::default()
         .aspect_mask(vk::ImageAspectFlags::COLOR)
         .level_count(1)
         .layer_count(vk::REMAINING_ARRAY_LAYERS);
+
+    vkutils::image_barrier(
+        device,
+        command_buffer,
+        shadow_map_image,
+        (
+            vk::ImageLayout::DEPTH_READ_ONLY_OPTIMAL,
+            vk::AccessFlags::NONE,
+            vk::PipelineStageFlags::TOP_OF_PIPE,
+        ),
+        (
+            vk::ImageLayout::DEPTH_READ_ONLY_OPTIMAL,
+            vk::AccessFlags::SHADER_READ,
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+        ),
+        vkutils::depth_subresource_range(),
+    );
 
     vkutils::image_barrier(
         device,
@@ -358,6 +397,9 @@ fn create_pipeline(
         cull_mode: vk::CullModeFlags::BACK,
         front_face: vk::FrontFace::COUNTER_CLOCKWISE,
         depth_bias_enable: vk::FALSE,
+        depth_bias_constant_factor: 1.25,
+        depth_bias_clamp: 0.0,
+        depth_bias_slope_factor: 1.75,
         line_width: 1.0,
         ..Default::default()
     };

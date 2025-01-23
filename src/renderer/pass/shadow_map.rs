@@ -107,6 +107,23 @@ fn record(
         vkutils::depth_subresource_range(),
     );
 
+    vkutils::image_barrier(
+        &device,
+        command_buffer,
+        camera_pov_depth_image,
+        (
+            vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL,
+            vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+            vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
+        ),
+        (
+            vk::ImageLayout::DEPTH_READ_ONLY_OPTIMAL,
+            vk::AccessFlags::SHADER_READ,
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+        ),
+        vkutils::depth_subresource_range(),
+    );
+
     let depth_attachment = vk::RenderingAttachmentInfo::default()
         .image_view(camera_pov_depth_image_view)
         .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
@@ -227,9 +244,12 @@ fn create_pipeline(
         depth_clamp_enable: vk::FALSE,
         rasterizer_discard_enable: vk::FALSE,
         polygon_mode: vk::PolygonMode::FILL,
-        cull_mode: vk::CullModeFlags::BACK,
+        cull_mode: vk::CullModeFlags::NONE,
         front_face: vk::FrontFace::COUNTER_CLOCKWISE,
-        depth_bias_enable: vk::FALSE,
+        depth_bias_enable: vk::TRUE,
+        depth_bias_constant_factor: 1.25,
+        depth_bias_clamp: 0.0,
+        depth_bias_slope_factor: 1.0,
         line_width: 1.0,
         ..Default::default()
     };

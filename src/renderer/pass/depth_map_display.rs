@@ -6,14 +6,12 @@ pub struct DepthMapDisplayPass {
     pub command_buffers: [vk::CommandBuffer; 2],
     pub render_target: vkutils::image::Image,
     pipeline: vk::Pipeline,
-    sampler: vkutils::sampler::Sampler,
     device: ash::Device,
 }
 
 impl std::ops::Drop for DepthMapDisplayPass {
     fn drop(&mut self) {
         self.render_target.vk_destroy();
-        self.sampler.vk_destroy();
         unsafe {
             self.device.destroy_pipeline(self.pipeline, None);
         }
@@ -23,7 +21,8 @@ impl std::ops::Drop for DepthMapDisplayPass {
 impl DepthMapDisplayPass {
     pub fn new(
         ctx: &mut vkutils::context::VulkanContext,
-        src_depth_map: (vk::Image, vk::ImageView),
+        src_depth_map: (vk::Image, vk::ImageView, vk::ImageLayout),
+        sampler: vk::Sampler,
     ) -> Self {
         let command_buffers = ctx
             .graphics_command_pool
@@ -53,12 +52,10 @@ impl DepthMapDisplayPass {
 
         static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let resource_id: u32 = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        // TODO could be one sampler for multiple images
-        let shadow_map_sampler = vkutils::sampler::Sampler::new(ctx.device.clone());
         ctx.bindless_descriptor_set.update_sampler2d(
             src_depth_map.1,
-            shadow_map_sampler.handle,
-            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            sampler,
+            vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
             resource_id,
         );
 
@@ -99,7 +96,6 @@ impl DepthMapDisplayPass {
             command_buffers,
             render_target: depth_display_render_target,
             pipeline,
-            sampler: shadow_map_sampler,
             device: ctx.device.clone(),
         }
     }
@@ -110,7 +106,7 @@ fn record(
     command_buffer: vk::CommandBuffer,
     pipeline: vk::Pipeline,
     pipeline_layout: vk::PipelineLayout,
-    src_depth_image: (vk::Image, vk::ImageView),
+    src_depth_image: (vk::Image, vk::ImageView, vk::ImageLayout),
     color_image: (vk::Image, vk::ImageView),
     extent: vk::Extent2D,
     sampler_id: u32,
@@ -132,6 +128,23 @@ fn record(
         vkutils::color_subresource_range(),
     );
 
+    vkutils::image_barrier(
+        &device,
+        command_buffer,
+        src_depth_image.0,
+        (
+            src_depth_image.2,
+            vk::AccessFlags::NONE,
+            vk::PipelineStageFlags::TOP_OF_PIPE,
+        ),
+        (
+            vk::ImageLayout::DEPTH_READ_ONLY_OPTIMAL,
+            vk::AccessFlags::SHADER_READ,
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+        ),
+        vkutils::depth_subresource_range(),
+    );
+
     let color_attachments = [vk::RenderingAttachmentInfo::default()
         .image_view(color_image.1)
         .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
@@ -143,20 +156,13 @@ fn record(
             },
         })];
 
-    let depth_attachment = vk::RenderingAttachmentInfo::default()
-        .image_view(src_depth_image.1)
-        .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
-        .load_op(vk::AttachmentLoadOp::LOAD)
-        .store_op(vk::AttachmentStoreOp::NONE);
-
     let rendering_info = vk::RenderingInfo::default()
         .render_area(vk::Rect2D {
             extent,
             offset: vk::Offset2D { x: 0, y: 0 },
         })
         .layer_count(1)
-        .color_attachments(&color_attachments)
-        .depth_attachment(&depth_attachment);
+        .color_attachments(&color_attachments);
 
     let mut push_constants = GPUPushConstants::default();
     push_constants.depth_sampler_index = sampler_id;

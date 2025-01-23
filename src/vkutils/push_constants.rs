@@ -7,6 +7,7 @@ extern crate nalgebra_glm as glm;
 pub struct GPUPushConstants {
     pub mesh_data: vk::DeviceAddress,
     pub camera_data_buffer_address: vk::DeviceAddress,
+    pub dir_light_camera_buffer_address: vk::DeviceAddress,
     pub dir_light_buffer_address: vk::DeviceAddress,
     pub skybox_data: vk::DeviceAddress,
     pub depth_sampler_index: u32,

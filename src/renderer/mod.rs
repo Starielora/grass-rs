@@ -38,11 +38,13 @@ pub struct Renderer {
 
     _grid: grid::Grid,
     picker: std::rc::Rc<std::cell::RefCell<target_render_picker::TargetRenderPicker>>,
+    common_sampler: vkutils::sampler::Sampler,
 }
 
 impl std::ops::Drop for Renderer {
     fn drop(&mut self) {
         self.camera_data_buffer.vk_destroy();
+        self.common_sampler.vk_destroy();
     }
 }
 
@@ -82,6 +84,8 @@ impl Renderer {
             &ctx,
         );
 
+        let common_sampler = vkutils::sampler::Sampler::new(ctx.device.clone());
+
         let ui_pass = pass::ui::UiPass::new(ctx);
 
         // shadow map
@@ -96,7 +100,12 @@ impl Renderer {
             (
                 shadow_map_pass.output_depth_image.handle,
                 shadow_map_pass.output_depth_image.view,
+                vk::ImageLayout::DEPTH_READ_ONLY_OPTIMAL, // TODO yeah, this should be an output from
+                                                          // render pass... either fix this or move
+                                                          // back to render passes instead of
+                                                          // dynamic rendering
             ),
+            common_sampler.handle,
         );
 
         let shadow_map_render = depth_map_render::DepthMapRender::new(
@@ -127,6 +136,12 @@ impl Renderer {
             &grid,
             camera_data_buffer.device_address.unwrap(),
             dir_light.buffer_device_address,
+            dir_light.camera_buffer.device_address.unwrap(),
+            (
+                shadow_map_pass.output_depth_image.handle,
+                shadow_map_pass.output_depth_image.view,
+            ),
+            common_sampler.handle,
             &meshes,
         );
 
@@ -139,7 +154,15 @@ impl Renderer {
 
         let scene_depth_map_display_pass = pass::depth_map_display::DepthMapDisplayPass::new(
             ctx,
-            (scene_pass.depth_image.handle, scene_pass.depth_image.view),
+            (
+                scene_pass.depth_image.handle,
+                scene_pass.depth_image.view,
+                vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL, // TODO yeah, this should be an output from
+                                                           // render pass... either fix this or move
+                                                           // back to render passes instead of
+                                                           // dynamic rendering
+            ),
+            common_sampler.handle,
         );
 
         let scene_depth_render = depth_map_render::DepthMapRender::new(
@@ -186,6 +209,7 @@ impl Renderer {
             _grid: grid,
             picker,
             gui_scene_nodes,
+            common_sampler,
         }
     }
 

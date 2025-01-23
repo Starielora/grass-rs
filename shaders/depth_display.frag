@@ -9,8 +9,8 @@ layout(location = 0) out vec4 out_color;
 float LinearizeDepth(float depth)
 {
 // TODO PARAMETERIZE THIS
-  float n = 0.01;
-  float f = 500.0;
+  float n = 1.0;
+  float f = 100.0;
   float z = depth;
   return (2.0 * n) / (f + n - z * (f - n));	
 }

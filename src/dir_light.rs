@@ -29,6 +29,8 @@ pub struct DirLight {
     pub buffer_device_address: vk::DeviceAddress,
     pub camera_buffer: vkutils::buffer::Buffer,
     pub depth_image: vkutils::image::Image,
+    w: f32,
+    h: f32,
 }
 
 impl DirLight {
@@ -50,11 +52,20 @@ impl DirLight {
         let gui_data = GuiData {
             azimuth_deg: [30.0],
             inclination_deg: [45.0],
-            distance: [100.0],
+            distance: [1.6],
             xz_target: [0.0, 0.0],
         };
 
-        update_gpu_buffers(&buffer, &camera_buffer, &gui_data, &mut data);
+        update_gpu_buffers(
+            &buffer,
+            &camera_buffer,
+            &gui_data,
+            &mut data,
+            (
+                ctx.swapchain.extent.width as f32,
+                ctx.swapchain.extent.height as f32,
+            ),
+        );
 
         let depth_image = ctx.create_image(
             ctx.depth_format,
@@ -73,6 +84,8 @@ impl DirLight {
             buffer_device_address,
             camera_buffer,
             depth_image,
+            w: ctx.swapchain.extent.width as f32,
+            h: ctx.swapchain.extent.height as f32,
         }
     }
 }
@@ -82,6 +95,7 @@ fn update_gpu_buffers(
     camera_buffer: &vkutils::buffer::Buffer,
     gui_data: &GuiData,
     gpu_data: &mut GPUDirLight,
+    (w, h): (f32, f32),
 ) {
     let azimuth = (gui_data.azimuth_deg[0]).to_radians();
     let inclination = (gui_data.inclination_deg[0]).to_radians();
@@ -94,16 +108,23 @@ fn update_gpu_buffers(
 
     dir_light_buffer.update_contents(&[*gpu_data]);
 
-    let mut camera = camera::Camera::new();
+    let (view_matrix, pos) = camera::view::from_spherical(
+        azimuth,
+        inclination,
+        gui_data.distance[0],
+        glm::make_vec3(&[gui_data.xz_target[0], gui_data.xz_target[1], 0.0]),
+    );
 
-    camera.pos = gpu_data.dir.scale(-gui_data.distance[0]).xyz()
-        + glm::make_vec3(&[gui_data.xz_target[0], 0.0, gui_data.xz_target[1]]);
-    camera.dir = gpu_data.dir.scale(-1.0).xyz();
+    let pos = glm::make_vec4(&[pos.x, pos.y, pos.z, 0.0]);
 
-    let camera_gpu_data = GPUCameraData {
-        pos: glm::make_vec4(&[camera.pos.x, camera.pos.y, camera.pos.z, 1.0]),
-        projview: camera::Camera::projection(1.0, 1.0) * camera.view(), // ortho
-    };
+    let projection_matrix = camera::projection::Projection::Orthographic(
+        camera::projection::orthtographic::Properties::new(w, h, gui_data.distance[0]),
+    )
+    .compute_matrix();
+
+    let projview = projection_matrix * view_matrix;
+
+    let camera_gpu_data = GPUCameraData { pos, projview };
 
     camera_buffer.update_contents(&[camera_gpu_data]);
 }
@@ -150,6 +171,7 @@ impl GuiSceneNode for DirLight {
                 &self.camera_buffer,
                 &self.gui_data,
                 &mut self.gpu_data,
+                (self.w, self.h),
             );
         }
     }

@@ -10,7 +10,7 @@ use crate::renderer;
 use crate::vkutils;
 
 pub struct App {
-    camera: camera::Camera,
+    camera: Option<camera::Camera>,
     gui: Option<gui::Gui>,
     renderer: Option<renderer::Renderer>,
     vkctx: Option<vkutils::context::VulkanContext>,
@@ -22,12 +22,9 @@ pub struct App {
 
 impl App {
     pub fn new() -> App {
-        let mut camera = camera::Camera::new();
-        camera.look_around(0.0, 0.0);
-
         Self {
             gui: Option::None,
-            camera,
+            camera: Option::None,
             renderer: Option::None,
             vkctx: Option::None,
             window: Option::None,
@@ -49,9 +46,13 @@ impl ApplicationHandler for App {
         );
 
         window.set_cursor_visible(self.cursor_visible);
-
         let mut vkctx = vkutils::context::VulkanContext::new(&window);
         let renderer = renderer::Renderer::new(&mut vkctx);
+        let mut camera = camera::Camera::new(
+            vkctx.swapchain.extent.width as f32,
+            vkctx.swapchain.extent.height as f32,
+        );
+        camera.look_around(0.0, 0.0);
 
         // TODO I don't quite like this dependency gui->renderer->gui
         // i.e. first gui gets nodes from renderer, and then renderer uses gui to render imgui,
@@ -59,6 +60,7 @@ impl ApplicationHandler for App {
         let gui = gui::Gui::new(window.clone(), &vkctx, renderer.gui_scene_nodes.clone());
 
         self.vkctx = Some(vkctx);
+        self.camera = Some(camera);
         self.renderer = Some(renderer);
         self.gui = Some(gui);
         self.window = Some(window);
@@ -66,7 +68,7 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
-        let camera = &mut self.camera;
+        let camera = self.camera.as_mut().unwrap();
         let vkctx = self.vkctx.as_mut().unwrap();
         let device = vkctx.device.clone();
         let renderer = self.renderer.as_mut().unwrap();
@@ -80,14 +82,12 @@ impl ApplicationHandler for App {
         renderer
             .camera_data_buffer
             .update_contents(&[camera::GPUCameraData {
-                pos: glm::make_vec4(&[camera.pos.x, camera.pos.y, camera.pos.z, 0.0]),
-                projview: camera.get_projection_view(
-                    vkctx.swapchain.extent.width as f32,
-                    vkctx.swapchain.extent.height as f32,
-                ),
+                //pos: glm::make_vec4(&[camera.pos.x, camera.pos.y, camera.pos.z, 0.0]),
+                pos: camera.pos(),
+                projview: camera.get_projection_view(),
             }]);
 
-        gui.prepare_frame();
+        gui.prepare_frame(camera);
         renderer.record_imgui_pass(image_index, &vkctx, &mut gui);
 
         let queue = vkctx.graphics_present_queue;
@@ -122,7 +122,7 @@ impl ApplicationHandler for App {
         _device_id: winit::event::DeviceId,
         event: winit::event::DeviceEvent,
     ) {
-        let camera = &mut self.camera;
+        let camera = self.camera.as_mut().unwrap();
 
         match event {
             winit::event::DeviceEvent::MouseMotion { delta } => {
@@ -140,7 +140,7 @@ impl ApplicationHandler for App {
         window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
-        let camera = &mut self.camera;
+        let camera = self.camera.as_mut().unwrap();
         let window = self.window.as_ref().unwrap();
         let gui = self.gui.as_mut().unwrap();
 

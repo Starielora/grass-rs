@@ -9,7 +9,7 @@ pub mod bindless {
     pub const DEPTH_SAMPLER_BINDING: u32 = 1;
 
     const CUBE_SAMPLER_COUNT: u32 = 2;
-    const DEPTH_SAMPLER_COUNT: u32 = 2;
+    const DEPTH_SAMPLER_COUNT: u32 = 4;
 
     pub struct DescriptorSet {
         pool: vk::DescriptorPool,
@@ -99,7 +99,7 @@ pub mod bindless {
                 .descriptor_count(CUBE_SAMPLER_COUNT),
             vk::DescriptorPoolSize::default()
                 .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(CUBE_SAMPLER_COUNT),
+                .descriptor_count(DEPTH_SAMPLER_COUNT),
         ];
 
         let descriptor_pool_create_info = vk::DescriptorPoolCreateInfo::default()
