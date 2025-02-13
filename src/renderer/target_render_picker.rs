@@ -4,6 +4,7 @@ pub enum TargetRender {
     Scene,
     SceneDepth,
     ShadowMap,
+    Meshlet,
 }
 
 pub struct TargetRenderPicker {
@@ -27,6 +28,9 @@ impl gui_scene_node::GuiSceneNode for TargetRenderPicker {
             }
             if ui.selectable("Shadow map") {
                 self.target_render = TargetRender::ShadowMap;
+            }
+            if ui.selectable("Meshlet") {
+                self.target_render = TargetRender::Meshlet;
             }
             ui.unindent();
         }

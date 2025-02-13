@@ -52,6 +52,7 @@ fn main() {
         println!("Executing glslc for {}", file.display());
 
         let glslc_status = Command::new("glslc")
+            .arg("--target-env=vulkan1.3")
             .arg(format!("{}", input.display()))
             .arg("-o")
             .arg(format!(

@@ -1,4 +1,5 @@
 mod depth_map_render;
+mod meshlet_render;
 mod pass;
 mod scene_render;
 mod target_render_picker;
@@ -20,12 +21,14 @@ struct Passes {
     scene_depth_map_display: pass::depth_map_display::DepthMapDisplayPass,
     shadow_map_display: pass::depth_map_display::DepthMapDisplayPass,
     ui: pass::ui::UiPass,
+    meshlet: pass::meshlet::MeshletPass,
 }
 
 struct Submits {
     shadow_map_render: depth_map_render::DepthMapRender,
     scene_color_render: scene_render::ColorSceneRender,
     scene_depth_render: depth_map_render::DepthMapRender,
+    meshlet_render: meshlet_render::MeshletRender,
 }
 
 pub struct Renderer {
@@ -191,6 +194,13 @@ impl Renderer {
             }
         }
 
+        let meshlet_pass = pass::meshlet::MeshletPass::new(ctx);
+        let meshlet_render = meshlet_render::MeshletRender::new(
+            ctx,
+            meshlet_pass.command_buffers.clone(),
+            ui_pass.command_buffers.clone(),
+        );
+
         Self {
             camera_data_buffer,
             _cube_mesh_data: cube_mesh_data,
@@ -200,11 +210,13 @@ impl Renderer {
                 shadow_map_display: shadow_map_display_pass,
                 ui: ui_pass,
                 scene_depth_map_display: scene_depth_map_display_pass,
+                meshlet: meshlet_pass,
             },
             submits: Submits {
                 shadow_map_render,
                 scene_color_render: scene_render,
                 scene_depth_render,
+                meshlet_render,
             },
             _grid: grid,
             picker,
@@ -230,6 +242,10 @@ impl Renderer {
             }
             TargetRender::SceneDepth => {
                 let img = &self.passes.scene_depth_map_display.render_target;
+                (img.handle, img.view)
+            }
+            TargetRender::Meshlet => {
+                let img = &self.passes.meshlet.render_target;
                 (img.handle, img.view)
             }
         };
@@ -265,6 +281,12 @@ impl Renderer {
                 image_index as usize,
             ),
             TargetRender::SceneDepth => self.submits.scene_depth_render.submit(
+                device,
+                queue,
+                swapchain_acquire_semaphore,
+                image_index as usize,
+            ),
+            TargetRender::Meshlet => self.submits.meshlet_render.submit(
                 device,
                 queue,
                 swapchain_acquire_semaphore,

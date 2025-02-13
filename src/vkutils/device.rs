@@ -14,7 +14,11 @@ pub fn create(
                 .queue_priorities(&queue_prios)
         })
         .collect();
-    let device_extensions = [ash::khr::swapchain::NAME.as_ptr()];
+    let device_extensions = [
+        ash::khr::swapchain::NAME.as_ptr(),
+        ash::khr::spirv_1_4::NAME.as_ptr(),
+        ash::ext::mesh_shader::NAME.as_ptr(),
+    ];
 
     let mut vk12_physical_device_features = vk::PhysicalDeviceVulkan12Features::default()
         .buffer_device_address(true)
@@ -24,12 +28,18 @@ pub fn create(
         .shader_sampled_image_array_non_uniform_indexing(true)
         .descriptor_binding_sampled_image_update_after_bind(true);
 
-    let mut vk13_physical_device_features =
-        vk::PhysicalDeviceVulkan13Features::default().dynamic_rendering(true);
+    let mut vk13_physical_device_features = vk::PhysicalDeviceVulkan13Features::default()
+        .dynamic_rendering(true)
+        .maintenance4(true);
+
+    let mut mesh_shading_features = vk::PhysicalDeviceMeshShaderFeaturesEXT::default()
+        .mesh_shader(true)
+        .task_shader(true);
 
     let logical_device_create_info = vk::DeviceCreateInfo::default()
         .push_next(&mut vk12_physical_device_features)
         .push_next(&mut vk13_physical_device_features)
+        .push_next(&mut mesh_shading_features)
         .queue_create_infos(&queue_create_infos)
         .enabled_extension_names(&device_extensions);
 
