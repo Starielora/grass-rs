@@ -165,14 +165,15 @@ impl VulkanContext {
         data: &Vec<T>,
         buffer_usage: vk::BufferUsageFlags,
     ) -> buffer::Buffer {
+        let buffer_size = data.len() * std::mem::size_of::<T>();
         let mut staging_buffer = self.create_buffer(
-            data.len() * std::mem::size_of::<T>(),
+            buffer_size,
             buffer_usage | vk::BufferUsageFlags::TRANSFER_SRC,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
         );
 
         let device_buffer = self.create_buffer(
-            data.len() * std::mem::size_of::<T>(),
+            buffer_size,
             buffer_usage | vk::BufferUsageFlags::TRANSFER_DST,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
         );
@@ -182,7 +183,7 @@ impl VulkanContext {
 
         self.transient_transfer_command_pool
             .execute_short_lived_command_buffer(self.transfer_queue, |device, command_buffer| {
-                let region = [vk::BufferCopy::default().size(staging_buffer.allocation_size)];
+                let region = [vk::BufferCopy::default().size(buffer_size.try_into().unwrap())];
                 unsafe {
                     device.cmd_copy_buffer(
                         command_buffer,

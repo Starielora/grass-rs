@@ -4,7 +4,7 @@ use ash::vk;
 pub struct Buffer {
     pub handle: vk::Buffer,
     memory: vk::DeviceMemory,
-    pub allocation_size: u64,
+    pub _allocation_size: u64,
     pub device_address: Option<vk::DeviceAddress>,
     pub ptr: Option<*mut std::ffi::c_void>,
     device: ash::Device,
@@ -56,7 +56,7 @@ impl Buffer {
         Self {
             handle: buffer,
             memory,
-            allocation_size: memory_requirements.size,
+            _allocation_size: memory_requirements.size,
             device_address,
             ptr,
             device,
