@@ -70,7 +70,7 @@ pub fn find_suitable(instance: &ash::Instance) -> PhysicalDevice {
         memory_props,
         graphics_queue_family_index: queues[0],
         compute_queue_family_index: queues[1],
-        transfer_queue_family_index: queues[2],
+        transfer_queue_family_index: queues[1],
     }
 }
 
@@ -81,13 +81,8 @@ fn get_suggested_queues() -> std::vec::Vec<vk::QueueFlags> {
         | vk::QueueFlags::TRANSFER
         | vk::QueueFlags::COMPUTE
         | vk::QueueFlags::SPARSE_BINDING;
-    let transfer_queue_flags = vk::QueueFlags::TRANSFER | vk::QueueFlags::SPARSE_BINDING;
     let compute_queue_flags =
         vk::QueueFlags::COMPUTE | vk::QueueFlags::TRANSFER | vk::QueueFlags::SPARSE_BINDING;
 
-    vec![
-        graphics_queue_flags,
-        transfer_queue_flags,
-        compute_queue_flags,
-    ]
+    vec![graphics_queue_flags, compute_queue_flags]
 }
