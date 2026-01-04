@@ -3,7 +3,7 @@ use ash::vk;
 use crate::vkutils::{self, push_constants::GPUPushConstants, vk_destroy::VkDestroy};
 
 pub struct DepthMapDisplayPass {
-    pub command_buffers: [vk::CommandBuffer; 2],
+    pub command_buffers: Vec<vk::CommandBuffer>,
     pub render_target: vkutils::image::Image,
     pipeline: vk::Pipeline,
     device: ash::Device,
@@ -24,11 +24,10 @@ impl DepthMapDisplayPass {
         src_depth_map: (vk::Image, vk::ImageView, vk::ImageLayout),
         sampler: vk::Sampler,
     ) -> Self {
-        let command_buffers = ctx
-            .graphics_command_pool
-            .allocate_command_buffers(vk::CommandBufferLevel::PRIMARY, 2);
-
-        let command_buffers = [command_buffers[0], command_buffers[1]];
+        let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
+            vk::CommandBufferLevel::PRIMARY,
+            ctx.swapchain.images.len().try_into().unwrap(),
+        );
 
         let extent = ctx.swapchain.extent;
         let pipeline_layout = ctx.bindless_descriptor_set.pipeline_layout;
@@ -59,20 +58,20 @@ impl DepthMapDisplayPass {
             resource_id,
         );
 
-        for command_buffer in command_buffers {
+        for command_buffer in &command_buffers {
             unsafe {
                 let begin_info = vk::CommandBufferBeginInfo::default();
                 ctx.device
-                    .begin_command_buffer(command_buffer, &begin_info)
+                    .begin_command_buffer(*command_buffer, &begin_info)
                     .expect("Failed to begin command buffer");
             }
 
             ctx.bindless_descriptor_set
-                .cmd_bind(command_buffer, vk::PipelineBindPoint::GRAPHICS);
+                .cmd_bind(*command_buffer, vk::PipelineBindPoint::GRAPHICS);
 
             record(
                 &ctx.device,
-                command_buffer,
+                *command_buffer,
                 pipeline,
                 ctx.bindless_descriptor_set.pipeline_layout,
                 // TODO double buffering
@@ -87,7 +86,7 @@ impl DepthMapDisplayPass {
 
             unsafe {
                 ctx.device
-                    .end_command_buffer(command_buffer)
+                    .end_command_buffer(*command_buffer)
                     .expect("Failed to end command buffer");
             }
         }

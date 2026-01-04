@@ -2,9 +2,9 @@ use crate::vkutils;
 use ash::vk;
 
 struct CommandBuffers {
-    shadow_map: [vk::CommandBuffer; 2],
-    scene: [vk::CommandBuffer; 2],
-    imgui: [vk::CommandBuffer; 2],
+    shadow_map: Vec<vk::CommandBuffer>,
+    scene: Vec<vk::CommandBuffer>,
+    imgui: Vec<vk::CommandBuffer>,
 }
 
 struct Semaphores {
@@ -35,9 +35,9 @@ impl std::ops::Drop for ColorSceneRender {
 impl ColorSceneRender {
     pub fn new(
         ctx: &mut vkutils::context::VulkanContext,
-        shadow_map_command_buffers: [vk::CommandBuffer; 2],
-        scene_command_buffers: [vk::CommandBuffer; 2],
-        imgui_command_buffers: [vk::CommandBuffer; 2],
+        shadow_map_command_buffers: Vec<vk::CommandBuffer>,
+        scene_command_buffers: Vec<vk::CommandBuffer>,
+        imgui_command_buffers: Vec<vk::CommandBuffer>,
     ) -> Self {
         Self {
             command_buffers: CommandBuffers {

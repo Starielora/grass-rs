@@ -24,11 +24,11 @@ impl Swapchain {
         instance: &ash::Instance,
         queue_family_index: u32,
     ) -> Self {
-        let (surface, surface_instance, surface_caps, surface_formats, present_modes) =
+        let (surface, surface_instance, surface_caps, surface_formats, _present_modes) =
             init_surface(&entry, &instance, &window, physical_device);
 
         let extent = get_extent(&window, surface_caps);
-        let present_mode = get_present_mode(present_modes);
+        let present_mode = vk::PresentModeKHR::FIFO;
         let surface_format = get_surface_format(surface_formats);
         let queue_family_indices = [queue_family_index];
 
@@ -174,13 +174,6 @@ fn get_extent(
             surface_caps.min_image_extent.height,
             surface_caps.max_image_extent.height,
         ))
-}
-
-fn get_present_mode(present_modes: std::vec::Vec<vk::PresentModeKHR>) -> vk::PresentModeKHR {
-    present_modes
-        .into_iter()
-        .find(|&mode| mode == vk::PresentModeKHR::MAILBOX)
-        .unwrap_or(vk::PresentModeKHR::FIFO)
 }
 
 fn get_surface_format(

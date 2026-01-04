@@ -2,8 +2,8 @@ use crate::vkutils;
 use ash::vk;
 
 struct CommandBuffers {
-    scene: [vk::CommandBuffer; 2],
-    imgui: [vk::CommandBuffer; 2],
+    scene: Vec<vk::CommandBuffer>,
+    imgui: Vec<vk::CommandBuffer>,
 }
 
 struct Semaphores {
@@ -31,8 +31,8 @@ impl std::ops::Drop for MeshletRender {
 impl MeshletRender {
     pub fn new(
         ctx: &mut vkutils::context::VulkanContext,
-        scene_command_buffers: [vk::CommandBuffer; 2],
-        imgui_command_buffers: [vk::CommandBuffer; 2],
+        scene_command_buffers: Vec<vk::CommandBuffer>,
+        imgui_command_buffers: Vec<vk::CommandBuffer>,
     ) -> Self {
         Self {
             command_buffers: CommandBuffers {

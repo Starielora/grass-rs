@@ -3,16 +3,15 @@ use ash::vk;
 use crate::{gui, vkutils};
 
 pub struct UiPass {
-    pub command_buffers: [vk::CommandBuffer; 2],
+    pub command_buffers: Vec<vk::CommandBuffer>,
 }
 
 impl UiPass {
     pub fn new(ctx: &mut vkutils::context::VulkanContext) -> Self {
-        let command_buffers = ctx
-            .graphics_command_pool
-            .allocate_command_buffers(vk::CommandBufferLevel::PRIMARY, 2);
-
-        let command_buffers = [command_buffers[0], command_buffers[1]];
+        let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
+            vk::CommandBufferLevel::PRIMARY,
+            ctx.swapchain.images.len().try_into().unwrap(),
+        );
 
         Self { command_buffers }
     }

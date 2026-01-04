@@ -6,7 +6,7 @@ use crate::{
 };
 
 pub struct SceneColorPass {
-    pub command_buffers: [vk::CommandBuffer; 2],
+    pub command_buffers: Vec<vk::CommandBuffer>,
     // TODO double buffering
     pub render_target: vkutils::image::Image,
     pub depth_image: vkutils::image::Image,
@@ -37,11 +37,10 @@ impl SceneColorPass {
         sampler: vk::Sampler,
         meshes: &[mesh::Mesh],
     ) -> Self {
-        let command_buffers = ctx
-            .graphics_command_pool
-            .allocate_command_buffers(vk::CommandBufferLevel::PRIMARY, 2);
-
-        let command_buffers = [command_buffers[0], command_buffers[1]];
+        let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
+            vk::CommandBufferLevel::PRIMARY,
+            ctx.swapchain.images.len().try_into().unwrap(),
+        );
 
         let extent = ctx.swapchain.extent;
         let pipeline_layout = ctx.bindless_descriptor_set.pipeline_layout;
@@ -83,10 +82,10 @@ impl SceneColorPass {
             resource_id,
         );
 
-        for command_buffer in command_buffers {
+        for command_buffer in &command_buffers {
             record(
                 &ctx.device,
-                command_buffer,
+                *command_buffer,
                 (render_target.handle, render_target.view),
                 (depth_image.handle, depth_image.view),
                 (shadow_map.0, shadow_map.1),

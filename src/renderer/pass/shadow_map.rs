@@ -4,7 +4,7 @@ use crate::{mesh, vkutils};
 use ash::vk;
 
 pub struct ShadowMapPass {
-    pub command_buffers: [vk::CommandBuffer; 2],
+    pub command_buffers: Vec<vk::CommandBuffer>,
     pub output_depth_image: vkutils::image::Image,
 
     pipeline: vk::Pipeline,
@@ -26,11 +26,10 @@ impl ShadowMapPass {
         light_pov_camera_buffer_device_address: vk::DeviceAddress,
         meshes: &[mesh::Mesh],
     ) -> Self {
-        let command_buffers = ctx
-            .graphics_command_pool
-            .allocate_command_buffers(vk::CommandBufferLevel::PRIMARY, 2);
-
-        let command_buffers = [command_buffers[0], command_buffers[1]];
+        let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
+            vk::CommandBufferLevel::PRIMARY,
+            ctx.swapchain.images.len().try_into().unwrap(),
+        );
 
         let depth_image = ctx.create_image(
             ctx.depth_format,
@@ -46,10 +45,10 @@ impl ShadowMapPass {
         let pipeline_layout = ctx.bindless_descriptor_set.pipeline_layout;
         let pipeline = create_pipeline(&ctx.device, &extent, pipeline_layout, ctx.depth_format);
 
-        for command_buffer in command_buffers {
+        for command_buffer in &command_buffers {
             record(
                 &ctx.device,
-                command_buffer,
+                *command_buffer,
                 pipeline,
                 pipeline_layout,
                 extent,
