@@ -1,4 +1,5 @@
 use ash::vk;
+use winit::raw_window_handle::HasDisplayHandle;
 
 use super::{
     buffer, command_pool, debug_utils, descriptor_set, device, device_queue, image, instance,
@@ -26,7 +27,10 @@ impl VulkanContext {
     pub fn new(window: &winit::window::Window) -> VulkanContext {
         let entry = unsafe { ash::Entry::load().expect("Could not find Vulkan.") };
 
-        let instance = instance::create(&entry);
+        let required_extensions =
+            ash_window::enumerate_required_extensions(window.display_handle().unwrap().as_raw());
+
+        let instance = instance::create(&entry, required_extensions.unwrap());
         let debug_utils = debug_utils::DebugUtils::new(&entry, &instance);
 
         let physical_device = physical_device::find_suitable(&instance);

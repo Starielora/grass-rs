@@ -1,7 +1,7 @@
 use super::debug_utils;
 use ash::vk;
 
-pub fn create(entry: &ash::Entry) -> ash::Instance {
+pub fn create(entry: &ash::Entry, window_required_extensions: &[*const i8]) -> ash::Instance {
     let app_name = std::ffi::CString::new("app name").unwrap();
     let engine_name = std::ffi::CString::new("engine name").unwrap();
     let app_info = vk::ApplicationInfo::default()
@@ -17,11 +17,8 @@ pub fn create(entry: &ash::Entry) -> ash::Instance {
         .map(|str| str.as_ptr())
         .collect::<Vec<_>>();
 
-    let extensions = [
-        ash::ext::debug_utils::NAME.as_ptr(),
-        ash::khr::surface::NAME.as_ptr(),
-        ash::khr::win32_surface::NAME.as_ptr(),
-    ];
+    let mut extensions: Vec<*const i8> = vec![ash::ext::debug_utils::NAME.as_ptr()];
+    extensions.extend(window_required_extensions.iter().copied());
 
     let mut debug = debug_utils::get_debug_utils_messenger_create_info();
 
