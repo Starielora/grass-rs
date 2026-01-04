@@ -6,7 +6,6 @@ pub struct PhysicalDevice {
     pub memory_props: vk::PhysicalDeviceMemoryProperties,
     pub graphics_queue_family_index: u32,
     pub compute_queue_family_index: u32,
-    pub transfer_queue_family_index: u32,
 }
 
 pub fn find_suitable(instance: &ash::Instance) -> PhysicalDevice {
@@ -70,7 +69,6 @@ pub fn find_suitable(instance: &ash::Instance) -> PhysicalDevice {
         memory_props,
         graphics_queue_family_index: queues[0],
         compute_queue_family_index: queues[1],
-        transfer_queue_family_index: queues[1],
     }
 }
 

@@ -36,7 +36,6 @@ impl VulkanContext {
         let physical_device = physical_device::find_suitable(&instance);
         let queue_indices = vec![
             physical_device.graphics_queue_family_index,
-            physical_device.transfer_queue_family_index,
             physical_device.compute_queue_family_index,
         ];
 
@@ -48,7 +47,7 @@ impl VulkanContext {
 
         let graphics_present_queue = queues[0];
         let transfer_queue = queues[1];
-        let _compute_queue = queues[2];
+        let _compute_queue = queues[1];
 
         let swapchain = swapchain::Swapchain::new(
             &window,
@@ -59,10 +58,11 @@ impl VulkanContext {
             physical_device.graphics_queue_family_index,
         );
 
+        // TODO yeet tf this
         let transient_transfer_command_pool = command_pool::CommandPool::new(
             device.clone(),
             vk::CommandPoolCreateFlags::TRANSIENT,
-            physical_device.transfer_queue_family_index,
+            physical_device.compute_queue_family_index,
         );
         let transient_graphics_command_pool = command_pool::CommandPool::new(
             device.clone(),
