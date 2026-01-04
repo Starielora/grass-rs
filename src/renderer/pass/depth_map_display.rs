@@ -137,7 +137,7 @@ fn record(
             vk::PipelineStageFlags::TOP_OF_PIPE,
         ),
         (
-            vk::ImageLayout::DEPTH_READ_ONLY_OPTIMAL,
+            vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL,
             vk::AccessFlags::SHADER_READ,
             vk::PipelineStageFlags::FRAGMENT_SHADER,
         ),

@@ -250,12 +250,12 @@ fn record_image_barriers_for_scene_rendering(
         command_buffer,
         shadow_map_image,
         (
-            vk::ImageLayout::DEPTH_READ_ONLY_OPTIMAL,
+            vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL,
             vk::AccessFlags::NONE,
             vk::PipelineStageFlags::TOP_OF_PIPE,
         ),
         (
-            vk::ImageLayout::DEPTH_READ_ONLY_OPTIMAL,
+            vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL,
             vk::AccessFlags::SHADER_READ,
             vk::PipelineStageFlags::FRAGMENT_SHADER,
         ),

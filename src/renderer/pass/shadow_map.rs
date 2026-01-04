@@ -106,23 +106,6 @@ fn record(
         vkutils::depth_subresource_range(),
     );
 
-    vkutils::image_barrier(
-        &device,
-        command_buffer,
-        camera_pov_depth_image,
-        (
-            vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL,
-            vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
-            vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
-        ),
-        (
-            vk::ImageLayout::DEPTH_READ_ONLY_OPTIMAL,
-            vk::AccessFlags::SHADER_READ,
-            vk::PipelineStageFlags::FRAGMENT_SHADER,
-        ),
-        vkutils::depth_subresource_range(),
-    );
-
     let depth_attachment = vk::RenderingAttachmentInfo::default()
         .image_view(camera_pov_depth_image_view)
         .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)

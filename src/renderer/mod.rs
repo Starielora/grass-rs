@@ -103,10 +103,10 @@ impl Renderer {
             (
                 shadow_map_pass.output_depth_image.handle,
                 shadow_map_pass.output_depth_image.view,
-                vk::ImageLayout::DEPTH_READ_ONLY_OPTIMAL, // TODO yeah, this should be an output from
-                                                          // render pass... either fix this or move
-                                                          // back to render passes instead of
-                                                          // dynamic rendering
+                vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL, // TODO yeah, this should be an output from
+                                                           // render pass... either fix this or move
+                                                           // back to render passes instead of
+                                                           // dynamic rendering
             ),
             common_sampler.handle,
         );
