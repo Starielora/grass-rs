@@ -1,3 +1,4 @@
+use crate::vkutils::descriptor_set::bindless;
 use crate::vkutils::push_constants::GPUPushConstants;
 use crate::vkutils::vk_destroy::VkDestroy;
 use crate::{mesh, vkutils};
@@ -49,6 +50,7 @@ impl ShadowMapPass {
             record(
                 &ctx.device,
                 *command_buffer,
+                &ctx.bindless_descriptor_set,
                 pipeline,
                 pipeline_layout,
                 extent,
@@ -70,6 +72,7 @@ impl ShadowMapPass {
 fn record(
     device: &ash::Device,
     command_buffer: vk::CommandBuffer,
+    descriptor_set: &bindless::DescriptorSet,
     pipeline: vk::Pipeline,
     pipeline_layout: vk::PipelineLayout,
     extent: vk::Extent2D,
@@ -88,6 +91,8 @@ fn record(
             .begin_command_buffer(command_buffer, &begin_info)
             .expect("Failed to begin command buffer.");
     }
+
+    descriptor_set.cmd_bind(command_buffer, vk::PipelineBindPoint::GRAPHICS);
 
     vkutils::image_barrier(
         &device,

@@ -2,7 +2,9 @@ use ash::vk;
 
 use crate::{
     grid, mesh, skybox,
-    vkutils::{self, push_constants::GPUPushConstants, vk_destroy::VkDestroy},
+    vkutils::{
+        self, descriptor_set::bindless, push_constants::GPUPushConstants, vk_destroy::VkDestroy,
+    },
 };
 
 pub struct SceneColorPass {
@@ -86,6 +88,7 @@ impl SceneColorPass {
             record(
                 &ctx.device,
                 *command_buffer,
+                &ctx.bindless_descriptor_set,
                 (render_target.handle, render_target.view),
                 (depth_image.handle, depth_image.view),
                 (shadow_map.0, shadow_map.1),
@@ -115,6 +118,7 @@ impl SceneColorPass {
 fn record(
     device: &ash::Device,
     command_buffer: vk::CommandBuffer,
+    descriptor_set: &bindless::DescriptorSet,
     color_image: (vk::Image, vk::ImageView),
     depth_image: (vk::Image, vk::ImageView),
     shadow_map_image: (vk::Image, vk::ImageView),
@@ -153,6 +157,8 @@ fn record(
         depth_image.1,
         extent,
     );
+
+    descriptor_set.cmd_bind(command_buffer, vk::PipelineBindPoint::GRAPHICS);
 
     let mut push_constants = GPUPushConstants::default();
     push_constants.camera_data_buffer_address = camera_buffer_address;
