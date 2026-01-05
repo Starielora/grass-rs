@@ -84,6 +84,7 @@ fn record(
 
     let mut push_constants = GPUPushConstants::default();
     push_constants.camera_data_buffer_address = light_camera_data_buffer_address;
+    push_constants.dir_light_camera_buffer_address = light_camera_data_buffer_address;
 
     let begin_info = vk::CommandBufferBeginInfo::default();
     unsafe {
@@ -106,7 +107,7 @@ fn record(
         (
             vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL,
             vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
-            vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
+            vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
         ),
         vkutils::depth_subresource_range(),
     );
@@ -259,11 +260,6 @@ fn create_pipeline(
         ..Default::default()
     };
 
-    let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
-        .logic_op_enable(false)
-        .logic_op(vk::LogicOp::COPY)
-        .blend_constants([0.0, 0.0, 0.0, 0.0]);
-
     let mut rendering_info =
         vk::PipelineRenderingCreateInfo::default().depth_attachment_format(depth_format);
 
@@ -276,7 +272,6 @@ fn create_pipeline(
         .rasterization_state(&rasterization_state)
         .multisample_state(&multisample_state)
         .depth_stencil_state(&depth_stencil_state)
-        .color_blend_state(&color_blend_state)
         .layout(pipeline_layout);
 
     let pipelines = unsafe {
