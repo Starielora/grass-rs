@@ -19,6 +19,7 @@ pub struct Mesh {
     vertex_buffer: vk::Buffer,
     index_buffer: vk::Buffer,
     indices_count: usize,
+    index_type: ash::vk::IndexType,
     per_frame_buffer: vkutils::buffer::Buffer,
     per_frame_buffer_device_address: vk::DeviceAddress,
     gui_data: GuiData,
@@ -45,20 +46,25 @@ impl Mesh {
         );
 
         let per_frame_buffer_device_address = per_frame_buffer.device_address.unwrap();
+        let gui_data = GuiData {
+            id: current_id,
+            name: std::string::String::from(gui_name),
+            translation: glm::make_vec3(&[0.0, 0.0, 0.0]),
+            rotation: glm::make_vec3(&[0.0, 0.0, 0.0]),
+            scale: glm::make_vec3(&[1.0, 1.0, 1.0]),
+        };
+
+        let init_transform = glm::scale(&glm::Mat4::identity(), &gui_data.scale);
+        per_frame_buffer.update_contents(&[init_transform]);
 
         Self {
             per_frame_buffer,
             per_frame_buffer_device_address,
-            gui_data: GuiData {
-                id: current_id,
-                name: std::string::String::from(gui_name),
-                translation: glm::make_vec3(&[0.0, 0.0, 0.0]),
-                rotation: glm::make_vec3(&[0.0, 0.0, 0.0]),
-                scale: glm::make_vec3(&[1.0, 1.0, 1.0]),
-            },
+            gui_data,
             vertex_buffer: mesh_data.vertex_buffer.handle,
             index_buffer: mesh_data.index_buffer.handle,
             indices_count: mesh_data.indices_count,
+            index_type: mesh_data.index_type,
         }
     }
 
@@ -127,7 +133,7 @@ impl Mesh {
             let vertex_buffers = [self.vertex_buffer];
             let offsets = [0];
             device.cmd_bind_vertex_buffers(command_buffer, 0, &vertex_buffers, &offsets);
-            device.cmd_bind_index_buffer(command_buffer, self.index_buffer, 0, IndexType::UINT16);
+            device.cmd_bind_index_buffer(command_buffer, self.index_buffer, 0, self.index_type);
             device.cmd_draw_indexed(command_buffer, self.indices_count as u32, 1, 0, 0, 0);
         }
     }
