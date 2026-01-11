@@ -46,6 +46,7 @@ impl ApplicationHandler for App {
         );
 
         window.set_cursor_visible(self.cursor_visible);
+        let _ = window.set_cursor_grab(winit::window::CursorGrabMode::Confined);
         let mut vkctx = vkutils::context::VulkanContext::new(&window);
         let renderer = renderer::Renderer::new(&mut vkctx);
         let mut camera = camera::Camera::new(
@@ -161,6 +162,13 @@ impl ApplicationHandler for App {
                         (KeyCode::Escape, ElementState::Pressed) => {
                             self.cursor_visible = !self.cursor_visible;
                             window.set_cursor_visible(self.cursor_visible);
+                            window
+                                .set_cursor_grab(if self.cursor_visible {
+                                    winit::window::CursorGrabMode::None
+                                } else {
+                                    winit::window::CursorGrabMode::Confined
+                                })
+                                .unwrap();
                         }
                         (KeyCode::KeyA, _) => camera.set_move_left(state == ElementState::Pressed),
                         (KeyCode::KeyD, _) => camera.set_move_right(state == ElementState::Pressed),

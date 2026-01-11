@@ -5,11 +5,12 @@ mod scene_render;
 mod target_render_picker;
 
 use crate::{
+    assets,
     camera::GPUCameraData,
     dir_light::{self, GPUDirLight},
     grid, gui,
     gui_scene_node::GuiSceneNode,
-    mesh, skybox,
+    skybox,
     vkutils::{self, vk_destroy::VkDestroy},
 };
 use ash::vk;
@@ -35,7 +36,7 @@ pub struct Renderer {
     pub camera_data_buffer: vkutils::buffer::Buffer,
 
     pub gui_scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
-    _cube_mesh_data: mesh::mesh_data::MeshData,
+    _assets: std::vec::Vec<assets::Asset>,
     passes: Passes,
     submits: Submits,
 
@@ -58,26 +59,21 @@ impl Renderer {
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
 
-        let cube_mesh_data = mesh::mesh_data::MeshData::new("assets/cube.gltf", &ctx);
-        let mut meshes = vec![
-            mesh::Mesh::new(&cube_mesh_data, &ctx, "Cube"),
-            mesh::Mesh::new(&cube_mesh_data, &ctx, "Floor"),
-        ];
+        // let cube_mesh_data = mesh::mesh_data::VkMesh::load("assets/cube.gltf", &ctx);
 
-        // set init transformations. Technically I could move these to cube constructor
-        {
-            meshes[0].set_transformation(
-                glm::make_vec3(&[3.0, 2.0, 1.0]),
-                glm::make_vec3(&[0.0, 0.0, 0.0]),
-                glm::make_vec3(&[1.0, 1.0, 1.0]),
-            );
+        let t1 = std::time::Instant::now();
+        let cube_asset = assets::better_load("assets/cube.gltf", &ctx);
+        let brabon_asset = assets::better_load(
+            // "/home/starielora/dev/repos/glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf",
+            "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
+            // "/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
+            &ctx,
+        );
+        println!("Load time: {:?}", t1.elapsed());
 
-            meshes[1].set_transformation(
-                glm::make_vec3(&[0.0, 0.0, 0.0]),
-                glm::make_vec3(&[0.0, 0.0, 0.0]),
-                glm::make_vec3(&[10.0, 0.5, 10.0]),
-            );
-        }
+        let mut assets = vec![];
+        assets.push(cube_asset);
+        assets.push(brabon_asset);
 
         let dir_light = dir_light::DirLight::new(
             GPUDirLight {
@@ -95,7 +91,7 @@ impl Renderer {
         let shadow_map_pass = pass::shadow_map::ShadowMapPass::new(
             ctx,
             dir_light.camera_buffer.device_address.unwrap(),
-            &meshes,
+            &mut assets,
         );
 
         let shadow_map_display_pass = pass::depth_map_display::DepthMapDisplayPass::new(
@@ -120,9 +116,10 @@ impl Renderer {
 
         let skybox = skybox::Skybox::new(
             &ctx,
-            cube_mesh_data.vertex_buffer.handle,
-            cube_mesh_data.index_buffer.handle,
-            cube_mesh_data.indices_count,
+            // TODO this is pepega
+            assets[0].meshes[0].primitives[0].vertex_buffer.handle,
+            assets[0].meshes[0].primitives[0].index_buffer.handle,
+            assets[0].meshes[0].primitives[0].indices_count,
         );
         let grid = grid::Grid::new(
             &ctx.device,
@@ -145,7 +142,7 @@ impl Renderer {
                 shadow_map_pass.output_depth_image.view,
             ),
             common_sampler.handle,
-            &meshes,
+            &mut assets,
         );
 
         let scene_render = scene_render::ColorSceneRender::new(
@@ -188,10 +185,6 @@ impl Renderer {
             gui_scene_nodes.push(picker.clone());
             gui_scene_nodes.push(std::rc::Rc::new(std::cell::RefCell::new(dir_light)));
             gui_scene_nodes.push(std::rc::Rc::new(std::cell::RefCell::new(skybox)));
-
-            for mesh in meshes {
-                gui_scene_nodes.push(std::rc::Rc::new(std::cell::RefCell::new(mesh)));
-            }
         }
 
         let meshlet_pass = pass::meshlet::MeshletPass::new(ctx);
@@ -203,7 +196,7 @@ impl Renderer {
 
         Self {
             camera_data_buffer,
-            _cube_mesh_data: cube_mesh_data,
+            _assets: assets,
             passes: Passes {
                 _shadow_map: shadow_map_pass,
                 scene: scene_pass,

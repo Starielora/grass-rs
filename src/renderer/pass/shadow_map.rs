@@ -1,7 +1,7 @@
 use crate::vkutils::descriptor_set::bindless;
 use crate::vkutils::push_constants::GPUPushConstants;
 use crate::vkutils::vk_destroy::VkDestroy;
-use crate::{mesh, vkutils};
+use crate::{assets, vkutils};
 use ash::vk;
 
 pub struct ShadowMapPass {
@@ -25,7 +25,7 @@ impl ShadowMapPass {
     pub fn new(
         ctx: &mut vkutils::context::VulkanContext,
         light_pov_camera_buffer_device_address: vk::DeviceAddress,
-        meshes: &[mesh::Mesh],
+        assets: &mut [assets::Asset],
     ) -> Self {
         let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
             vk::CommandBufferLevel::PRIMARY,
@@ -56,7 +56,7 @@ impl ShadowMapPass {
                 extent,
                 (depth_image.handle, depth_image.view),
                 light_pov_camera_buffer_device_address,
-                meshes,
+                assets,
             );
         }
 
@@ -78,7 +78,7 @@ fn record(
     extent: vk::Extent2D,
     light_pov_depth_image: (vk::Image, vk::ImageView),
     light_camera_data_buffer_address: vk::DeviceAddress,
-    meshes: &[mesh::Mesh],
+    assets: &mut [assets::Asset],
 ) {
     let (camera_pov_depth_image, camera_pov_depth_image_view) = light_pov_depth_image;
 
@@ -137,9 +137,10 @@ fn record(
         device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline);
     }
 
-    for mesh in meshes {
-        mesh.cmd_draw(
-            &device,
+    for asset in assets {
+        asset.draw_scene(
+            asset.default_scene.unwrap_or(0),
+            device,
             command_buffer,
             pipeline_layout,
             &mut push_constants,

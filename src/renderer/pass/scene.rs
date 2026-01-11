@@ -1,7 +1,8 @@
+use crate::assets;
 use ash::vk;
 
 use crate::{
-    grid, mesh, skybox,
+    grid, skybox,
     vkutils::{
         self, descriptor_set::bindless, push_constants::GPUPushConstants, vk_destroy::VkDestroy,
     },
@@ -37,13 +38,12 @@ impl SceneColorPass {
         dir_light_camera_buffer_address: vk::DeviceAddress,
         shadow_map: (vk::Image, vk::ImageView),
         sampler: vk::Sampler,
-        meshes: &[mesh::Mesh],
+        assets: &mut [assets::Asset],
     ) -> Self {
         let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
             vk::CommandBufferLevel::PRIMARY,
             ctx.swapchain.images.len().try_into().unwrap(),
         );
-
         let extent = ctx.swapchain.extent;
         let pipeline_layout = ctx.bindless_descriptor_set.pipeline_layout;
         let format = ctx.swapchain.surface_format.format;
@@ -101,7 +101,7 @@ impl SceneColorPass {
                 dir_light_data_buffer_address,
                 dir_light_camera_buffer_address,
                 resource_id,
-                meshes,
+                assets,
             );
         }
 
@@ -131,7 +131,7 @@ fn record(
     dir_light_buffer_address: vk::DeviceAddress,
     dir_light_camera_buffer_address: vk::DeviceAddress,
     depth_sampler_index: u32,
-    meshes: &[mesh::Mesh],
+    assets: &mut [assets::Asset],
 ) {
     let begin_info = vk::CommandBufferBeginInfo {
         ..Default::default()
@@ -172,9 +172,10 @@ fn record(
         device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline);
     }
 
-    for mesh in meshes {
-        mesh.cmd_draw(
-            &device,
+    for asset in assets {
+        asset.draw_scene(
+            asset.default_scene.unwrap_or(0),
+            device,
             command_buffer,
             pipeline_layout,
             &mut push_constants,

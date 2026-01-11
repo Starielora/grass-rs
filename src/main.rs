@@ -2,13 +2,12 @@ use app::App;
 use winit::event_loop::{ControlFlow, EventLoop};
 
 mod app;
+mod assets;
 mod camera;
 mod dir_light;
-mod gltf_loader;
 mod grid;
 mod gui;
 mod gui_scene_node;
-mod mesh;
 mod renderer;
 mod skybox;
 mod vkutils;
