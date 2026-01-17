@@ -164,7 +164,7 @@ pub fn better_load(path: &str, ctx: &vkutils::context::VulkanContext) -> asset::
         meshes.push(mesh::Mesh {
             _name: mesh.name,
             primitives,
-            per_parent_node_transform: std::collections::HashMap::new(),
+            per_parent_node_model_buffer: std::collections::HashMap::new(),
         });
     }
 
@@ -179,50 +179,7 @@ pub fn better_load(path: &str, ctx: &vkutils::context::VulkanContext) -> asset::
         })
     }
 
-    // setup primitives per_parent_node_buffer
-    for scene in &scenes {
-        for node_index in &scene.nodes {
-            init_model_buffers(
-                &ctx,
-                *node_index,
-                vec![],
-                &glm::Mat4::identity(),
-                &nodes,
-                &mut meshes,
-            );
-        }
-    }
-
-    asset::Asset {
-        meshes,
-        nodes,
-        scenes,
-        default_scene,
-    }
-}
-
-fn init_model_buffers(
-    ctx: &vkutils::context::VulkanContext,
-    node_index: usize,
-    mut parents: std::vec::Vec<usize>,
-    parent_transform: &glm::Mat4,
-    nodes: &std::vec::Vec<node::Node>,
-    meshes: &mut std::vec::Vec<mesh::Mesh>,
-) {
-    let node = &nodes[node_index];
-    parents.push(node_index);
-
-    let transform = parent_transform * &node.matrix;
-
-    if let Some(mesh_index) = node.mesh_index {
-        let mesh = &mut meshes[mesh_index];
-        mesh.create_model_buffer(node_index, &ctx);
-        mesh.set_transformation(node_index, &transform);
-    }
-
-    for child in &node.children {
-        init_model_buffers(ctx, *child, parents.clone(), &transform, nodes, meshes);
-    }
+    asset::Asset::new(&ctx, meshes, nodes, scenes, default_scene)
 }
 
 pub fn load(

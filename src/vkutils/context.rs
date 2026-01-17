@@ -119,6 +119,36 @@ impl VulkanContext {
         )
     }
 
+    pub fn create_unbound_buffer(
+        &self,
+        size: usize,
+        usage: vk::BufferUsageFlags,
+    ) -> (vk::Buffer, vk::MemoryRequirements) {
+        buffer::new_unbound_buffer(
+            self.device.clone(),
+            size,
+            usage,
+            &self.physical_device.props,
+        )
+    }
+
+    pub fn allocate_memory(
+        &self,
+        memory_requirements: vk::MemoryRequirements,
+        memory_property_flags: vk::MemoryPropertyFlags,
+        with_device_address: bool,
+    ) -> vk::DeviceMemory {
+        let memory = super::device_memory::allocate(
+            &self.device,
+            &memory_requirements,
+            &self.physical_device.memory_props,
+            memory_property_flags,
+            with_device_address,
+        );
+
+        memory
+    }
+
     pub fn create_buffer(
         self: &Self,
         size: usize,

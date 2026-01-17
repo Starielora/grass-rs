@@ -84,6 +84,28 @@ impl Buffer {
     }
 }
 
+pub fn new_unbound_buffer(
+    device: ash::Device,
+    size: usize,
+    usage: vk::BufferUsageFlags,
+    physical_device_props: &vk::PhysicalDeviceProperties,
+) -> (vk::Buffer, vk::MemoryRequirements) {
+    let aligned_size = pad_buffer_size(size as u64, physical_device_props);
+
+    let create_info = vk::BufferCreateInfo {
+        flags: vk::BufferCreateFlags::empty(),
+        size: aligned_size,
+        usage,
+        sharing_mode: vk::SharingMode::EXCLUSIVE,
+        ..Default::default()
+    };
+
+    let buffer = unsafe { device.create_buffer(&create_info, None).unwrap() };
+    let memory_requirements = unsafe { device.get_buffer_memory_requirements(buffer) };
+
+    (buffer, memory_requirements)
+}
+
 impl vk_destroy::VkDestroy for Buffer {
     fn vk_destroy(&self) {
         unsafe {
