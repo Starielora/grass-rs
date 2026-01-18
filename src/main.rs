@@ -5,6 +5,7 @@ mod app;
 mod assets;
 mod camera;
 mod dir_light;
+mod fps_window;
 mod grid;
 mod gui;
 mod gui_scene_node;

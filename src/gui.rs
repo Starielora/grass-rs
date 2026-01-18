@@ -1,6 +1,6 @@
 use crate::camera::Camera;
 use crate::gui_scene_node::{GuiCameraNode, GuiSceneNode};
-use crate::vkutils;
+use crate::{fps_window, vkutils};
 use ash::vk;
 
 pub struct Gui {
@@ -10,6 +10,7 @@ pub struct Gui {
     window: std::rc::Rc<winit::window::Window>,
     scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
     //camera_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiCameraNode>>>,
+    fps_window: fps_window::FpsWindow,
 }
 
 impl Gui {
@@ -56,6 +57,7 @@ impl Gui {
             imgui_renderer,
             window,
             scene_nodes,
+            fps_window: fps_window::FpsWindow::new(),
         }
     }
 
@@ -79,29 +81,45 @@ impl Gui {
             .handle_event::<()>(self.imguictx.io_mut(), &self.window, &ev);
     }
 
-    pub fn prepare_frame(self: &mut Self, camera: &mut Camera) {
+    pub fn prepare_frame(
+        self: &mut Self,
+        camera: &mut Camera,
+        durations: fps_window::FrameDurations,
+    ) {
         let ui = self.imguictx.frame();
 
-        ui.window("Camera")
-            .size([300.0, 400.0], imgui::Condition::FirstUseEver)
+        ui.window("FPS")
+            .size([300.0, 200.0], imgui::Condition::FirstUseEver)
             .position([0.0, 0.0], imgui::Condition::FirstUseEver)
+            .build(|| {});
+
+        ui.window("Camera")
+            .size([300.0, 300.0], imgui::Condition::FirstUseEver)
+            .position([0.0, 200.0], imgui::Condition::FirstUseEver)
             .build(|| {
                 camera.update(ui);
             });
 
+        ui.window("FPS")
+            .size([300.0, 300.0], imgui::Condition::FirstUseEver)
+            .position([0.0, 0.0], imgui::Condition::FirstUseEver)
+            .build(|| {
+                self.fps_window.build(&ui, &durations);
+            });
+
         let scene_nodes_iter = self.scene_nodes.iter_mut();
         ui.window("Scene")
-            .size([300.0, 500.0], imgui::Condition::FirstUseEver)
-            .position([0.0, 400.0], imgui::Condition::FirstUseEver)
+            .size([300.0, 300.0], imgui::Condition::FirstUseEver)
+            .position([0.0, 500.0], imgui::Condition::FirstUseEver)
             .build(|| {
                 for node in scene_nodes_iter {
                     node.borrow_mut().update(ui);
                 }
             });
 
-        //let mut show = true;
-        //ui.show_demo_window(&mut show);
-        //ui.show_metrics_window(&mut show);
+        // let mut show = true;
+        // ui.show_demo_window(&mut show);
+        // ui.show_metrics_window(&mut show);
 
         self.platform
             .prepare_frame(self.imguictx.io_mut(), &self.window)

@@ -5,6 +5,7 @@ use winit::keyboard::KeyCode;
 use winit::keyboard::PhysicalKey;
 
 use crate::camera;
+use crate::fps_window;
 use crate::gui;
 use crate::renderer;
 use crate::vkutils;
@@ -18,6 +19,8 @@ pub struct App {
     last_frame: std::time::Instant,
     keyboard_modifiers_state: winit::event::Modifiers,
     cursor_visible: bool,
+    previous_frame_timestamp: std::time::Instant,
+    frame_number: usize,
 }
 
 impl App {
@@ -31,6 +34,8 @@ impl App {
             last_frame: std::time::Instant::now(),
             keyboard_modifiers_state: winit::event::Modifiers::default(),
             cursor_visible: false,
+            previous_frame_timestamp: std::time::Instant::now(),
+            frame_number: 0,
         }
     }
 }
@@ -88,31 +93,44 @@ impl ApplicationHandler for App {
                 projview: camera.get_projection_view(),
             }]);
 
-        gui.prepare_frame(camera);
+        let (shadow_map_render_duration, scene_render_duration, ui_render_duration) =
+            if self.frame_number == 0 {
+                (
+                    std::time::Duration::from_secs(0),
+                    std::time::Duration::from_secs(0),
+                    std::time::Duration::from_secs(0),
+                )
+            } else {
+                renderer.get_pass_durations()
+            };
+
+        let current_timestamp = std::time::Instant::now();
+        let cpu_duration = current_timestamp - self.previous_frame_timestamp;
+        self.previous_frame_timestamp = current_timestamp;
+
+        gui.prepare_frame(
+            camera,
+            fps_window::FrameDurations {
+                cpu: cpu_duration,
+                gpu: shadow_map_render_duration + scene_render_duration + ui_render_duration,
+                shadow_map: shadow_map_render_duration,
+                color_pass: scene_render_duration,
+                ui: ui_render_duration,
+            },
+        );
         renderer.record_imgui_pass(image_index, &vkctx, &mut gui);
 
         let queue = vkctx.graphics_present_queue;
         let render_finished_semaphore =
             renderer.submit(&vkctx.device, queue, image_index, acquire_semaphore);
 
-        let (shadow_map_render_duration, scene_render_duration, ui_render_duration) =
-            renderer.get_pass_durations();
-
-        let gpu_frame_time =
-            shadow_map_render_duration + scene_render_duration + ui_render_duration;
-
-        let fps = 1.0f32 / gpu_frame_time.as_secs_f32();
-
-        println!(
-            "query results:\n\tshadow map: {:?}\n\tscene: {:?}\n\tui: {:?}\n\ttotal: {:?}\n\tfps: {}",
-            shadow_map_render_duration, scene_render_duration, ui_render_duration, gpu_frame_time, fps,
-        );
-
         vkctx
             .swapchain
             .present(image_index, &[render_finished_semaphore], queue);
 
         unsafe { device.device_wait_idle() }.expect("Failed to wait");
+
+        self.frame_number += 1;
     }
 
     fn new_events(
