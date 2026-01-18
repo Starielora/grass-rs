@@ -63,6 +63,15 @@ pub fn find_suitable(instance: &ash::Instance) -> PhysicalDevice {
     let memory_props = unsafe { instance.get_physical_device_memory_properties(physical_device) };
     let props = unsafe { instance.get_physical_device_properties(physical_device) };
 
+    let device_name: std::vec::Vec<u8> = props.device_name.iter().map(|v| *v as u8).collect();
+
+    println!(
+        "Picked device: {}",
+        std::str::from_utf8(device_name.as_slice())
+            .unwrap()
+            .to_string()
+    );
+
     PhysicalDevice {
         handle: physical_device,
         props,

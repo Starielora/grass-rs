@@ -14,6 +14,7 @@ pub mod push_constants;
 pub mod sampler;
 pub mod semaphore;
 pub mod swapchain;
+pub mod timestamp_query;
 pub mod vk_destroy;
 
 use ash::vk;

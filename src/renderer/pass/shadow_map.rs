@@ -8,6 +8,8 @@ pub struct ShadowMapPass {
     pub command_buffers: Vec<vk::CommandBuffer>,
     pub output_depth_image: vkutils::image::Image,
 
+    timestamp_query: vkutils::timestamp_query::TimestampQuery,
+
     pipeline: vk::Pipeline,
     device: ash::Device,
 }
@@ -46,6 +48,8 @@ impl ShadowMapPass {
         let pipeline_layout = ctx.bindless_descriptor_set.pipeline_layout;
         let pipeline = create_pipeline(&ctx.device, &extent, pipeline_layout, ctx.depth_format);
 
+        let timestamp_query = vkutils::timestamp_query::TimestampQuery::new(&ctx, 2);
+
         for command_buffer in &command_buffers {
             record(
                 &ctx.device,
@@ -57,6 +61,7 @@ impl ShadowMapPass {
                 (depth_image.handle, depth_image.view),
                 light_pov_camera_buffer_device_address,
                 assets,
+                &timestamp_query,
             );
         }
 
@@ -64,8 +69,19 @@ impl ShadowMapPass {
             command_buffers,
             output_depth_image: depth_image,
             pipeline,
+            timestamp_query,
             device: ctx.device.clone(),
         }
+    }
+
+    pub fn get_pass_total_time(&mut self) -> std::time::Duration {
+        let timestamp_period = self.timestamp_query.timestamp_period();
+        let query_results = self.timestamp_query.get_results();
+        // hope f32 to u64 won't blow up
+        let t1_ns = query_results.iter().nth(0).unwrap() * timestamp_period as u64;
+        let t2_ns = query_results.iter().nth(1).unwrap() * timestamp_period as u64;
+
+        std::time::Duration::from_nanos(t2_ns - t1_ns)
     }
 }
 
@@ -79,6 +95,7 @@ fn record(
     light_pov_depth_image: (vk::Image, vk::ImageView),
     light_camera_data_buffer_address: vk::DeviceAddress,
     assets: &mut [assets::Asset],
+    timestamp_query: &vkutils::timestamp_query::TimestampQuery,
 ) {
     let (camera_pov_depth_image, camera_pov_depth_image_view) = light_pov_depth_image;
 
@@ -92,6 +109,9 @@ fn record(
             .begin_command_buffer(command_buffer, &begin_info)
             .expect("Failed to begin command buffer.");
     }
+
+    timestamp_query.reset(command_buffer);
+    timestamp_query.cmd_write(0, vk::PipelineStageFlags::TOP_OF_PIPE, command_buffer);
 
     descriptor_set.cmd_bind(command_buffer, vk::PipelineBindPoint::GRAPHICS);
 
@@ -146,6 +166,8 @@ fn record(
             &mut push_constants,
         );
     }
+
+    timestamp_query.cmd_write(1, vk::PipelineStageFlags::BOTTOM_OF_PIPE, command_buffer);
 
     unsafe {
         device.cmd_end_rendering(command_buffer);
@@ -233,7 +255,7 @@ fn create_pipeline(
         depth_clamp_enable: vk::FALSE,
         rasterizer_discard_enable: vk::FALSE,
         polygon_mode: vk::PolygonMode::FILL,
-        cull_mode: vk::CullModeFlags::NONE,
+        cull_mode: vk::CullModeFlags::BACK,
         front_face: vk::FrontFace::COUNTER_CLOCKWISE,
         depth_bias_enable: vk::TRUE,
         depth_bias_constant_factor: 1.25,

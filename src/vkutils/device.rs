@@ -18,6 +18,8 @@ pub fn create(
         ash::khr::swapchain::NAME.as_ptr(),
         ash::khr::spirv_1_4::NAME.as_ptr(),
         ash::ext::mesh_shader::NAME.as_ptr(),
+        // ash::khr::performance_query::NAME.as_ptr(), // what the fuck, why doesn't it work. Mesa
+        // was supposed to support performance queries
     ];
 
     let mut vk12_physical_device_features = vk::PhysicalDeviceVulkan12Features::default()

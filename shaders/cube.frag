@@ -45,6 +45,7 @@ void main() {
     vec3 specular = spec * light_specular;
 
     float shadow = calc_shadow();
+    // shadow = 0.0;
     vec3 result = (ambient * 0.0) + (1.0 - shadow) * (diffuse + specular);
 
     out_color = vec4(result, 1.0);

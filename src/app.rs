@@ -95,6 +95,19 @@ impl ApplicationHandler for App {
         let render_finished_semaphore =
             renderer.submit(&vkctx.device, queue, image_index, acquire_semaphore);
 
+        let (shadow_map_render_duration, scene_render_duration, ui_render_duration) =
+            renderer.get_pass_durations();
+
+        let gpu_frame_time =
+            shadow_map_render_duration + scene_render_duration + ui_render_duration;
+
+        let fps = 1.0f32 / gpu_frame_time.as_secs_f32();
+
+        println!(
+            "query results:\n\tshadow map: {:?}\n\tscene: {:?}\n\tui: {:?}\n\ttotal: {:?}\n\tfps: {}",
+            shadow_map_render_duration, scene_render_duration, ui_render_duration, gpu_frame_time, fps,
+        );
+
         vkctx
             .swapchain
             .present(image_index, &[render_finished_semaphore], queue);

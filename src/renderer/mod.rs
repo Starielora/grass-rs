@@ -287,4 +287,18 @@ impl Renderer {
             ),
         }
     }
+
+    pub fn get_pass_durations(
+        &mut self,
+    ) -> (
+        std::time::Duration,
+        std::time::Duration,
+        std::time::Duration,
+    ) {
+        (
+            self.passes._shadow_map.get_pass_total_time(),
+            self.passes.scene.get_pass_total_time(),
+            self.passes.ui.get_pass_total_time(),
+        )
+    }
 }

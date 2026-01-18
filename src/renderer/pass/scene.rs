@@ -14,6 +14,8 @@ pub struct SceneColorPass {
     pub render_target: vkutils::image::Image,
     pub depth_image: vkutils::image::Image,
 
+    timestamp_query: vkutils::timestamp_query::TimestampQuery,
+
     pipeline: vk::Pipeline,
     device: ash::Device,
 }
@@ -84,6 +86,8 @@ impl SceneColorPass {
             resource_id,
         );
 
+        let timestamp_query = vkutils::timestamp_query::TimestampQuery::new(&ctx, 2);
+
         for command_buffer in &command_buffers {
             record(
                 &ctx.device,
@@ -102,6 +106,7 @@ impl SceneColorPass {
                 dir_light_camera_buffer_address,
                 resource_id,
                 assets,
+                &timestamp_query,
             );
         }
 
@@ -110,8 +115,19 @@ impl SceneColorPass {
             render_target,
             depth_image,
             pipeline,
+            timestamp_query,
             device: ctx.device.clone(),
         }
+    }
+
+    pub fn get_pass_total_time(&mut self) -> std::time::Duration {
+        let timestamp_period = self.timestamp_query.timestamp_period();
+        let query_results = self.timestamp_query.get_results();
+        // hope f32 to u64 won't blow up
+        let t1_ns = query_results.iter().nth(0).unwrap() * timestamp_period as u64;
+        let t2_ns = query_results.iter().nth(1).unwrap() * timestamp_period as u64;
+
+        std::time::Duration::from_nanos(t2_ns - t1_ns)
     }
 }
 
@@ -132,6 +148,7 @@ fn record(
     dir_light_camera_buffer_address: vk::DeviceAddress,
     depth_sampler_index: u32,
     assets: &mut [assets::Asset],
+    timestamp_query: &vkutils::timestamp_query::TimestampQuery,
 ) {
     let begin_info = vk::CommandBufferBeginInfo {
         ..Default::default()
@@ -141,6 +158,9 @@ fn record(
             .begin_command_buffer(command_buffer, &begin_info)
             .expect("Failed to begin command buffer");
     }
+
+    timestamp_query.reset(command_buffer);
+    timestamp_query.cmd_write(0, vk::PipelineStageFlags::TOP_OF_PIPE, command_buffer);
 
     record_image_barriers_for_scene_rendering(
         &device,
@@ -183,6 +203,8 @@ fn record(
     }
 
     grid.record(command_buffer, &mut push_constants);
+
+    timestamp_query.cmd_write(1, vk::PipelineStageFlags::BOTTOM_OF_PIPE, command_buffer);
 
     unsafe {
         device.cmd_end_rendering(command_buffer);

@@ -4,6 +4,8 @@ use crate::{gui, vkutils};
 
 pub struct UiPass {
     pub command_buffers: Vec<vk::CommandBuffer>,
+
+    timestamp_query: vkutils::timestamp_query::TimestampQuery,
 }
 
 impl UiPass {
@@ -13,7 +15,12 @@ impl UiPass {
             ctx.swapchain.images.len().try_into().unwrap(),
         );
 
-        Self { command_buffers }
+        let timestamp_query = vkutils::timestamp_query::TimestampQuery::new(&ctx, 2);
+
+        Self {
+            command_buffers,
+            timestamp_query,
+        }
     }
 
     pub fn record(
@@ -39,6 +46,10 @@ impl UiPass {
         }
         .expect("Failed to begin command buffer");
 
+        self.timestamp_query.reset(command_buffer);
+        self.timestamp_query
+            .cmd_write(0, vk::PipelineStageFlags::TOP_OF_PIPE, command_buffer);
+
         let color_subresource_range = vk::ImageSubresourceRange::default()
             .aspect_mask(vk::ImageAspectFlags::COLOR)
             .level_count(1)
@@ -57,6 +68,23 @@ impl UiPass {
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 vk::AccessFlags::TRANSFER_WRITE,
                 vk::PipelineStageFlags::TRANSFER,
+            ),
+            color_subresource_range,
+        );
+
+        vkutils::image_barrier(
+            &device,
+            command_buffer,
+            resolve_image.0,
+            (
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                vk::AccessFlags::TRANSFER_WRITE,
+                vk::PipelineStageFlags::TRANSFER,
+            ),
+            (
+                vk::ImageLayout::PRESENT_SRC_KHR,
+                vk::AccessFlags::NONE,
+                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
             ),
             color_subresource_range,
         );
@@ -106,26 +134,22 @@ impl UiPass {
 
         gui.cmd_draw(command_buffer);
 
-        unsafe { device.cmd_end_rendering(command_buffer) };
+        self.timestamp_query
+            .cmd_write(1, vk::PipelineStageFlags::BOTTOM_OF_PIPE, command_buffer);
 
-        vkutils::image_barrier(
-            &device,
-            command_buffer,
-            resolve_image.0,
-            (
-                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                vk::AccessFlags::TRANSFER_WRITE,
-                vk::PipelineStageFlags::TRANSFER,
-            ),
-            (
-                vk::ImageLayout::PRESENT_SRC_KHR,
-                vk::AccessFlags::NONE,
-                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-            ),
-            color_subresource_range,
-        );
+        unsafe { device.cmd_end_rendering(command_buffer) };
 
         unsafe { device.end_command_buffer(command_buffer) }
             .expect("Failed to end command buffer???");
+    }
+
+    pub fn get_pass_total_time(&mut self) -> std::time::Duration {
+        let timestamp_period = self.timestamp_query.timestamp_period();
+        let query_results = self.timestamp_query.get_results();
+        // hope f32 to u64 won't blow up
+        let t1_ns = query_results.iter().nth(0).unwrap() * timestamp_period as u64;
+        let t2_ns = query_results.iter().nth(1).unwrap() * timestamp_period as u64;
+
+        std::time::Duration::from_nanos(t2_ns - t1_ns)
     }
 }
