@@ -1,4 +1,9 @@
-use crate::vkutils::{self, vk_destroy::VkDestroy};
+use crate::assets;
+use crate::vkutils::{
+    self, descriptor_set,
+    push_constants::{self, GPUPushConstants},
+    vk_destroy::VkDestroy,
+};
 use ash::vk;
 
 pub struct MeshletPass {
@@ -6,12 +11,18 @@ pub struct MeshletPass {
     pub render_target: vkutils::image::Image,
     pub depth_image: vkutils::image::Image,
 
+    timestamp_query: vkutils::timestamp_query::TimestampQuery,
+
     pipeline: vk::Pipeline,
     device: ash::Device,
 }
 
 impl MeshletPass {
-    pub fn new(ctx: &mut vkutils::context::VulkanContext) -> Self {
+    pub fn new(
+        ctx: &mut vkutils::context::VulkanContext,
+        meshlets: &assets::Asset,
+        camera_data: vk::DeviceAddress,
+    ) -> Self {
         let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
             vk::CommandBufferLevel::PRIMARY,
             ctx.swapchain.images.len().try_into().unwrap(),
@@ -52,6 +63,8 @@ impl MeshletPass {
         // LMAO WTF
         let ext_device = ash::ext::mesh_shader::Device::new(&ctx.instance, &ctx.device);
 
+        let timestamp_query = vkutils::timestamp_query::TimestampQuery::new(&ctx, 2);
+
         for command_buffer in &command_buffers {
             record(
                 &ctx.device,
@@ -61,6 +74,11 @@ impl MeshletPass {
                 (depth_image.handle, depth_image.view),
                 extent,
                 pipeline,
+                meshlets,
+                camera_data,
+                pipeline_layout,
+                ctx.bindless_descriptor_set.handle,
+                &timestamp_query,
             );
         }
 
@@ -69,8 +87,19 @@ impl MeshletPass {
             render_target,
             depth_image,
             pipeline,
+            timestamp_query,
             device: ctx.device.clone(),
         }
+    }
+
+    pub fn get_pass_total_time(&mut self) -> std::time::Duration {
+        let timestamp_period = self.timestamp_query.timestamp_period();
+        let query_results = self.timestamp_query.get_results();
+        // hope f32 to u64 won't blow up
+        let t1_ns = query_results.iter().nth(0).unwrap() * timestamp_period as u64;
+        let t2_ns = query_results.iter().nth(1).unwrap() * timestamp_period as u64;
+
+        std::time::Duration::from_nanos(t2_ns - t1_ns)
     }
 }
 
@@ -92,6 +121,11 @@ fn record(
     depth_image: (vk::Image, vk::ImageView),
     extent: vk::Extent2D,
     pipeline: vk::Pipeline,
+    asset: &assets::Asset,
+    camera_data: vk::DeviceAddress,
+    pipeline_layout: vk::PipelineLayout,
+    descriptor_set: vk::DescriptorSet,
+    timestamp_query: &vkutils::timestamp_query::TimestampQuery,
 ) {
     let begin_info = vk::CommandBufferBeginInfo {
         ..Default::default()
@@ -102,6 +136,22 @@ fn record(
             .expect("Failed to begin command buffer");
     }
 
+    timestamp_query.reset(command_buffer);
+    timestamp_query.cmd_write(0, vk::PipelineStageFlags::TOP_OF_PIPE, command_buffer);
+
+    let sets = [descriptor_set];
+    let dynamic_offsets = [];
+
+    unsafe {
+        device.cmd_bind_descriptor_sets(
+            command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            pipeline_layout,
+            0,
+            &sets,
+            &dynamic_offsets,
+        );
+    }
     record_image_barriers(&device, command_buffer, color_image.0, depth_image.0);
 
     begin_rendering(
@@ -116,15 +166,106 @@ fn record(
         device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline);
     }
 
-    unsafe {
-        ext_device.cmd_draw_mesh_tasks(command_buffer, 1, 1, 1);
+    for node_index in &asset.scenes.first().as_ref().unwrap().nodes {
+        draw_meshlets(
+            &asset,
+            *node_index,
+            camera_data,
+            device.clone(),
+            ext_device,
+            command_buffer,
+            pipeline_layout,
+        );
     }
+
+    // for (meshlet_data, vertex_data, meshlets_count) in asset {
+    // let mut push_constants = GPUPushConstants::default();
+    // push_constants.meshlet_data = meshlet_data.device_address.unwrap();
+    // push_constants.mesh_vertex_data = vertex_data.device_address.unwrap();
+    // push_constants.camera_data_buffer_address = camera_data;
+
+    // unsafe {
+    // device.cmd_push_constants(
+    // command_buffer,
+    // pipeline_layout,
+    // vk::ShaderStageFlags::VERTEX
+    // | vk::ShaderStageFlags::FRAGMENT
+    // | vk::ShaderStageFlags::MESH_EXT,
+    // 0,
+    // std::slice::from_raw_parts(
+    // (&push_constants as *const GPUPushConstants) as *const u8,
+    // std::mem::size_of::<GPUPushConstants>(),
+    // ),
+    // );
+
+    // println!("Meshlets count: {}", meshlets_count);
+
+    // ext_device.cmd_draw_mesh_tasks(command_buffer, *meshlets_count, 1, 1);
+    // }
+    // }
+
+    timestamp_query.cmd_write(1, vk::PipelineStageFlags::BOTTOM_OF_PIPE, command_buffer);
 
     unsafe {
         device.cmd_end_rendering(command_buffer);
         device
             .end_command_buffer(command_buffer)
             .expect("Failed to end command buffer???");
+    }
+}
+
+fn draw_meshlets(
+    asset: &assets::Asset,
+    node_index: usize,
+    camera_data: vk::DeviceAddress,
+    device: ash::Device,
+    ext_device: &ash::ext::mesh_shader::Device,
+    command_buffer: vk::CommandBuffer,
+    pipeline_layout: vk::PipelineLayout,
+) {
+    let node = &asset.nodes[node_index];
+    if let Some(mesh_index) = node.mesh_index {
+        let transformation_buffer_address = asset.meshlet_model_data.get(&node_index).unwrap();
+
+        let mut push_constants = GPUPushConstants::default();
+        push_constants.camera_data_buffer_address = camera_data;
+        push_constants.mesh_data = *transformation_buffer_address;
+
+        let vec = asset.meshlets.as_ref().unwrap();
+        let (meshlet_data, vertex_data, meshlets_count) =
+            vec.iter().nth(mesh_index).as_ref().unwrap();
+        push_constants.meshlet_data = meshlet_data.device_address.unwrap();
+        push_constants.mesh_vertex_data = vertex_data.device_address.unwrap();
+
+        unsafe {
+            device.cmd_push_constants(
+                command_buffer,
+                pipeline_layout,
+                vk::ShaderStageFlags::VERTEX
+                    | vk::ShaderStageFlags::FRAGMENT
+                    | vk::ShaderStageFlags::MESH_EXT,
+                0,
+                std::slice::from_raw_parts(
+                    (&push_constants as *const GPUPushConstants) as *const u8,
+                    std::mem::size_of::<GPUPushConstants>(),
+                ),
+            );
+
+            println!("Meshlets count: {}", meshlets_count);
+
+            ext_device.cmd_draw_mesh_tasks(command_buffer, *meshlets_count, 1, 1);
+        }
+    }
+    for child in &node.children {
+        draw_meshlets(
+            &asset,
+            *child,
+            camera_data,
+            device.clone(),
+            ext_device,
+            command_buffer,
+            pipeline_layout,
+        );
     }
 }
 

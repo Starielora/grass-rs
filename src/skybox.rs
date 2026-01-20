@@ -512,7 +512,9 @@ impl Skybox {
             self.device.cmd_push_constants(
                 command_buffer,
                 self.pipeline_layout,
-                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                vk::ShaderStageFlags::VERTEX
+                    | vk::ShaderStageFlags::FRAGMENT
+                    | vk::ShaderStageFlags::MESH_EXT,
                 0,
                 std::slice::from_raw_parts(
                     (push_constants as *const GPUPushConstants) as *const u8,

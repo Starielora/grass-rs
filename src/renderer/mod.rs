@@ -37,6 +37,7 @@ pub struct Renderer {
 
     pub gui_scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
     _assets: std::vec::Vec<assets::Asset>,
+    _brabon: assets::Asset,
     passes: Passes,
     submits: Submits,
 
@@ -63,17 +64,26 @@ impl Renderer {
 
         let t1 = std::time::Instant::now();
         let cube_asset = assets::better_load("assets/cube.gltf", &ctx);
-        let brabon_asset = assets::better_load(
+        let bistro_asset = assets::better_load(
             // "/home/starielora/dev/repos/glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf",
             "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
             // "/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
             &ctx,
         );
+        let brabon_asset = assets::load_as_meshlets(
+            // "/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
+            "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
+            &ctx,
+        );
+        println!(
+            "Brabon meshlets count: {}",
+            brabon_asset.meshlets.as_ref().unwrap().len()
+        );
         println!("Load time: {:?}", t1.elapsed());
 
         let mut assets = vec![];
         assets.push(cube_asset);
-        assets.push(brabon_asset);
+        assets.push(bistro_asset);
 
         let dir_light = dir_light::DirLight::new(
             GPUDirLight {
@@ -187,7 +197,11 @@ impl Renderer {
             gui_scene_nodes.push(std::rc::Rc::new(std::cell::RefCell::new(skybox)));
         }
 
-        let meshlet_pass = pass::meshlet::MeshletPass::new(ctx);
+        let meshlet_pass = pass::meshlet::MeshletPass::new(
+            ctx,
+            &brabon_asset,
+            camera_data_buffer.device_address.unwrap(),
+        );
         let meshlet_render = meshlet_render::MeshletRender::new(
             ctx,
             meshlet_pass.command_buffers.clone(),
@@ -197,6 +211,7 @@ impl Renderer {
         Self {
             camera_data_buffer,
             _assets: assets,
+            _brabon: brabon_asset,
             passes: Passes {
                 _shadow_map: shadow_map_pass,
                 scene: scene_pass,
@@ -296,8 +311,10 @@ impl Renderer {
         std::time::Duration,
     ) {
         (
-            self.passes._shadow_map.get_pass_total_time(),
-            self.passes.scene.get_pass_total_time(),
+            // self.passes._shadow_map.get_pass_total_time(),
+            // self.passes.scene.get_pass_total_time(),
+            std::time::Duration::from_secs(0),
+            self.passes.meshlet.get_pass_total_time(),
             self.passes.ui.get_pass_total_time(),
         )
     }

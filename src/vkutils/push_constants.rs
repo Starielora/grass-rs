@@ -10,6 +10,8 @@ pub struct GPUPushConstants {
     pub dir_light_camera_buffer_address: vk::DeviceAddress,
     pub dir_light_buffer_address: vk::DeviceAddress,
     pub skybox_data: vk::DeviceAddress,
+    pub meshlet_data: vk::DeviceAddress,
+    pub mesh_vertex_data: vk::DeviceAddress,
     pub depth_sampler_index: u32,
 }
 
@@ -17,7 +19,9 @@ pub struct GPUPushConstants {
 // non-const shit in static context, and yet ShaderStageFlags are const.
 pub fn get_range() -> [vk::PushConstantRange; 1] {
     [vk::PushConstantRange {
-        stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+        stage_flags: vk::ShaderStageFlags::VERTEX
+            | vk::ShaderStageFlags::FRAGMENT
+            | vk::ShaderStageFlags::MESH_EXT,
         offset: 0,
         size: std::mem::size_of::<GPUPushConstants>() as u32,
     }]

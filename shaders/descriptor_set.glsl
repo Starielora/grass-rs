@@ -5,34 +5,57 @@ layout(set = 0, binding = 0) uniform samplerCube skybox_tx[];
 layout(set = 0, binding = 1) uniform sampler2D depth_textures[];
 
 layout(buffer_reference, std430) readonly buffer CameraData {
-    vec4 position;
-    mat4 projview;
+  vec4 position;
+  mat4 projview;
 };
 
 layout(buffer_reference, std430) readonly buffer MeshData {
-    mat4 model_matrix;
+  mat4 model_matrix;
 };
 
 struct DirLight {
-    vec4 dir;
-    vec4 color;
+  vec4 dir;
+  vec4 color;
 };
 
 layout(buffer_reference, std430) readonly buffer DirLightBuffer {
-    DirLight data;
+  DirLight data;
 };
 
 // lol
 layout(buffer_reference, std430) readonly buffer SkyboxData {
-    uint current_texture_id;
+  uint current_texture_id;
+};
+
+struct Vertex {
+  float vx, vy, vz;
+  float nx, ny, nz;
+  float tx, ty;
+};
+
+layout(buffer_reference, std430) readonly buffer MeshVertexData {
+  Vertex vertices[];
+};
+
+struct Meshlet {
+  uint vertices[64];
+  uint indices[126 * 3];
+  uint triangle_count;
+  uint vertex_count;
+};
+
+layout(buffer_reference, std430) readonly buffer MeshletData {
+  Meshlet meshlets[];
 };
 
 layout(push_constant) uniform constants
 {
-    MeshData mesh_data;
-    CameraData camera_data;
-    CameraData dir_light_camera_data;
-    DirLightBuffer dir_light;
-    SkyboxData skybox_data;
-    uint depth_sampler_index;
+  MeshData mesh_data;
+  CameraData camera_data;
+  CameraData dir_light_camera_data;
+  DirLightBuffer dir_light;
+  SkyboxData skybox_data;
+  MeshletData meshlet_data;
+  MeshVertexData mesh_vertex_data;
+  uint depth_sampler_index;
 } push_constants;

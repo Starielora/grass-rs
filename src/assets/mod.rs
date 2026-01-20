@@ -1,12 +1,13 @@
 pub(super) mod asset;
 pub(super) mod mesh;
+pub(super) mod meshlet;
 pub(super) mod node;
 pub(super) mod primitive;
 pub(super) mod scene;
 
 pub use asset::Asset;
 
-use crate::vkutils;
+use crate::{assets::meshlet::Meshlet, vkutils};
 use ash::vk;
 use gltf::{self, accessor::DataType};
 
@@ -123,6 +124,55 @@ mod internal {
         pub name: Option<std::string::String>,
         pub nodes: std::vec::Vec<usize>,
     }
+}
+
+pub fn load_as_meshlets(path: &str, ctx: &vkutils::context::VulkanContext) -> asset::Asset {
+    let (gltf_meshes, gltf_nodes, gltf_scenes, default_scene) = load(path);
+
+    let mut meshlets_array: std::vec::Vec<(vkutils::buffer::Buffer, vkutils::buffer::Buffer, u32)> =
+        vec![];
+    let mut nodes: std::vec::Vec<node::Node> = vec![];
+
+    println!("Brabon {}", gltf_meshes.len());
+
+    for mesh in gltf_meshes {
+        for primitive in mesh.primitives {
+            let vertex_data = primitive.vertex_buffer;
+            let index_data: std::vec::Vec<u32> = match primitive.index_buffer {
+                IndexBufferType::U16(items) => items.iter().map(|u16val| *u16val as u32).collect(),
+                IndexBufferType::U32(items) => items,
+            };
+            let meshlets = meshlet::build_meshlets(&vertex_data, &index_data);
+
+            println!("Meshlets count for primitive: {}", meshlets.len());
+
+            // TODO no not do this with rebar buffer, I guess
+            let meshlet_buffer = ctx.upload_buffer(
+                &meshlets,
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            );
+            let vertex_buffer = ctx.upload_buffer(
+                &vertex_data,
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            );
+
+            meshlets_array.push((meshlet_buffer, vertex_buffer, meshlets.len() as u32));
+        }
+    }
+
+    for node in gltf_nodes {
+        nodes.push(node::Node::new(&node));
+    }
+
+    let mut scenes = vec![];
+    for scene in gltf_scenes {
+        scenes.push(scene::Scene {
+            _name: scene.name,
+            nodes: scene.nodes,
+        })
+    }
+
+    asset::Asset::new_from_meshlets(&ctx, nodes, scenes, default_scene, meshlets_array)
 }
 
 pub fn better_load(path: &str, ctx: &vkutils::context::VulkanContext) -> asset::Asset {
