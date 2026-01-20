@@ -9,7 +9,6 @@ pub struct Gui {
     imgui_renderer: imgui_rs_vulkan_renderer::Renderer,
     window: std::rc::Rc<winit::window::Window>,
     scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
-    //camera_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiCameraNode>>>,
     fps_window: fps_window::FpsWindow,
 }
 
@@ -18,7 +17,6 @@ impl Gui {
         window: std::rc::Rc<winit::window::Window>,
         ctx: &vkutils::context::VulkanContext,
         scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
-        //camera_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiCameraNode>>>,
     ) -> Self {
         let mut imguictx = imgui::Context::create();
         imguictx.set_ini_filename(None);
@@ -83,7 +81,8 @@ impl Gui {
 
     pub fn prepare_frame(
         self: &mut Self,
-        camera: &mut Camera,
+        // camera: &mut Camera,
+        app: &mut crate::App,
         durations: fps_window::FrameDurations,
     ) {
         let ui = self.imguictx.frame();
@@ -93,11 +92,11 @@ impl Gui {
             .position([0.0, 0.0], imgui::Condition::FirstUseEver)
             .build(|| {});
 
-        ui.window("Camera")
+        ui.window("Cameras")
             .size([300.0, 300.0], imgui::Condition::FirstUseEver)
             .position([0.0, 200.0], imgui::Condition::FirstUseEver)
             .build(|| {
-                camera.update(ui);
+                app.update(ui);
             });
 
         ui.window("FPS")

@@ -1,7 +1,7 @@
 #version 460 core
 
 #extension GL_GOOGLE_include_directive : enable
-#include "descriptor_set.glsl"
+#include "descriptor_set_traditional.glsl"
 
 layout(location = 0) in vec3 pos;
 layout(location = 1) in vec3 normal;
@@ -17,5 +17,5 @@ void main()
 
     vertex.xyz *= 200;
 
-    gl_Position = push_constants.camera_data.projview * (vertex + push_constants.camera_data.position);
+    gl_Position = push_constants.camera.projview * (vertex + push_constants.camera.position);
 }

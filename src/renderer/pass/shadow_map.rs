@@ -1,7 +1,8 @@
+use crate::assets::TraditionalAsset;
 use crate::vkutils::descriptor_set::bindless;
-use crate::vkutils::push_constants::GPUPushConstants;
+use crate::vkutils::push_constants::GPUPushConstantsTraditional;
 use crate::vkutils::vk_destroy::VkDestroy;
-use crate::{assets, vkutils};
+use crate::vkutils;
 use ash::vk;
 
 pub struct ShadowMapPass {
@@ -27,7 +28,7 @@ impl ShadowMapPass {
     pub fn new(
         ctx: &mut vkutils::context::VulkanContext,
         light_pov_camera_buffer_device_address: vk::DeviceAddress,
-        assets: &mut [assets::Asset],
+        assets: &[TraditionalAsset],
     ) -> Self {
         let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
             vk::CommandBufferLevel::PRIMARY,
@@ -45,7 +46,7 @@ impl ShadowMapPass {
         );
 
         let extent = ctx.swapchain.extent;
-        let pipeline_layout = ctx.bindless_descriptor_set.pipeline_layout;
+        let pipeline_layout = ctx.bindless_descriptor_set.traditional_pipeline_layout;
         let pipeline = create_pipeline(&ctx.device, &extent, pipeline_layout, ctx.depth_format);
 
         let timestamp_query = vkutils::timestamp_query::TimestampQuery::new(&ctx, 2);
@@ -74,9 +75,9 @@ impl ShadowMapPass {
         }
     }
 
-    pub fn get_pass_total_time(&mut self) -> std::time::Duration {
+    pub fn get_pass_total_time(&mut self, refresh: bool) -> std::time::Duration {
         let timestamp_period = self.timestamp_query.timestamp_period();
-        let query_results = self.timestamp_query.get_results();
+        let query_results = self.timestamp_query.get_results(refresh);
         // hope f32 to u64 won't blow up
         let t1_ns = query_results.iter().nth(0).unwrap() * timestamp_period as u64;
         let t2_ns = query_results.iter().nth(1).unwrap() * timestamp_period as u64;
@@ -94,14 +95,14 @@ fn record(
     extent: vk::Extent2D,
     light_pov_depth_image: (vk::Image, vk::ImageView),
     light_camera_data_buffer_address: vk::DeviceAddress,
-    assets: &mut [assets::Asset],
+    assets: &[TraditionalAsset],
     timestamp_query: &vkutils::timestamp_query::TimestampQuery,
 ) {
     let (camera_pov_depth_image, camera_pov_depth_image_view) = light_pov_depth_image;
 
-    let mut push_constants = GPUPushConstants::default();
-    push_constants.camera_data_buffer_address = light_camera_data_buffer_address;
-    push_constants.dir_light_camera_buffer_address = light_camera_data_buffer_address;
+    let mut push_constants = GPUPushConstantsTraditional::default();
+    push_constants.camera = light_camera_data_buffer_address;
+    push_constants.dir_light_camera = light_camera_data_buffer_address;
 
     let begin_info = vk::CommandBufferBeginInfo::default();
     unsafe {
@@ -113,7 +114,7 @@ fn record(
     timestamp_query.reset(command_buffer);
     timestamp_query.cmd_write(0, vk::PipelineStageFlags::TOP_OF_PIPE, command_buffer);
 
-    descriptor_set.cmd_bind(command_buffer, vk::PipelineBindPoint::GRAPHICS);
+    descriptor_set.cmd_bind(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline_layout);
 
     vkutils::image_barrier(
         &device,
@@ -280,6 +281,8 @@ fn create_pipeline(
         depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
         depth_bounds_test_enable: vk::FALSE,
         stencil_test_enable: vk::FALSE,
+        min_depth_bounds: 0.0,
+        max_depth_bounds: 1.0,
         ..Default::default()
     };
 

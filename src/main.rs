@@ -9,6 +9,7 @@ mod fps_window;
 mod grid;
 mod gui;
 mod gui_scene_node;
+mod overlay_drawable;
 mod renderer;
 mod skybox;
 mod vkutils;

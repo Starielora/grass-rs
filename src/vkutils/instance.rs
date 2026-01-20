@@ -17,6 +17,10 @@ pub fn create(entry: &ash::Entry, window_required_extensions: &[*const i8]) -> a
         .map(|str| str.as_ptr())
         .collect::<Vec<_>>();
 
+    let enabled = [vk::ValidationFeatureEnableEXT::GPU_ASSISTED];
+    let mut _validation_features =
+        vk::ValidationFeaturesEXT::default().enabled_validation_features(&enabled);
+
     let mut extensions: Vec<*const i8> = vec![ash::ext::debug_utils::NAME.as_ptr()];
     extensions.extend(window_required_extensions.iter().copied());
 
@@ -24,6 +28,7 @@ pub fn create(entry: &ash::Entry, window_required_extensions: &[*const i8]) -> a
 
     let create_info = vk::InstanceCreateInfo::default()
         .push_next(&mut debug)
+        // .push_next(&mut validation_features)
         .application_info(&app_info)
         .enabled_layer_names(&layers)
         .enabled_extension_names(&extensions);

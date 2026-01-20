@@ -76,7 +76,7 @@ impl MeshletRender {
         unsafe {
             device
                 .queue_submit(queue, &submits, vk::Fence::null())
-                .expect("Failed to submit shadow map display commands");
+                .expect("Failed to submit meshlet commands");
         }
 
         swapchain_present_wait[0]

@@ -143,9 +143,9 @@ impl UiPass {
             .expect("Failed to end command buffer???");
     }
 
-    pub fn get_pass_total_time(&mut self) -> std::time::Duration {
+    pub fn get_pass_total_time(&mut self, refresh: bool) -> std::time::Duration {
         let timestamp_period = self.timestamp_query.timestamp_period();
-        let query_results = self.timestamp_query.get_results();
+        let query_results = self.timestamp_query.get_results(refresh);
         // hope f32 to u64 won't blow up
         let t1_ns = query_results.iter().nth(0).unwrap() * timestamp_period as u64;
         let t2_ns = query_results.iter().nth(1).unwrap() * timestamp_period as u64;

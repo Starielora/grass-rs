@@ -1,0 +1,47 @@
+#version 450 core
+#extension GL_EXT_mesh_shader : require
+#extension GL_KHR_shader_subgroup_ballot: require
+#extension GL_ARB_shader_draw_parameters: require
+
+#include "descriptor_set_meshlet.glsl"
+#include "meshlet_common.glsl"
+
+taskPayloadSharedEXT MeshletSharedData shared_data;
+
+bool clusterCull(vec3 center, float radius, vec3 cone_axis, float cone_cutoff, vec3 camera_position) {
+    if (cone_cutoff >= 1.0) return false; // meshopt signals -1.0 is uncullable; use >= 1.0 as safe upper guard too
+    if (cone_cutoff < -0.999) return false; // can't cone-cull this meshlet
+    return dot(center - camera_position, cone_axis) > cone_cutoff * length(center - camera_position) + radius;
+}
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+void main() {
+    MeshletDraw draw_data = push_constants.meshlet_draws.draws[gl_DrawIDARB];
+    uint meshlet_group_index = gl_WorkGroupID.x;
+    uint meshlet_index_in_this_group = gl_LocalInvocationID.x;
+
+    uint meshlet_index = meshlet_group_index * 64 + meshlet_index_in_this_group;
+
+    bool valid = meshlet_index < draw_data.meshlets_count;
+    bool accept = false;
+
+    if (valid) {
+        MeshletBounds bounds = draw_data.bounds.bounds[meshlet_index];
+        mat4 model_matrix = draw_data.transform.model_matrix;
+        vec3 bounds_center_world = (model_matrix * vec4(bounds.center, 1.0)).xyz;
+        vec3 cone_axis_world = normalize(transpose(inverse(mat3(model_matrix))) * bounds.cone_axis);
+        float radius_world = bounds.radius * length(model_matrix[0].xyz);
+        accept = !clusterCull(bounds_center_world, radius_world, cone_axis_world, bounds.cone_cutoff, push_constants.cull_camera.position.xyz);
+    }
+
+    uvec4 ballot = subgroupBallot(accept);
+    uint count = subgroupBallotBitCount(ballot);
+
+    if (accept) {
+        uint index = subgroupBallotExclusiveBitCount(ballot);
+        shared_data.meshlet_index[index] = meshlet_index;
+        shared_data.instance_index = gl_DrawIDARB;
+    }
+
+    EmitMeshTasksEXT(count, 1, 1);
+}

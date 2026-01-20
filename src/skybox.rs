@@ -1,6 +1,7 @@
 use crate::gui_scene_node::GuiSceneNode;
+use crate::overlay_drawable::OverlayDrawable;
 use crate::vkutils;
-use crate::vkutils::push_constants::GPUPushConstants;
+use crate::vkutils::push_constants::GPUPushConstantsTraditional;
 use crate::vkutils::vk_destroy::VkDestroy;
 use ash::vk;
 use std::io::prelude::*;
@@ -135,7 +136,7 @@ fn create_graphics_pipeline(
     let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo {
         depth_test_enable: vk::TRUE,
         depth_write_enable: vk::TRUE,
-        depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
+        depth_compare_op: vk::CompareOp::GREATER,
         depth_bounds_test_enable: vk::FALSE,
         stencil_test_enable: vk::FALSE,
         min_depth_bounds: 0.0,
@@ -381,7 +382,7 @@ impl Skybox {
         cube_index_buffer: vk::Buffer,
         indices_count: usize,
     ) -> Self {
-        let pipeline_layout = ctx.bindless_descriptor_set.pipeline_layout;
+        let pipeline_layout = ctx.bindless_descriptor_set.traditional_pipeline_layout;
         let pipeline = create_graphics_pipeline(
             &ctx.device,
             &ctx.swapchain.extent,
@@ -488,7 +489,30 @@ impl Skybox {
         }
     }
 
-    pub fn record(&self, command_buffer: vk::CommandBuffer, push_constants: &mut GPUPushConstants) {
+    fn refresh_per_frame_buffer(&self) {
+        self.buffer.update_contents(&[self.current_resource_id]);
+    }
+}
+
+impl std::ops::Drop for Skybox {
+    fn drop(&mut self) {
+        self.buffer.vk_destroy();
+        for image in &self.images {
+            image.vk_destroy();
+        }
+        unsafe {
+            self.device.destroy_sampler(self.sampler, None);
+            self.device.destroy_pipeline(self.pipeline, None);
+        }
+    }
+}
+
+impl OverlayDrawable for Skybox {
+    fn record(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        push_constants: &mut GPUPushConstantsTraditional,
+    ) {
         unsafe {
             let sets = [self.descriptor_set];
             let dynamic_offsets = [];
@@ -507,7 +531,7 @@ impl Skybox {
                 self.pipeline,
             );
 
-            push_constants.skybox_data = self.buffer_device_address;
+            push_constants.skybox = self.buffer_device_address;
 
             self.device.cmd_push_constants(
                 command_buffer,
@@ -515,8 +539,8 @@ impl Skybox {
                 vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
                 0,
                 std::slice::from_raw_parts(
-                    (push_constants as *const GPUPushConstants) as *const u8,
-                    std::mem::size_of::<GPUPushConstants>(),
+                    (push_constants as *const GPUPushConstantsTraditional) as *const u8,
+                    std::mem::size_of::<GPUPushConstantsTraditional>(),
                 ),
             );
 
@@ -528,27 +552,10 @@ impl Skybox {
                 command_buffer,
                 self.index_buffer,
                 0,
-                vk::IndexType::UINT16,
+                vk::IndexType::UINT32,
             );
             self.device
                 .cmd_draw_indexed(command_buffer, self.indices_count as u32, 1, 0, 0, 0);
-        }
-    }
-
-    fn refresh_per_frame_buffer(&self) {
-        self.buffer.update_contents(&[self.current_resource_id]);
-    }
-}
-
-impl std::ops::Drop for Skybox {
-    fn drop(&mut self) {
-        self.buffer.vk_destroy();
-        for image in &self.images {
-            image.vk_destroy();
-        }
-        unsafe {
-            self.device.destroy_sampler(self.sampler, None);
-            self.device.destroy_pipeline(self.pipeline, None);
         }
     }
 }

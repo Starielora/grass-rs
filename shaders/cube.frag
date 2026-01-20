@@ -1,7 +1,7 @@
 #version 450
 
 #extension GL_GOOGLE_include_directive : enable
-#include "descriptor_set.glsl"
+#include "descriptor_set_traditional.glsl"
 
 layout(location = 0) out vec4 out_color;
 
@@ -19,12 +19,11 @@ float calc_shadow() {
 }
 
 void main() {
-
     DirLight light = push_constants.dir_light.data;
     vec3 light_ambient = vec3(0.2, 0.2, 0.2);
     vec3 light_diffuse = vec3(1.0, 1.0, 1.0);
     vec3 light_specular = vec3(1.0, 1.0, 1.0);
-    vec3 viewPos = push_constants.camera_data.position.xyz;
+    vec3 viewPos = push_constants.camera.position.xyz;
     float shininess = 64;
     vec3 cube_color = vec3(1.0, 1.0, 1.0);
     vec3 light_color = vec3(1.0, 1.0, 1.0);
@@ -45,9 +44,8 @@ void main() {
     vec3 specular = spec * light_specular;
 
     float shadow = calc_shadow();
-    // shadow = 0.0;
+    shadow = 0.0;
     vec3 result = (ambient * 0.0) + (1.0 - shadow) * (diffuse + specular);
 
     out_color = vec4(result, 1.0);
 }
-

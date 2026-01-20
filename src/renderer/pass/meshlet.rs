@@ -1,3 +1,6 @@
+use crate::assets::MeshletAsset;
+use crate::overlay_drawable::OverlayDrawable;
+use crate::vkutils::push_constants::{GPUPushConstantsMeshlet, GPUPushConstantsTraditional};
 use crate::vkutils::{self, vk_destroy::VkDestroy};
 use ash::vk;
 
@@ -6,19 +9,28 @@ pub struct MeshletPass {
     pub render_target: vkutils::image::Image,
     pub depth_image: vkutils::image::Image,
 
+    timestamp_query: vkutils::timestamp_query::TimestampQuery,
+
     pipeline: vk::Pipeline,
     device: ash::Device,
 }
 
 impl MeshletPass {
-    pub fn new(ctx: &mut vkutils::context::VulkanContext) -> Self {
+    pub fn new(
+        ctx: &mut vkutils::context::VulkanContext,
+        assets: &[MeshletAsset],
+        camera_data: vk::DeviceAddress,
+        cull_camera_data: vk::DeviceAddress,
+        pre_overlays: &[&dyn OverlayDrawable],
+        post_overlays: &[&dyn OverlayDrawable],
+    ) -> Self {
         let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
             vk::CommandBufferLevel::PRIMARY,
             ctx.swapchain.images.len().try_into().unwrap(),
         );
 
         let extent = ctx.swapchain.extent;
-        let pipeline_layout = ctx.bindless_descriptor_set.pipeline_layout;
+        let pipeline_layout = ctx.bindless_descriptor_set.meshlet_pipeline_layout;
         let format = ctx.swapchain.surface_format.format;
 
         let pipeline = create_pipeline(
@@ -49,18 +61,25 @@ impl MeshletPass {
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
         );
 
-        // LMAO WTF
-        let ext_device = ash::ext::mesh_shader::Device::new(&ctx.instance, &ctx.device);
+        let timestamp_query = vkutils::timestamp_query::TimestampQuery::new(&ctx, 2);
 
         for command_buffer in &command_buffers {
             record(
                 &ctx.device,
-                &ext_device,
+                &ctx.mesh_shader_device,
                 *command_buffer,
                 (render_target.handle, render_target.view),
                 (depth_image.handle, depth_image.view),
                 extent,
                 pipeline,
+                assets,
+                camera_data,
+                cull_camera_data,
+                pipeline_layout,
+                ctx.bindless_descriptor_set.handle,
+                &timestamp_query,
+                pre_overlays,
+                post_overlays,
             );
         }
 
@@ -69,8 +88,19 @@ impl MeshletPass {
             render_target,
             depth_image,
             pipeline,
+            timestamp_query,
             device: ctx.device.clone(),
         }
+    }
+
+    pub fn get_pass_total_time(&mut self, refresh: bool) -> std::time::Duration {
+        let timestamp_period = self.timestamp_query.timestamp_period();
+        let query_results = self.timestamp_query.get_results(refresh);
+        // hope f32 to u64 won't blow up
+        let t1_ns = query_results.iter().nth(0).unwrap() * timestamp_period as u64;
+        let t2_ns = query_results.iter().nth(1).unwrap() * timestamp_period as u64;
+
+        std::time::Duration::from_nanos(t2_ns - t1_ns)
     }
 }
 
@@ -86,12 +116,20 @@ impl std::ops::Drop for MeshletPass {
 
 fn record(
     device: &ash::Device,
-    ext_device: &ash::ext::mesh_shader::Device,
+    mesh_shader_device: &ash::ext::mesh_shader::Device,
     command_buffer: vk::CommandBuffer,
     color_image: (vk::Image, vk::ImageView),
     depth_image: (vk::Image, vk::ImageView),
     extent: vk::Extent2D,
     pipeline: vk::Pipeline,
+    assets: &[MeshletAsset],
+    camera_buffer_address: vk::DeviceAddress,
+    cull_camera_buffer_address: vk::DeviceAddress,
+    pipeline_layout: vk::PipelineLayout,
+    descriptor_set: vk::DescriptorSet,
+    timestamp_query: &vkutils::timestamp_query::TimestampQuery,
+    pre_overlays: &[&dyn OverlayDrawable],
+    post_overlays: &[&dyn OverlayDrawable],
 ) {
     let begin_info = vk::CommandBufferBeginInfo {
         ..Default::default()
@@ -101,6 +139,9 @@ fn record(
             .begin_command_buffer(command_buffer, &begin_info)
             .expect("Failed to begin command buffer");
     }
+
+    timestamp_query.reset(command_buffer);
+    timestamp_query.cmd_write(0, vk::PipelineStageFlags::TOP_OF_PIPE, command_buffer);
 
     record_image_barriers(&device, command_buffer, color_image.0, depth_image.0);
 
@@ -112,13 +153,55 @@ fn record(
         extent,
     );
 
+    // uses traditional_pipeline_layout internally (compatible at set 0)
+    let mut trad_push_constants = GPUPushConstantsTraditional::default();
+    trad_push_constants.camera = camera_buffer_address;
+
+    for overlay in pre_overlays {
+        if overlay.enabled() {
+            overlay.record(command_buffer, &mut trad_push_constants);
+        }
+    }
+
+    // Re-bind descriptor set with meshlet layout before meshlet draws
+    let sets = [descriptor_set];
+    unsafe {
+        device.cmd_bind_descriptor_sets(
+            command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            pipeline_layout,
+            0,
+            &sets,
+            &[],
+        );
+    }
+
     unsafe {
         device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline);
     }
 
-    unsafe {
-        ext_device.cmd_draw_mesh_tasks(command_buffer, 1, 1, 1);
+    let mut push_constants = GPUPushConstantsMeshlet::default();
+    push_constants.camera = camera_buffer_address;
+    push_constants.cull_camera = cull_camera_buffer_address;
+
+    for asset in assets {
+        asset.draw_scene(
+            asset.default_scene.unwrap_or(0),
+            device,
+            mesh_shader_device,
+            command_buffer,
+            pipeline_layout,
+            &mut push_constants,
+        );
     }
+
+    for overlay in post_overlays {
+        if overlay.enabled() {
+            overlay.record(command_buffer, &mut trad_push_constants);
+        }
+    }
+
+    timestamp_query.cmd_write(1, vk::PipelineStageFlags::BOTTOM_OF_PIPE, command_buffer);
 
     unsafe {
         device.cmd_end_rendering(command_buffer);
@@ -143,7 +226,7 @@ fn begin_rendering(
 
     let depth_clear_value = vk::ClearValue {
         depth_stencil: vk::ClearDepthStencilValue {
-            depth: 1.0,
+            depth: 0.0,
             stencil: 0,
         },
     };
@@ -229,7 +312,17 @@ fn create_pipeline(
     swapchain_format: vk::Format,
     depth_format: vk::Format,
 ) -> vk::Pipeline {
+    let shader_main = unsafe { std::ffi::CStr::from_bytes_with_nul_unchecked(b"main\0") };
     // todo path lol
+    let mut task_spv_file = std::fs::File::open("target/debug/meshlet.task.spv").unwrap();
+    let task_spv = ash::util::read_spv(&mut task_spv_file).unwrap();
+    let task_shader_module_create_info = vk::ShaderModuleCreateInfo::default().code(&task_spv);
+    let task_module = unsafe {
+        device
+            .create_shader_module(&task_shader_module_create_info, None)
+            .unwrap()
+    };
+
     let mut mesh_spv_file = std::fs::File::open("target/debug/meshlet.mesh.spv").unwrap();
     let mesh_spv = ash::util::read_spv(&mut mesh_spv_file).unwrap();
     let mesh_shader_module_create_info = vk::ShaderModuleCreateInfo::default().code(&mesh_spv);
@@ -238,7 +331,6 @@ fn create_pipeline(
             .create_shader_module(&mesh_shader_module_create_info, None)
             .unwrap()
     };
-    let shader_main = unsafe { std::ffi::CStr::from_bytes_with_nul_unchecked(b"main\0") };
 
     let mut fs_spv_file = std::fs::File::open("target/debug/meshlet.frag.spv").unwrap();
     let fs_spv = ash::util::read_spv(&mut fs_spv_file).unwrap();
@@ -250,6 +342,12 @@ fn create_pipeline(
     };
 
     let shader_stages = [
+        vk::PipelineShaderStageCreateInfo {
+            stage: vk::ShaderStageFlags::TASK_EXT,
+            module: task_module,
+            p_name: shader_main.as_ptr(),
+            ..Default::default()
+        },
         vk::PipelineShaderStageCreateInfo {
             stage: vk::ShaderStageFlags::MESH_EXT,
             module: mesh_module,
@@ -308,7 +406,7 @@ fn create_pipeline(
     let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo {
         depth_test_enable: vk::TRUE,
         depth_write_enable: vk::TRUE,
-        depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
+        depth_compare_op: vk::CompareOp::GREATER,
         depth_bounds_test_enable: vk::FALSE,
         stencil_test_enable: vk::FALSE,
         min_depth_bounds: 0.0,
@@ -357,6 +455,7 @@ fn create_pipeline(
     };
 
     unsafe {
+        device.destroy_shader_module(task_module, None);
         device.destroy_shader_module(mesh_module, None);
         device.destroy_shader_module(fs_module, None);
     }

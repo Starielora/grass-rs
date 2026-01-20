@@ -30,6 +30,11 @@ fn main() {
                     .to_str()
                     .expect("Could not convert file_name OsString to string slice")
                     .starts_with("descriptor_set")
+                && !f
+                    .file_name()
+                    .to_str()
+                    .expect("Could not convert file_name OsString to string slice")
+                    .starts_with("meshlet_common")
         })
         .map(|file| file.as_ref().unwrap().path())
         .collect::<Vec<_>>();
@@ -52,6 +57,8 @@ fn main() {
         println!("Executing glslc for {}", file.display());
 
         let glslc_status = Command::new("glslc")
+            .arg("-O")
+            .arg("-g")
             .arg("--target-env=vulkan1.3")
             .arg(format!("{}", input.display()))
             .arg("-o")

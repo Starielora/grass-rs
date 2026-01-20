@@ -2,7 +2,8 @@ use std::ffi::CStr;
 
 use ash::vk;
 
-use crate::vkutils::push_constants::GPUPushConstants;
+use crate::overlay_drawable::OverlayDrawable;
+use crate::vkutils::push_constants::GPUPushConstantsTraditional;
 
 pub struct Grid {
     pipeline: vk::Pipeline,
@@ -94,7 +95,7 @@ impl Grid {
         let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo {
             depth_test_enable: vk::TRUE,
             depth_write_enable: vk::TRUE,
-            depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
+            depth_compare_op: vk::CompareOp::GREATER,
             depth_bounds_test_enable: vk::FALSE,
             stencil_test_enable: vk::FALSE,
             min_depth_bounds: 0.0,
@@ -156,7 +157,14 @@ impl Grid {
         })
     }
 
-    pub fn record(&self, command_buffer: vk::CommandBuffer, push_constants: &mut GPUPushConstants) {
+}
+
+impl OverlayDrawable for Grid {
+    fn record(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        push_constants: &mut GPUPushConstantsTraditional,
+    ) {
         unsafe {
             self.device.cmd_bind_pipeline(
                 command_buffer,
@@ -170,8 +178,8 @@ impl Grid {
                 vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
                 0,
                 std::slice::from_raw_parts(
-                    (push_constants as *const GPUPushConstants) as *const u8,
-                    std::mem::size_of::<GPUPushConstants>(),
+                    (push_constants as *const GPUPushConstantsTraditional) as *const u8,
+                    std::mem::size_of::<GPUPushConstantsTraditional>(),
                 ),
             );
 

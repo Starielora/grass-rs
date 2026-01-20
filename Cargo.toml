@@ -12,7 +12,8 @@ ash-window = "0.13.0"
 nalgebra-glm = "0.19.0"
 bitflags = "2.4.2"
 imgui-rs-vulkan-renderer = { version = "1.16.0", features=["dynamic-rendering"] }
-imgui = "0.12"
+imgui = { version = "0.12", features = ["tables-api"] }
 imgui-winit-support = "^0.13"
 stb_image_rust = "2.27.2"
 gltf = "1"
+meshopt = "0.6"
