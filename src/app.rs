@@ -88,21 +88,25 @@ impl ApplicationHandler for App {
         renderer
             .camera_data_buffer
             .update_contents(&[camera::GPUCameraData {
-                //pos: glm::make_vec4(&[camera.pos.x, camera.pos.y, camera.pos.z, 0.0]),
                 pos: camera.pos(),
                 projview: camera.get_projection_view(),
             }]);
 
-        let (shadow_map_render_duration, scene_render_duration, ui_render_duration) =
-            if self.frame_number == 0 {
-                (
-                    std::time::Duration::from_secs(0),
-                    std::time::Duration::from_secs(0),
-                    std::time::Duration::from_secs(0),
-                )
-            } else {
-                renderer.get_pass_durations()
-            };
+        let (
+            shadow_map_render_duration,
+            scene_render_duration,
+            meshlet_render_duration,
+            ui_render_duration,
+        ) = if self.frame_number == 0 {
+            (
+                std::time::Duration::from_secs(0),
+                std::time::Duration::from_secs(0),
+                std::time::Duration::from_secs(0),
+                std::time::Duration::from_secs(0),
+            )
+        } else {
+            renderer.get_pass_durations()
+        };
 
         let current_timestamp = std::time::Instant::now();
         let cpu_duration = current_timestamp - self.previous_frame_timestamp;
@@ -112,9 +116,10 @@ impl ApplicationHandler for App {
             camera,
             fps_window::FrameDurations {
                 cpu: cpu_duration,
-                gpu: shadow_map_render_duration + scene_render_duration + ui_render_duration,
+                gpu: shadow_map_render_duration + scene_render_duration,
                 shadow_map: shadow_map_render_duration,
                 color_pass: scene_render_duration,
+                meshlet_pass: meshlet_render_duration,
                 ui: ui_render_duration,
             },
         );

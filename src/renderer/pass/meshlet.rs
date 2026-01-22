@@ -1,9 +1,6 @@
 use crate::assets;
-use crate::vkutils::{
-    self, descriptor_set,
-    push_constants::{self, GPUPushConstants},
-    vk_destroy::VkDestroy,
-};
+use crate::vkutils::push_constants::GPUPushConstants;
+use crate::vkutils::{self, vk_destroy::VkDestroy};
 use ash::vk;
 
 pub struct MeshletPass {
@@ -20,7 +17,7 @@ pub struct MeshletPass {
 impl MeshletPass {
     pub fn new(
         ctx: &mut vkutils::context::VulkanContext,
-        meshlets: &assets::Asset,
+        assets: &mut [assets::Asset],
         camera_data: vk::DeviceAddress,
     ) -> Self {
         let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
@@ -60,21 +57,18 @@ impl MeshletPass {
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
         );
 
-        // LMAO WTF
-        let ext_device = ash::ext::mesh_shader::Device::new(&ctx.instance, &ctx.device);
-
         let timestamp_query = vkutils::timestamp_query::TimestampQuery::new(&ctx, 2);
 
         for command_buffer in &command_buffers {
             record(
                 &ctx.device,
-                &ext_device,
+                &ctx.mesh_shader_device,
                 *command_buffer,
                 (render_target.handle, render_target.view),
                 (depth_image.handle, depth_image.view),
                 extent,
                 pipeline,
-                meshlets,
+                assets,
                 camera_data,
                 pipeline_layout,
                 ctx.bindless_descriptor_set.handle,
@@ -92,9 +86,9 @@ impl MeshletPass {
         }
     }
 
-    pub fn get_pass_total_time(&mut self) -> std::time::Duration {
+    pub fn get_pass_total_time(&mut self, refresh: bool) -> std::time::Duration {
         let timestamp_period = self.timestamp_query.timestamp_period();
-        let query_results = self.timestamp_query.get_results();
+        let query_results = self.timestamp_query.get_results(refresh);
         // hope f32 to u64 won't blow up
         let t1_ns = query_results.iter().nth(0).unwrap() * timestamp_period as u64;
         let t2_ns = query_results.iter().nth(1).unwrap() * timestamp_period as u64;
@@ -115,14 +109,14 @@ impl std::ops::Drop for MeshletPass {
 
 fn record(
     device: &ash::Device,
-    ext_device: &ash::ext::mesh_shader::Device,
+    mesh_shader_device: &ash::ext::mesh_shader::Device,
     command_buffer: vk::CommandBuffer,
     color_image: (vk::Image, vk::ImageView),
     depth_image: (vk::Image, vk::ImageView),
     extent: vk::Extent2D,
     pipeline: vk::Pipeline,
-    asset: &assets::Asset,
-    camera_data: vk::DeviceAddress,
+    assets: &mut [assets::Asset],
+    camera_buffer_address: vk::DeviceAddress,
     pipeline_layout: vk::PipelineLayout,
     descriptor_set: vk::DescriptorSet,
     timestamp_query: &vkutils::timestamp_query::TimestampQuery,
@@ -166,43 +160,19 @@ fn record(
         device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline);
     }
 
-    for node_index in &asset.scenes.first().as_ref().unwrap().nodes {
-        draw_meshlets(
-            &asset,
-            *node_index,
-            camera_data,
-            device.clone(),
-            ext_device,
+    let mut push_constants = GPUPushConstants::default();
+    push_constants.camera_data_buffer_address = camera_buffer_address;
+
+    for asset in assets {
+        asset.draw_scene(
+            asset.default_scene.unwrap_or(0),
+            device,
+            mesh_shader_device,
             command_buffer,
             pipeline_layout,
+            &mut push_constants,
         );
     }
-
-    // for (meshlet_data, vertex_data, meshlets_count) in asset {
-    // let mut push_constants = GPUPushConstants::default();
-    // push_constants.meshlet_data = meshlet_data.device_address.unwrap();
-    // push_constants.mesh_vertex_data = vertex_data.device_address.unwrap();
-    // push_constants.camera_data_buffer_address = camera_data;
-
-    // unsafe {
-    // device.cmd_push_constants(
-    // command_buffer,
-    // pipeline_layout,
-    // vk::ShaderStageFlags::VERTEX
-    // | vk::ShaderStageFlags::FRAGMENT
-    // | vk::ShaderStageFlags::MESH_EXT,
-    // 0,
-    // std::slice::from_raw_parts(
-    // (&push_constants as *const GPUPushConstants) as *const u8,
-    // std::mem::size_of::<GPUPushConstants>(),
-    // ),
-    // );
-
-    // println!("Meshlets count: {}", meshlets_count);
-
-    // ext_device.cmd_draw_mesh_tasks(command_buffer, *meshlets_count, 1, 1);
-    // }
-    // }
 
     timestamp_query.cmd_write(1, vk::PipelineStageFlags::BOTTOM_OF_PIPE, command_buffer);
 
@@ -211,61 +181,6 @@ fn record(
         device
             .end_command_buffer(command_buffer)
             .expect("Failed to end command buffer???");
-    }
-}
-
-fn draw_meshlets(
-    asset: &assets::Asset,
-    node_index: usize,
-    camera_data: vk::DeviceAddress,
-    device: ash::Device,
-    ext_device: &ash::ext::mesh_shader::Device,
-    command_buffer: vk::CommandBuffer,
-    pipeline_layout: vk::PipelineLayout,
-) {
-    let node = &asset.nodes[node_index];
-    if let Some(mesh_index) = node.mesh_index {
-        let transformation_buffer_address = asset.meshlet_model_data.get(&node_index).unwrap();
-
-        let mut push_constants = GPUPushConstants::default();
-        push_constants.camera_data_buffer_address = camera_data;
-        push_constants.mesh_data = *transformation_buffer_address;
-
-        let vec = asset.meshlets.as_ref().unwrap();
-        let (meshlet_data, vertex_data, meshlets_count) =
-            vec.iter().nth(mesh_index).as_ref().unwrap();
-        push_constants.meshlet_data = meshlet_data.device_address.unwrap();
-        push_constants.mesh_vertex_data = vertex_data.device_address.unwrap();
-
-        unsafe {
-            device.cmd_push_constants(
-                command_buffer,
-                pipeline_layout,
-                vk::ShaderStageFlags::VERTEX
-                    | vk::ShaderStageFlags::FRAGMENT
-                    | vk::ShaderStageFlags::MESH_EXT,
-                0,
-                std::slice::from_raw_parts(
-                    (&push_constants as *const GPUPushConstants) as *const u8,
-                    std::mem::size_of::<GPUPushConstants>(),
-                ),
-            );
-
-            println!("Meshlets count: {}", meshlets_count);
-
-            ext_device.cmd_draw_mesh_tasks(command_buffer, *meshlets_count, 1, 1);
-        }
-    }
-    for child in &node.children {
-        draw_meshlets(
-            &asset,
-            *child,
-            camera_data,
-            device.clone(),
-            ext_device,
-            command_buffer,
-            pipeline_layout,
-        );
     }
 }
 

@@ -9,7 +9,6 @@ pub struct Gui {
     imgui_renderer: imgui_rs_vulkan_renderer::Renderer,
     window: std::rc::Rc<winit::window::Window>,
     scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
-    //camera_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiCameraNode>>>,
     fps_window: fps_window::FpsWindow,
 }
 
@@ -18,7 +17,6 @@ impl Gui {
         window: std::rc::Rc<winit::window::Window>,
         ctx: &vkutils::context::VulkanContext,
         scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
-        //camera_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiCameraNode>>>,
     ) -> Self {
         let mut imguictx = imgui::Context::create();
         imguictx.set_ini_filename(None);

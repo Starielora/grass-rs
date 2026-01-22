@@ -14,6 +14,7 @@ pub struct VulkanContext {
     pub swapchain: swapchain::Swapchain,
     pub physical_device: physical_device::PhysicalDevice,
     pub device: ash::Device,
+    pub mesh_shader_device: ash::ext::mesh_shader::Device,
     pub graphics_present_queue: vk::Queue,
     pub transfer_queue: vk::Queue,
     pub bindless_descriptor_set: descriptor_set::bindless::DescriptorSet,
@@ -77,6 +78,8 @@ impl VulkanContext {
             physical_device.graphics_queue_family_index,
         );
 
+        let mesh_shader_device = ash::ext::mesh_shader::Device::new(&instance, &device);
+
         Self {
             entry,
             instance,
@@ -84,6 +87,7 @@ impl VulkanContext {
             swapchain,
             physical_device,
             device,
+            mesh_shader_device,
             graphics_present_queue,
             transfer_queue,
             bindless_descriptor_set,

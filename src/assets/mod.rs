@@ -7,7 +7,7 @@ pub(super) mod scene;
 
 pub use asset::Asset;
 
-use crate::{assets::meshlet::Meshlet, vkutils};
+use crate::vkutils;
 use ash::vk;
 use gltf::{self, accessor::DataType};
 
@@ -129,13 +129,12 @@ mod internal {
 pub fn load_as_meshlets(path: &str, ctx: &vkutils::context::VulkanContext) -> asset::Asset {
     let (gltf_meshes, gltf_nodes, gltf_scenes, default_scene) = load(path);
 
-    let mut meshlets_array: std::vec::Vec<(vkutils::buffer::Buffer, vkutils::buffer::Buffer, u32)> =
-        vec![];
+    let mut meshes: std::vec::Vec<mesh::Mesh> = vec![];
     let mut nodes: std::vec::Vec<node::Node> = vec![];
 
-    println!("Brabon {}", gltf_meshes.len());
-
     for mesh in gltf_meshes {
+        let mut primitives: std::vec::Vec<meshlet::Meshlet> = vec![];
+
         for primitive in mesh.primitives {
             let vertex_data = primitive.vertex_buffer;
             let index_data: std::vec::Vec<u32> = match primitive.index_buffer {
@@ -156,8 +155,17 @@ pub fn load_as_meshlets(path: &str, ctx: &vkutils::context::VulkanContext) -> as
                 vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             );
 
-            meshlets_array.push((meshlet_buffer, vertex_buffer, meshlets.len() as u32));
+            primitives.push(meshlet::Meshlet {
+                meshlet_buffer,
+                vertex_buffer,
+                meshlets_count: meshlets.len() as u32,
+            });
         }
+        meshes.push(mesh::Mesh {
+            _name: mesh.name,
+            primitives: mesh::Primitives::Meshlets(primitives),
+            per_parent_node_model_buffer: std::collections::HashMap::new(),
+        });
     }
 
     for node in gltf_nodes {
@@ -172,7 +180,7 @@ pub fn load_as_meshlets(path: &str, ctx: &vkutils::context::VulkanContext) -> as
         })
     }
 
-    asset::Asset::new_from_meshlets(&ctx, nodes, scenes, default_scene, meshlets_array)
+    asset::Asset::new(&ctx, meshes, nodes, scenes, default_scene)
 }
 
 pub fn better_load(path: &str, ctx: &vkutils::context::VulkanContext) -> asset::Asset {
@@ -213,7 +221,7 @@ pub fn better_load(path: &str, ctx: &vkutils::context::VulkanContext) -> asset::
 
         meshes.push(mesh::Mesh {
             _name: mesh.name,
-            primitives,
+            primitives: mesh::Primitives::FixedFunctionVertexPrimitives(primitives),
             per_parent_node_model_buffer: std::collections::HashMap::new(),
         });
     }

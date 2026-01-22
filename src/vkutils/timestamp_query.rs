@@ -13,6 +13,7 @@ impl TimestampQuery {
     pub fn new(ctx: &vkutils::context::VulkanContext, count: u32) -> Self {
         let query_pool_create_info = vk::QueryPoolCreateInfo::default()
             .query_type(vk::QueryType::TIMESTAMP)
+            // .flag() ash rs does not support maintenance9 at the moment, so I cannot use VK_QUERY_POOL_CREATE_RESET_BIT_KHR
             .query_count(count);
 
         let query_pool = unsafe {
@@ -59,17 +60,19 @@ impl TimestampQuery {
         self.timestamp_period
     }
 
-    pub fn get_results(&mut self) -> &std::vec::Vec<u64> {
-        unsafe {
-            self.device
-                .get_query_pool_results(
-                    self.query_pool,
-                    0,
-                    self.results.as_mut_slice(),
-                    vk::QueryResultFlags::TYPE_64 | vk::QueryResultFlags::WAIT,
-                )
-                .expect("Failed to get query resutls");
-        };
+    pub fn get_results(&mut self, refresh: bool) -> &std::vec::Vec<u64> {
+        if refresh {
+            unsafe {
+                self.device
+                    .get_query_pool_results(
+                        self.query_pool,
+                        0,
+                        self.results.as_mut_slice(),
+                        vk::QueryResultFlags::TYPE_64 | vk::QueryResultFlags::WAIT,
+                    )
+                    .expect("Failed to get query resutls");
+            };
+        }
 
         &self.results
     }

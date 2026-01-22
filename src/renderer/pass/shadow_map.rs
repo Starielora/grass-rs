@@ -53,6 +53,7 @@ impl ShadowMapPass {
         for command_buffer in &command_buffers {
             record(
                 &ctx.device,
+                &ctx.mesh_shader_device,
                 *command_buffer,
                 &ctx.bindless_descriptor_set,
                 pipeline,
@@ -74,9 +75,9 @@ impl ShadowMapPass {
         }
     }
 
-    pub fn get_pass_total_time(&mut self) -> std::time::Duration {
+    pub fn get_pass_total_time(&mut self, refresh: bool) -> std::time::Duration {
         let timestamp_period = self.timestamp_query.timestamp_period();
-        let query_results = self.timestamp_query.get_results();
+        let query_results = self.timestamp_query.get_results(refresh);
         // hope f32 to u64 won't blow up
         let t1_ns = query_results.iter().nth(0).unwrap() * timestamp_period as u64;
         let t2_ns = query_results.iter().nth(1).unwrap() * timestamp_period as u64;
@@ -87,6 +88,7 @@ impl ShadowMapPass {
 
 fn record(
     device: &ash::Device,
+    mesh_shader_device: &ash::ext::mesh_shader::Device,
     command_buffer: vk::CommandBuffer,
     descriptor_set: &bindless::DescriptorSet,
     pipeline: vk::Pipeline,
@@ -161,6 +163,7 @@ fn record(
         asset.draw_scene(
             asset.default_scene.unwrap_or(0),
             device,
+            mesh_shader_device,
             command_buffer,
             pipeline_layout,
             &mut push_constants,

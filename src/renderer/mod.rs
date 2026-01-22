@@ -36,8 +36,9 @@ pub struct Renderer {
     pub camera_data_buffer: vkutils::buffer::Buffer,
 
     pub gui_scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
+    _skybox: std::vec::Vec<assets::Asset>,
     _assets: std::vec::Vec<assets::Asset>,
-    _brabon: assets::Asset,
+    _meshle_assets: std::vec::Vec<assets::Asset>,
     passes: Passes,
     submits: Submits,
 
@@ -66,24 +67,24 @@ impl Renderer {
         let cube_asset = assets::better_load("assets/cube.gltf", &ctx);
         let bistro_asset = assets::better_load(
             // "/home/starielora/dev/repos/glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf",
-            "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
-            // "/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
+            // "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
+            "/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
             &ctx,
         );
         let brabon_asset = assets::load_as_meshlets(
             // "/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
-            "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
+            // "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
+            // "/home/starielora/dev/repos/glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf",
+            "/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
             &ctx,
-        );
-        println!(
-            "Brabon meshlets count: {}",
-            brabon_asset.meshlets.as_ref().unwrap().len()
         );
         println!("Load time: {:?}", t1.elapsed());
 
         let mut assets = vec![];
-        assets.push(cube_asset);
         assets.push(bistro_asset);
+
+        let mut meshlet_assets = vec![];
+        meshlet_assets.push(brabon_asset);
 
         let dir_light = dir_light::DirLight::new(
             GPUDirLight {
@@ -124,12 +125,22 @@ impl Renderer {
             ui_pass.command_buffers.clone(),
         );
 
+        // TODO this is pepega
+        let (skybox_vertex_buffer_handle, skybox_index_buffer_handle, skybox_indices_count) =
+            match &cube_asset.meshes[0].primitives {
+                assets::mesh::Primitives::FixedFunctionVertexPrimitives(primitives) => (
+                    primitives[0].vertex_buffer.handle,
+                    primitives[0].index_buffer.handle,
+                    primitives[0].indices_count,
+                ),
+                assets::mesh::Primitives::Meshlets(_meshlets) => todo!(),
+            };
+
         let skybox = skybox::Skybox::new(
             &ctx,
-            // TODO this is pepega
-            assets[0].meshes[0].primitives[0].vertex_buffer.handle,
-            assets[0].meshes[0].primitives[0].index_buffer.handle,
-            assets[0].meshes[0].primitives[0].indices_count,
+            skybox_vertex_buffer_handle,
+            skybox_index_buffer_handle,
+            skybox_indices_count,
         );
         let grid = grid::Grid::new(
             &ctx.device,
@@ -199,7 +210,7 @@ impl Renderer {
 
         let meshlet_pass = pass::meshlet::MeshletPass::new(
             ctx,
-            &brabon_asset,
+            meshlet_assets.as_mut_slice(),
             camera_data_buffer.device_address.unwrap(),
         );
         let meshlet_render = meshlet_render::MeshletRender::new(
@@ -210,8 +221,9 @@ impl Renderer {
 
         Self {
             camera_data_buffer,
+            _skybox: vec![cube_asset],
             _assets: assets,
-            _brabon: brabon_asset,
+            _meshle_assets: meshlet_assets,
             passes: Passes {
                 _shadow_map: shadow_map_pass,
                 scene: scene_pass,
@@ -309,13 +321,33 @@ impl Renderer {
         std::time::Duration,
         std::time::Duration,
         std::time::Duration,
+        std::time::Duration,
     ) {
-        (
-            // self.passes._shadow_map.get_pass_total_time(),
-            // self.passes.scene.get_pass_total_time(),
-            std::time::Duration::from_secs(0),
-            self.passes.meshlet.get_pass_total_time(),
-            self.passes.ui.get_pass_total_time(),
-        )
+        match self.picker.borrow().target_render {
+            TargetRender::Scene => (
+                self.passes._shadow_map.get_pass_total_time(true),
+                self.passes.scene.get_pass_total_time(true),
+                self.passes.meshlet.get_pass_total_time(false),
+                self.passes.ui.get_pass_total_time(true),
+            ),
+            TargetRender::SceneDepth => (
+                self.passes._shadow_map.get_pass_total_time(false),
+                self.passes.scene.get_pass_total_time(false),
+                self.passes.meshlet.get_pass_total_time(false),
+                self.passes.ui.get_pass_total_time(true),
+            ),
+            TargetRender::ShadowMap => (
+                self.passes._shadow_map.get_pass_total_time(true),
+                self.passes.scene.get_pass_total_time(false),
+                self.passes.meshlet.get_pass_total_time(false),
+                self.passes.ui.get_pass_total_time(true),
+            ),
+            TargetRender::Meshlet => (
+                self.passes._shadow_map.get_pass_total_time(false),
+                self.passes.scene.get_pass_total_time(false),
+                self.passes.meshlet.get_pass_total_time(true),
+                self.passes.ui.get_pass_total_time(true),
+            ),
+        }
     }
 }
