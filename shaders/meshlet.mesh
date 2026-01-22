@@ -3,8 +3,8 @@
 
 #include "descriptor_set.glsl"
 
-layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
-layout(triangles, max_vertices = 64, max_primitives = 126) out;
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+layout(triangles, max_vertices = 64, max_primitives = 124) out;
 
 layout(location = 0) out vec4 color[];
 
@@ -26,18 +26,23 @@ void main()
 
   uint vertex_count = push_constants.meshlet_data.meshlets[mi].vertex_count;
   uint triangle_count = push_constants.meshlet_data.meshlets[mi].triangle_count;
+  uint vertex_offset = push_constants.meshlet_data.meshlets[mi].vertex_offset;
+  uint triangle_offset = push_constants.meshlet_data.meshlets[mi].triangle_offset;
 
-  for (uint i = ti; i < triangle_count; i += 32) {
-    uint index = i * 3;
-    uint ia = push_constants.meshlet_data.meshlets[mi].indices[index + 0];
-    uint ib = push_constants.meshlet_data.meshlets[mi].indices[index + 1];
-    uint ic = push_constants.meshlet_data.meshlets[mi].indices[index + 2];
+  if (ti == 0) {
+    SetMeshOutputsEXT(vertex_count, triangle_count);
+  }
+
+  for (uint i = ti; i < triangle_count; i += 64) {
+    uint ia = uint(push_constants.meshlet_triangles.meshlet_triangles[triangle_offset + i * 3 + 0]);
+    uint ib = uint(push_constants.meshlet_triangles.meshlet_triangles[triangle_offset + i * 3 + 1]);
+    uint ic = uint(push_constants.meshlet_triangles.meshlet_triangles[triangle_offset + i * 3 + 2]);
 
     gl_PrimitiveTriangleIndicesEXT[i] = uvec3(ia, ib, ic);
   }
 
-  for (uint i = ti; i < vertex_count; i += 32) {
-    uint vi = push_constants.meshlet_data.meshlets[mi].vertices[i];
+  for (uint i = ti; i < vertex_count; i += 64) {
+    uint vi = push_constants.meshlet_vertices.meshlet_vertices[vertex_offset + i];
     Vertex v = push_constants.mesh_vertex_data.vertices[vi];
     vec4 position = push_constants.camera_data.projview * push_constants.mesh_data.model_matrix * vec4(v.vx, v.vy, v.vz, 1.0);
     vec3 normal = vec3(v.nx, v.ny, v.nz);
@@ -47,9 +52,5 @@ void main()
     uint mhash = hash(mi);
     vec3 mcolor = vec3(float(mhash & 255), float((mhash >> 8) & 255), float((mhash >> 16) & 255)) / 255.0;
     color[i] = vec4(mcolor, 1.0);
-  }
-
-  if (ti == 0) {
-    SetMeshOutputsEXT(vertex_count, triangle_count);
   }
 }

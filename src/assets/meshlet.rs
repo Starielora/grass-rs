@@ -14,6 +14,8 @@ pub struct GPUMeshlet {
 pub struct Meshlet {
     pub meshlet_buffer: vkutils::buffer::Buffer,
     pub vertex_buffer: vkutils::buffer::Buffer,
+    pub meshlet_vertices: vkutils::buffer::Buffer,
+    pub triangle_buffer: vkutils::buffer::Buffer,
     pub meshlets_count: u32,
 }
 
@@ -28,6 +30,8 @@ impl Meshlet {
     ) {
         push_constants.meshlet_data = self.meshlet_buffer.device_address.unwrap();
         push_constants.mesh_vertex_data = self.vertex_buffer.device_address.unwrap();
+        push_constants.mesh_triangle_data = self.triangle_buffer.device_address.unwrap();
+        push_constants.meshlet_vertex_indices = self.meshlet_vertices.device_address.unwrap();
 
         unsafe {
             device.cmd_push_constants(
@@ -52,7 +56,49 @@ impl std::ops::Drop for Meshlet {
     fn drop(&mut self) {
         self.meshlet_buffer.vk_destroy();
         self.vertex_buffer.vk_destroy();
+        self.triangle_buffer.vk_destroy();
     }
+}
+
+pub fn build_meshlets2(
+    vertices: &std::vec::Vec<f32>,
+    indices: &std::vec::Vec<u32>,
+) -> meshopt::Meshlets {
+    let vertices_slice = unsafe {
+        std::slice::from_raw_parts(
+            vertices.as_ptr() as *const u8,
+            vertices.len() * std::mem::size_of::<f32>(),
+        )
+    };
+    // TODO this kurwa stride is giga bad, consider using strongly typed vector
+    let vertex_adapter =
+        meshopt::VertexDataAdapter::new(vertices_slice, std::mem::size_of::<f32>() * 8, 0)
+            .expect("Failed to create vertex adapter");
+
+    // TODO revise max vertices and triangle count - fix in shaders as well
+    // TODO use cone weight, when implementing cone culling
+    let mut meshopt_meshlets =
+        meshopt::build_meshlets(indices.as_slice(), &vertex_adapter, 64, 124, 0.0);
+
+    // TODO does it really work?
+    for meshlet in meshopt_meshlets.meshlets.iter_mut() {
+        unsafe {
+            meshopt::ffi::meshopt_optimizeMeshlet(
+                meshopt_meshlets
+                    .vertices
+                    .as_mut_ptr()
+                    .offset(meshlet.vertex_offset as isize),
+                meshopt_meshlets
+                    .triangles
+                    .as_mut_ptr()
+                    .offset(meshlet.triangle_offset as isize),
+                meshlet.triangle_count as usize,
+                meshlet.vertex_count as usize,
+            )
+        };
+    }
+
+    meshopt_meshlets
 }
 
 // TODO this is trivial impl, use meshopt

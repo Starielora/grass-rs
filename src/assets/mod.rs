@@ -6,6 +6,7 @@ pub(super) mod primitive;
 pub(super) mod scene;
 
 pub use asset::Asset;
+use meshopt::Meshlets;
 
 use crate::vkutils;
 use ash::vk;
@@ -126,64 +127,16 @@ mod internal {
     }
 }
 
-pub fn load_as_meshlets(path: &str, ctx: &vkutils::context::VulkanContext) -> asset::Asset {
-    let (gltf_meshes, gltf_nodes, gltf_scenes, default_scene) = load(path);
-
-    let mut meshes: std::vec::Vec<mesh::Mesh> = vec![];
-    let mut nodes: std::vec::Vec<node::Node> = vec![];
-
-    for mesh in gltf_meshes {
-        let mut primitives: std::vec::Vec<meshlet::Meshlet> = vec![];
-
-        for primitive in mesh.primitives {
-            let vertex_data = primitive.vertex_buffer;
-            let index_data: std::vec::Vec<u32> = match primitive.index_buffer {
-                IndexBufferType::U16(items) => items.iter().map(|u16val| *u16val as u32).collect(),
-                IndexBufferType::U32(items) => items,
-            };
-            let meshlets = meshlet::build_meshlets(&vertex_data, &index_data);
-
-            println!("Meshlets count for primitive: {}", meshlets.len());
-
-            // TODO no not do this with rebar buffer, I guess
-            let meshlet_buffer = ctx.upload_buffer(
-                &meshlets,
-                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-            );
-            let vertex_buffer = ctx.upload_buffer(
-                &vertex_data,
-                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-            );
-
-            primitives.push(meshlet::Meshlet {
-                meshlet_buffer,
-                vertex_buffer,
-                meshlets_count: meshlets.len() as u32,
-            });
-        }
-        meshes.push(mesh::Mesh {
-            _name: mesh.name,
-            primitives: mesh::Primitives::Meshlets(primitives),
-            per_parent_node_model_buffer: std::collections::HashMap::new(),
-        });
-    }
-
-    for node in gltf_nodes {
-        nodes.push(node::Node::new(&node));
-    }
-
-    let mut scenes = vec![];
-    for scene in gltf_scenes {
-        scenes.push(scene::Scene {
-            _name: scene.name,
-            nodes: scene.nodes,
-        })
-    }
-
-    asset::Asset::new(&ctx, meshes, nodes, scenes, default_scene)
+pub enum MeshType {
+    FixedFunctionVertex,
+    Meshlet,
 }
 
-pub fn better_load(path: &str, ctx: &vkutils::context::VulkanContext) -> asset::Asset {
+pub fn better_load(
+    path: &str,
+    mesh_type: MeshType,
+    ctx: &vkutils::context::VulkanContext,
+) -> asset::Asset {
     println!("Loading: {}", path);
     let (gltf_meshes, gltf_nodes, gltf_scenes, default_scene) = load(path);
 
@@ -191,39 +144,96 @@ pub fn better_load(path: &str, ctx: &vkutils::context::VulkanContext) -> asset::
     let mut nodes: std::vec::Vec<node::Node> = vec![];
     let mut scenes: std::vec::Vec<scene::Scene> = vec![];
 
-    for mesh in gltf_meshes {
-        let mut primitives = vec![];
-        for primitive in mesh.primitives {
-            let vertex_buffer = ctx.upload_buffer(
-                &primitive.vertex_buffer,
-                vk::BufferUsageFlags::VERTEX_BUFFER,
-            );
-            let (index_buffer, indices_count, index_type) = match primitive.index_buffer {
-                IndexBufferType::U16(items) => (
-                    ctx.upload_buffer(&items, vk::BufferUsageFlags::INDEX_BUFFER),
-                    items.len(),
-                    ash::vk::IndexType::UINT16,
-                ),
-                IndexBufferType::U32(items) => (
-                    ctx.upload_buffer(&items, vk::BufferUsageFlags::INDEX_BUFFER),
-                    items.len(),
-                    ash::vk::IndexType::UINT32,
-                ),
-            };
+    match mesh_type {
+        MeshType::FixedFunctionVertex => {
+            for mesh in gltf_meshes {
+                let mut primitives = vec![];
+                for primitive in mesh.primitives {
+                    let vertex_buffer = ctx.upload_buffer(
+                        &primitive.vertex_buffer,
+                        vk::BufferUsageFlags::VERTEX_BUFFER,
+                    );
+                    let (index_buffer, indices_count, index_type) = match primitive.index_buffer {
+                        IndexBufferType::U16(items) => (
+                            ctx.upload_buffer(&items, vk::BufferUsageFlags::INDEX_BUFFER),
+                            items.len(),
+                            ash::vk::IndexType::UINT16,
+                        ),
+                        IndexBufferType::U32(items) => (
+                            ctx.upload_buffer(&items, vk::BufferUsageFlags::INDEX_BUFFER),
+                            items.len(),
+                            ash::vk::IndexType::UINT32,
+                        ),
+                    };
 
-            primitives.push(primitive::Primitive {
-                vertex_buffer,
-                index_buffer,
-                indices_count,
-                index_type,
-            });
+                    primitives.push(primitive::Primitive {
+                        vertex_buffer,
+                        index_buffer,
+                        indices_count,
+                        index_type,
+                    });
+                }
+
+                meshes.push(mesh::Mesh {
+                    _name: mesh.name,
+                    primitives: mesh::Primitives::FixedFunctionVertexPrimitives(primitives),
+                    per_parent_node_model_buffer: std::collections::HashMap::new(),
+                });
+            }
         }
 
-        meshes.push(mesh::Mesh {
-            _name: mesh.name,
-            primitives: mesh::Primitives::FixedFunctionVertexPrimitives(primitives),
-            per_parent_node_model_buffer: std::collections::HashMap::new(),
-        });
+        MeshType::Meshlet => {
+            for mesh in gltf_meshes {
+                let mut primitives: std::vec::Vec<meshlet::Meshlet> = vec![];
+
+                for primitive in mesh.primitives {
+                    let vertex_data = primitive.vertex_buffer;
+                    let index_data: std::vec::Vec<u32> = match primitive.index_buffer {
+                        IndexBufferType::U16(items) => {
+                            items.iter().map(|u16val| *u16val as u32).collect()
+                        }
+                        IndexBufferType::U32(items) => items,
+                    };
+                    // let meshlets = meshlet::build_meshlets(&vertex_data, &index_data);
+
+                    let meshlets = meshlet::build_meshlets2(&vertex_data, &index_data);
+
+                    let meshlet_buffer = ctx.upload_buffer(
+                        &meshlets.meshlets,
+                        vk::BufferUsageFlags::STORAGE_BUFFER
+                            | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+                    );
+                    let vertex_buffer = ctx.upload_buffer(
+                        &vertex_data,
+                        vk::BufferUsageFlags::STORAGE_BUFFER
+                            | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+                    );
+                    let meshlet_vertices = ctx.upload_buffer(
+                        &meshlets.vertices,
+                        vk::BufferUsageFlags::STORAGE_BUFFER
+                            | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+                    );
+                    let triangle_buffer = ctx.upload_buffer(
+                        &meshlets.triangles,
+                        vk::BufferUsageFlags::STORAGE_BUFFER
+                            | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+                    );
+
+                    primitives.push(meshlet::Meshlet {
+                        meshlet_buffer,
+                        vertex_buffer,
+                        meshlet_vertices,
+                        triangle_buffer,
+                        meshlets_count: meshlets.len() as u32,
+                    });
+                }
+                meshes.push(mesh::Mesh {
+                    _name: mesh.name,
+                    primitives: mesh::Primitives::Meshlets(primitives),
+                    per_parent_node_model_buffer: std::collections::HashMap::new(),
+                });
+            }
+        }
     }
 
     for node in gltf_nodes {

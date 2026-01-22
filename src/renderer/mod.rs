@@ -5,7 +5,7 @@ mod scene_render;
 mod target_render_picker;
 
 use crate::{
-    assets,
+    assets::{self, MeshType},
     camera::GPUCameraData,
     dir_light::{self, GPUDirLight},
     grid, gui,
@@ -64,18 +64,22 @@ impl Renderer {
         // let cube_mesh_data = mesh::mesh_data::VkMesh::load("assets/cube.gltf", &ctx);
 
         let t1 = std::time::Instant::now();
-        let cube_asset = assets::better_load("assets/cube.gltf", &ctx);
+        let cube_asset =
+            assets::better_load("assets/cube.gltf", MeshType::FixedFunctionVertex, &ctx);
         let bistro_asset = assets::better_load(
+            // "/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
             // "/home/starielora/dev/repos/glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf",
-            // "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
-            "/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
+            "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
+            // "/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
+            MeshType::FixedFunctionVertex,
             &ctx,
         );
-        let brabon_asset = assets::load_as_meshlets(
+        let brabon_asset = assets::better_load(
             // "/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
-            // "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
             // "/home/starielora/dev/repos/glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf",
-            "/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
+            "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
+            // "/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
+            MeshType::Meshlet,
             &ctx,
         );
         println!("Load time: {:?}", t1.elapsed());
