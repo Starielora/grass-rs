@@ -28,7 +28,8 @@ pub fn create(
         .runtime_descriptor_array(true)
         .descriptor_binding_partially_bound(true)
         .shader_sampled_image_array_non_uniform_indexing(true)
-        .descriptor_binding_sampled_image_update_after_bind(true);
+        .descriptor_binding_sampled_image_update_after_bind(true)
+        .storage_buffer8_bit_access(true);
 
     let mut vk13_physical_device_features = vk::PhysicalDeviceVulkan13Features::default()
         .dynamic_rendering(true)

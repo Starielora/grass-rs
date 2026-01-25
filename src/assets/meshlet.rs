@@ -56,6 +56,7 @@ impl std::ops::Drop for Meshlet {
     fn drop(&mut self) {
         self.meshlet_buffer.vk_destroy();
         self.vertex_buffer.vk_destroy();
+        self.meshlet_vertices.vk_destroy();
         self.triangle_buffer.vk_destroy();
     }
 }

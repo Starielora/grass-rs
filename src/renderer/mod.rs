@@ -67,17 +67,17 @@ impl Renderer {
         let cube_asset =
             assets::better_load("assets/cube.gltf", MeshType::FixedFunctionVertex, &ctx);
         let bistro_asset = assets::better_load(
-            // "/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
+            "/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
             // "/home/starielora/dev/repos/glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf",
-            "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
+            // "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
             // "/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
             MeshType::FixedFunctionVertex,
             &ctx,
         );
         let brabon_asset = assets::better_load(
-            // "/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
+            "/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
             // "/home/starielora/dev/repos/glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf",
-            "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
+            // "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
             // "/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
             MeshType::Meshlet,
             &ctx,
