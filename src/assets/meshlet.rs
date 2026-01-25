@@ -1,4 +1,5 @@
 use ash::vk;
+use meshopt::ffi::meshopt_Meshlet;
 
 use crate::vkutils::{self, push_constants::GPUPushConstants, vk_destroy::VkDestroy};
 
@@ -47,7 +48,7 @@ impl Meshlet {
                 ),
             );
 
-            mesh_shader_device.cmd_draw_mesh_tasks(command_buffer, self.meshlets_count, 1, 1);
+            mesh_shader_device.cmd_draw_mesh_tasks(command_buffer, self.meshlets_count / 64, 1, 1);
         }
     }
 }
@@ -99,75 +100,16 @@ pub fn build_meshlets2(
         };
     }
 
+    // TODO perhaps fix
+    // draw divides meshlets count by 64, so last meshlets are getting cut from draw
+    while meshopt_meshlets.meshlets.len() % 64 != 0 {
+        meshopt_meshlets.meshlets.push(meshopt_Meshlet {
+            vertex_offset: 0,
+            triangle_offset: 0,
+            vertex_count: 0,
+            triangle_count: 0,
+        });
+    }
+
     meshopt_meshlets
-}
-
-// TODO this is trivial impl, use meshopt
-pub fn build_meshlets(
-    vertices: &std::vec::Vec<f32>,
-    indices: &std::vec::Vec<u32>,
-) -> std::vec::Vec<GPUMeshlet> {
-    let mut meshlets = std::vec::Vec::new();
-    let mut meshlet_vertices = std::vec::Vec::<u32>::with_capacity(vertices.len());
-    meshlet_vertices.resize(vertices.len(), 0xFF_u32);
-
-    let mut meshlet = GPUMeshlet {
-        vertices: [0; 64],
-        indices: [0; 126 * 3],
-        triangle_count: 0,
-        vertex_count: 0,
-    };
-
-    for i in (0..indices.len()).step_by(3) {
-        let a = indices[i + 0];
-        let b = indices[i + 1];
-        let c = indices[i + 2];
-
-        if meshlet.vertex_count
-            + (meshlet_vertices[a as usize] == 0xFF_u32) as u32
-            + (meshlet_vertices[b as usize] == 0xFF_u32) as u32
-            + (meshlet_vertices[c as usize] == 0xFF_u32) as u32
-            > 64
-            || meshlet.triangle_count >= 126
-        {
-            meshlets.push(meshlet.clone());
-            for j in 0..meshlet.vertex_count {
-                meshlet_vertices[meshlet.vertices[j as usize] as usize] = 0xFF_u32;
-            }
-
-            meshlet = GPUMeshlet {
-                vertices: [0; 64],
-                indices: [0; 126 * 3],
-                triangle_count: 0,
-                vertex_count: 0,
-            };
-        }
-
-        if meshlet_vertices[a as usize] == 0xFF_u32 {
-            meshlet_vertices[a as usize] = meshlet.vertex_count;
-            meshlet.vertices[meshlet.vertex_count as usize] = a as u32;
-            meshlet.vertex_count += 1;
-        }
-        if meshlet_vertices[b as usize] == 0xFF_u32 {
-            meshlet_vertices[b as usize] = meshlet.vertex_count;
-            meshlet.vertices[meshlet.vertex_count as usize] = b as u32;
-            meshlet.vertex_count += 1;
-        }
-        if meshlet_vertices[c as usize] == 0xFF_u32 {
-            meshlet_vertices[c as usize] = meshlet.vertex_count;
-            meshlet.vertices[meshlet.vertex_count as usize] = c as u32;
-            meshlet.vertex_count += 1;
-        }
-
-        meshlet.indices[meshlet.triangle_count as usize * 3 + 0] = meshlet_vertices[a as usize];
-        meshlet.indices[meshlet.triangle_count as usize * 3 + 1] = meshlet_vertices[b as usize];
-        meshlet.indices[meshlet.triangle_count as usize * 3 + 2] = meshlet_vertices[c as usize];
-        meshlet.triangle_count += 1;
-    }
-
-    if meshlet.triangle_count > 0 {
-        meshlets.push(meshlet);
-    }
-
-    meshlets
 }

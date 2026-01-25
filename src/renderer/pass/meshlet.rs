@@ -285,7 +285,17 @@ fn create_pipeline(
     swapchain_format: vk::Format,
     depth_format: vk::Format,
 ) -> vk::Pipeline {
+    let shader_main = unsafe { std::ffi::CStr::from_bytes_with_nul_unchecked(b"main\0") };
     // todo path lol
+    let mut task_spv_file = std::fs::File::open("target/debug/meshlet.task.spv").unwrap();
+    let task_spv = ash::util::read_spv(&mut task_spv_file).unwrap();
+    let task_shader_module_create_info = vk::ShaderModuleCreateInfo::default().code(&task_spv);
+    let task_module = unsafe {
+        device
+            .create_shader_module(&task_shader_module_create_info, None)
+            .unwrap()
+    };
+
     let mut mesh_spv_file = std::fs::File::open("target/debug/meshlet.mesh.spv").unwrap();
     let mesh_spv = ash::util::read_spv(&mut mesh_spv_file).unwrap();
     let mesh_shader_module_create_info = vk::ShaderModuleCreateInfo::default().code(&mesh_spv);
@@ -294,7 +304,6 @@ fn create_pipeline(
             .create_shader_module(&mesh_shader_module_create_info, None)
             .unwrap()
     };
-    let shader_main = unsafe { std::ffi::CStr::from_bytes_with_nul_unchecked(b"main\0") };
 
     let mut fs_spv_file = std::fs::File::open("target/debug/meshlet.frag.spv").unwrap();
     let fs_spv = ash::util::read_spv(&mut fs_spv_file).unwrap();
@@ -306,6 +315,12 @@ fn create_pipeline(
     };
 
     let shader_stages = [
+        vk::PipelineShaderStageCreateInfo {
+            stage: vk::ShaderStageFlags::TASK_EXT,
+            module: task_module,
+            p_name: shader_main.as_ptr(),
+            ..Default::default()
+        },
         vk::PipelineShaderStageCreateInfo {
             stage: vk::ShaderStageFlags::MESH_EXT,
             module: mesh_module,
@@ -413,6 +428,7 @@ fn create_pipeline(
     };
 
     unsafe {
+        device.destroy_shader_module(task_module, None);
         device.destroy_shader_module(mesh_module, None);
         device.destroy_shader_module(fs_module, None);
     }

@@ -2,6 +2,7 @@
 #extension GL_EXT_mesh_shader : require
 
 #include "descriptor_set.glsl"
+#include "meshlet_common.glsl"
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 layout(triangles, max_vertices = 64, max_primitives = 124) out;
@@ -19,9 +20,12 @@ uint hash(uint a)
   return a;
 }
 
+taskPayloadSharedEXT MeshletSharedData sharedData;
+
 void main()
 {
-  uint mi = gl_WorkGroupID.x;
+  // uint mi = gl_WorkGroupID.x;
+  uint mi = gl_WorkGroupID.x + sharedData.meshletOffset;
   uint ti = gl_LocalInvocationID.x;
 
   uint vertex_count = push_constants.meshlet_data.meshlets[mi].vertex_count;
@@ -29,9 +33,7 @@ void main()
   uint vertex_offset = push_constants.meshlet_data.meshlets[mi].vertex_offset;
   uint triangle_offset = push_constants.meshlet_data.meshlets[mi].triangle_offset;
 
-  if (ti == 0) {
-    SetMeshOutputsEXT(vertex_count, triangle_count);
-  }
+  SetMeshOutputsEXT(vertex_count, triangle_count);
 
   for (uint i = ti; i < triangle_count; i += 64) {
     uint ia = uint(push_constants.meshlet_triangles.meshlet_triangles[triangle_offset + i * 3 + 0]);
