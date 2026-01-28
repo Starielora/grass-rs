@@ -20,12 +20,17 @@ uint hash(uint a)
   return a;
 }
 
-taskPayloadSharedEXT MeshletSharedData sharedData;
+taskPayloadSharedEXT MeshletSharedData shared_data;
 
 void main()
 {
   // uint mi = gl_WorkGroupID.x;
-  uint mi = gl_WorkGroupID.x + sharedData.meshletOffset;
+  if (!shared_data.accept_meshlet[gl_WorkGroupID.x]) {
+    SetMeshOutputsEXT(0, 0);
+    return;
+  }
+
+  uint mi = gl_WorkGroupID.x + shared_data.meshlet_offset;
   uint ti = gl_LocalInvocationID.x;
 
   uint vertex_count = push_constants.meshlet_data.meshlets[mi].vertex_count;
@@ -54,5 +59,6 @@ void main()
     uint mhash = hash(mi);
     vec3 mcolor = vec3(float(mhash & 255), float((mhash >> 8) & 255), float((mhash >> 16) & 255)) / 255.0;
     color[i] = vec4(mcolor, 1.0);
+    // color[i] = vec4(normal.x, -normal.z, normal.y, 1.0);
   }
 }

@@ -1,3 +1,4 @@
 struct MeshletSharedData {
-  uint meshletOffset;
+  bool accept_meshlet[64];
+  uint meshlet_offset;
 };

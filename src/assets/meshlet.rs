@@ -12,12 +12,26 @@ pub struct GPUMeshlet {
     pub vertex_count: u32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct MeshletBounds {
+    center: glm::Vec3,
+    radius: f32,
+    cone_apex: glm::Vec3,
+    cone_cutoff: f32,
+    cone_axis: glm::Vec3,
+    // TODO its actually signed int - I wanted to avoid another glsl extensions
+    remaining_cone_data: f32,
+}
+
 pub struct Meshlet {
     pub meshlet_buffer: vkutils::buffer::Buffer,
     pub vertex_buffer: vkutils::buffer::Buffer,
     pub meshlet_vertices: vkutils::buffer::Buffer,
     pub triangle_buffer: vkutils::buffer::Buffer,
+    pub meshlet_bounds_buffer: vkutils::buffer::Buffer,
     pub meshlets_count: u32,
+    pub bounds_count: u32,
 }
 
 impl Meshlet {
@@ -33,6 +47,8 @@ impl Meshlet {
         push_constants.mesh_vertex_data = self.vertex_buffer.device_address.unwrap();
         push_constants.mesh_triangle_data = self.triangle_buffer.device_address.unwrap();
         push_constants.meshlet_vertex_indices = self.meshlet_vertices.device_address.unwrap();
+        push_constants.meshlet_bounds_data = self.meshlet_bounds_buffer.device_address.unwrap();
+        push_constants.meshlets_count = self.bounds_count; // TODO !!!!!
 
         unsafe {
             device.cmd_push_constants(
@@ -40,6 +56,7 @@ impl Meshlet {
                 pipeline_layout,
                 vk::ShaderStageFlags::VERTEX
                     | vk::ShaderStageFlags::FRAGMENT
+                    | vk::ShaderStageFlags::TASK_EXT
                     | vk::ShaderStageFlags::MESH_EXT,
                 0,
                 std::slice::from_raw_parts(
@@ -59,13 +76,14 @@ impl std::ops::Drop for Meshlet {
         self.vertex_buffer.vk_destroy();
         self.meshlet_vertices.vk_destroy();
         self.triangle_buffer.vk_destroy();
+        self.meshlet_bounds_buffer.vk_destroy();
     }
 }
 
 pub fn build_meshlets2(
     vertices: &std::vec::Vec<f32>,
     indices: &std::vec::Vec<u32>,
-) -> meshopt::Meshlets {
+) -> (meshopt::Meshlets, std::vec::Vec<MeshletBounds>) {
     let vertices_slice = unsafe {
         std::slice::from_raw_parts(
             vertices.as_ptr() as *const u8,
@@ -100,6 +118,22 @@ pub fn build_meshlets2(
         };
     }
 
+    let mut meshlets_bounds = vec![];
+
+    // TODO repack the data, to reduce size. Cone data perhaps unnecessary
+    for meshlet in meshopt_meshlets.iter() {
+        let meshlet_bounds = meshopt::compute_meshlet_bounds(meshlet, &vertex_adapter);
+        // Repack the data, cuz sth is wrong with padding somewhere
+        meshlets_bounds.push(MeshletBounds {
+            center: glm::make_vec3(&meshlet_bounds.center),
+            radius: meshlet_bounds.radius,
+            cone_apex: glm::make_vec3(&meshlet_bounds.cone_apex),
+            cone_cutoff: meshlet_bounds.cone_cutoff,
+            cone_axis: glm::make_vec3(&meshlet_bounds.cone_axis),
+            remaining_cone_data: 0.0f32,
+        });
+    }
+
     // TODO perhaps fix
     // draw divides meshlets count by 64, so last meshlets are getting cut from draw
     while meshopt_meshlets.meshlets.len() % 64 != 0 {
@@ -111,5 +145,5 @@ pub fn build_meshlets2(
         });
     }
 
-    meshopt_meshlets
+    (meshopt_meshlets, meshlets_bounds)
 }

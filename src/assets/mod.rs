@@ -196,7 +196,7 @@ pub fn better_load(
                     };
                     // let meshlets = meshlet::build_meshlets(&vertex_data, &index_data);
 
-                    let meshlets = meshlet::build_meshlets2(&vertex_data, &index_data);
+                    let (meshlets, bounds) = meshlet::build_meshlets2(&vertex_data, &index_data);
 
                     let meshlet_buffer = ctx.upload_buffer(
                         &meshlets.meshlets,
@@ -218,13 +218,23 @@ pub fn better_load(
                         vk::BufferUsageFlags::STORAGE_BUFFER
                             | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
                     );
+                    let meshlet_bounds_buffer = ctx.upload_buffer(
+                        &bounds,
+                        vk::BufferUsageFlags::STORAGE_BUFFER
+                            | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+                    );
 
                     primitives.push(meshlet::Meshlet {
                         meshlet_buffer,
                         vertex_buffer,
                         meshlet_vertices,
                         triangle_buffer,
+                        meshlet_bounds_buffer,
                         meshlets_count: meshlets.len() as u32,
+                        bounds_count: bounds.len() as u32, // meshlets are rounded up to % 64
+                                                           // which gives incorrect real value. I
+                                                           // could alos round up bounds data,
+                                                           // dunno
                     });
                 }
                 meshes.push(mesh::Mesh {

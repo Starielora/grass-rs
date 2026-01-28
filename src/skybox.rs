@@ -514,6 +514,7 @@ impl Skybox {
                 self.pipeline_layout,
                 vk::ShaderStageFlags::VERTEX
                     | vk::ShaderStageFlags::FRAGMENT
+                    | vk::ShaderStageFlags::TASK_EXT
                     | vk::ShaderStageFlags::MESH_EXT,
                 0,
                 std::slice::from_raw_parts(

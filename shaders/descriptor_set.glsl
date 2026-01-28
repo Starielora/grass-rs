@@ -46,6 +46,22 @@ layout(buffer_reference) readonly buffer MeshletVertices {
   uint meshlet_vertices[];
 };
 
+struct MeshletBounds {
+  vec3 center;
+  float radius;
+  vec3 cone_apex;
+  float cone_cutoff;
+  vec3 cone_axis;
+  // TODO its actually signed int - I wanted to avoid another glsl extensions
+  float remaining_cone_data;
+  // uint8_t cone_axis_s8;
+  // uint8_t cone_cutoff_s8;
+};
+
+layout(buffer_reference) readonly buffer MeshletBoundsData {
+  MeshletBounds bounds[];
+};
+
 struct Meshlet {
   uint vertex_offset;
   uint triangle_offset;
@@ -68,5 +84,7 @@ layout(push_constant) uniform constants
   MeshVertexData mesh_vertex_data;
   MeshletVertices meshlet_vertices;
   MeshletTriangles meshlet_triangles;
+  MeshletBoundsData meshlet_bounds;
+  uint meshlets_count;
   uint depth_sampler_index;
 } push_constants;
