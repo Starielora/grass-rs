@@ -1,5 +1,6 @@
 #version 450 core
 #extension GL_EXT_mesh_shader : require
+#extension GL_KHR_shader_subgroup_ballot: require
 
 #include "descriptor_set.glsl"
 #include "meshlet_common.glsl"
@@ -15,18 +16,24 @@ void main() {
   uint meshlet_group_index = gl_WorkGroupID.x;
   uint meshlet_index_in_this_group = gl_LocalInvocationID.x;
 
-  shared_data.meshlet_offset = meshlet_group_index * 64;
-
   uint meshlet_index = meshlet_group_index * 64 + meshlet_index_in_this_group;
 
   if (meshlet_index < push_constants.meshlets_count) {
     MeshletBounds bounds = push_constants.meshlet_bounds.bounds[meshlet_index];
 
-    // TODO gather number of accepted meshlets and emit this exact number of tasks
+    // TODO for now this is giga trivial implementation. I must now go and learn how to do things better.
+    // When I come back, pls implement accounting for projection view.
     const bool accept = !clusterCull(bounds.center, bounds.radius, bounds.cone_axis, bounds.cone_cutoff, vec3(0, 100, 0));
-    // const bool accept = !clusterCull(bounds.center, bounds.radius, bounds.cone_axis, bounds.cone_cutoff, push_constants.camera_data.position.xzy);
-    shared_data.accept_meshlet[meshlet_index_in_this_group] = accept;
 
-    EmitMeshTasksEXT(64, 1, 1);
+    uvec4 ballot = subgroupBallot(accept);
+
+    if (accept) {
+      uint index = subgroupBallotExclusiveBitCount(ballot);
+      shared_data.meshlet_index[index] = meshlet_index;
+    }
+
+    uint count = subgroupBallotBitCount(ballot);
+
+    EmitMeshTasksEXT(count, 1, 1);
   }
 }

@@ -24,13 +24,7 @@ taskPayloadSharedEXT MeshletSharedData shared_data;
 
 void main()
 {
-  // uint mi = gl_WorkGroupID.x;
-  if (!shared_data.accept_meshlet[gl_WorkGroupID.x]) {
-    SetMeshOutputsEXT(0, 0);
-    return;
-  }
-
-  uint mi = gl_WorkGroupID.x + shared_data.meshlet_offset;
+  uint mi = shared_data.meshlet_index[gl_WorkGroupID.x];
   uint ti = gl_LocalInvocationID.x;
 
   uint vertex_count = push_constants.meshlet_data.meshlets[mi].vertex_count;
