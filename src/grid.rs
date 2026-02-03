@@ -94,7 +94,7 @@ impl Grid {
         let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo {
             depth_test_enable: vk::TRUE,
             depth_write_enable: vk::TRUE,
-            depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
+            depth_compare_op: vk::CompareOp::GREATER,
             depth_bounds_test_enable: vk::FALSE,
             stencil_test_enable: vk::FALSE,
             min_depth_bounds: 0.0,

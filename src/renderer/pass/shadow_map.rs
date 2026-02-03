@@ -283,6 +283,8 @@ fn create_pipeline(
         depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
         depth_bounds_test_enable: vk::FALSE,
         stencil_test_enable: vk::FALSE,
+        min_depth_bounds: 0.0,
+        max_depth_bounds: 1.0,
         ..Default::default()
     };
 

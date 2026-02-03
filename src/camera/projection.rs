@@ -92,7 +92,7 @@ impl Projection {
 
     pub fn compute_matrix(&self) -> glm::Mat4 {
         match self {
-            Projection::Perspective(props) => glm::perspective(
+            Projection::Perspective(props) => glm::reversed_perspective_rh_zo(
                 props.aspect,
                 props.fov.x.to_radians(),
                 props.near.x,

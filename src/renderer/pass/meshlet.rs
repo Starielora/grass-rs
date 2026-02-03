@@ -199,7 +199,7 @@ fn begin_rendering(
 
     let depth_clear_value = vk::ClearValue {
         depth_stencil: vk::ClearDepthStencilValue {
-            depth: 1.0,
+            depth: 0.0,
             stencil: 0,
         },
     };
@@ -379,7 +379,7 @@ fn create_pipeline(
     let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo {
         depth_test_enable: vk::TRUE,
         depth_write_enable: vk::TRUE,
-        depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
+        depth_compare_op: vk::CompareOp::GREATER,
         depth_bounds_test_enable: vk::FALSE,
         stencil_test_enable: vk::FALSE,
         min_depth_bounds: 0.0,
