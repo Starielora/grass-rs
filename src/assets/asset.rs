@@ -135,16 +135,42 @@ impl Asset {
         push_constants: &mut GPUPushConstants,
     ) {
         let scene = &self.scenes[index];
-        for node in &scene.nodes {
-            cmd_draw(
-                *node,
-                &self,
-                device,
-                mesh_shader_device,
-                command_buffer,
-                pipeline_layout,
-                push_constants,
-            )
+        for (mi, mesh) in self.meshes.iter().enumerate() {
+            let mut mesh_nodes = vec![];
+            for ni in &scene.nodes {
+                build_mesh_nodes(&mut mesh_nodes, &self, *ni, mi);
+            }
+
+            // TODO replace with draw_indexed
+            for node_index in &mesh_nodes {
+                push_constants.mesh_data = mesh.get_transformation(*node_index);
+
+                match &mesh.primitives {
+                    super::mesh::Primitives::FixedFunctionVertexPrimitives(primitives) => {
+                        for primitive in primitives {
+                            primitive.cmd_draw(
+                                device,
+                                command_buffer,
+                                pipeline_layout,
+                                push_constants,
+                            );
+                        }
+                    }
+                    super::mesh::Primitives::Meshlets(meshlets) => {
+                        for meshlet in meshlets {
+                            meshlet.cmd_draw(
+                                device,
+                                mesh_shader_device,
+                                command_buffer,
+                                pipeline_layout,
+                                push_constants,
+                            );
+                        }
+                    }
+                }
+            }
+
+            println!("{}: {:?}", mi, mesh_nodes);
         }
     }
 }
@@ -208,6 +234,19 @@ fn upload_model_data(
             buffers,
             current_buffer_index,
         );
+    }
+}
+
+fn build_mesh_nodes(mesh_nodes: &mut Vec<usize>, asset: &Asset, node_index: usize, mi: usize) {
+    let node = &asset.nodes[node_index];
+    if let Some(mesh_index) = node.mesh_index {
+        if mesh_index == mi {
+            mesh_nodes.push(node_index);
+        }
+    }
+
+    for child in &node.children {
+        build_mesh_nodes(mesh_nodes, asset, *child, mi);
     }
 }
 
