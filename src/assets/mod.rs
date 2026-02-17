@@ -257,7 +257,7 @@ pub fn better_load(
         })
     }
 
-    asset::Asset::new(&ctx, meshes, nodes, scenes, default_scene)
+    asset::Asset::new(&ctx, meshes, nodes, scenes, default_scene, mesh_type)
 }
 
 pub fn load(

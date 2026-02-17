@@ -73,6 +73,20 @@ layout(buffer_reference) readonly buffer MeshletData {
   Meshlet meshlets[];
 };
 
+struct MeshInstance_MeshletDraw {
+  MeshData mesh_data; // model matrix buffer address
+  MeshletData meshlet_data;
+  MeshVertexData mesh_vertex_data;
+  MeshletVertices meshlet_vertices;
+  MeshletTriangles meshlet_triangles;
+  MeshletBoundsData meshlet_bounds;
+  uint meshlets_count;
+};
+
+layout(buffer_reference) readonly buffer MeshletDraw_br {
+  MeshInstance_MeshletDraw draws[];
+};
+
 layout(push_constant) uniform constants
 {
   MeshData mesh_data;
@@ -85,6 +99,7 @@ layout(push_constant) uniform constants
   MeshletVertices meshlet_vertices;
   MeshletTriangles meshlet_triangles;
   MeshletBoundsData meshlet_bounds;
+  MeshletDraw_br meshlet_draws;
   uint meshlets_count;
   uint depth_sampler_index;
 } push_constants;

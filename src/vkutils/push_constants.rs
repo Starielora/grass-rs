@@ -15,6 +15,7 @@ pub struct GPUPushConstants {
     pub meshlet_vertex_indices: vk::DeviceAddress,
     pub mesh_triangle_data: vk::DeviceAddress,
     pub meshlet_bounds_data: vk::DeviceAddress,
+    pub meshlet_draw: vk::DeviceAddress,
     pub meshlets_count: u32,
     pub depth_sampler_index: u32,
 }

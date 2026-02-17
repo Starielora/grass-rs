@@ -24,6 +24,18 @@ pub struct MeshletBounds {
     remaining_cone_data: f32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct MeshletDraw {
+    pub mesh_data_aka_model_matrix_buffer_reference: u64,
+    pub meshlet_data: u64,
+    pub mesh_vertex_data: u64,
+    pub meshlet_vertices: u64,
+    pub meshlet_triangles: u64,
+    pub meshlet_bounds: u64,
+    pub meshlets_count: u32,
+}
+
 pub struct Meshlet {
     pub meshlet_buffer: vkutils::buffer::Buffer,
     pub vertex_buffer: vkutils::buffer::Buffer,
