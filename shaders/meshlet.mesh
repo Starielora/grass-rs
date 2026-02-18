@@ -1,5 +1,6 @@
 #version 450 core
 #extension GL_EXT_mesh_shader : require
+#extension GL_ARB_shader_draw_parameters: require
 
 #include "descriptor_set.glsl"
 #include "meshlet_common.glsl"
@@ -24,28 +25,29 @@ taskPayloadSharedEXT MeshletSharedData shared_data;
 
 void main()
 {
+  MeshInstance_MeshletDraw draw_data = push_constants.meshlet_draws.draws[shared_data.instance_index];
   uint mi = shared_data.meshlet_index[gl_WorkGroupID.x];
   uint ti = gl_LocalInvocationID.x;
 
-  uint vertex_count = push_constants.meshlet_data.meshlets[mi].vertex_count;
-  uint triangle_count = push_constants.meshlet_data.meshlets[mi].triangle_count;
-  uint vertex_offset = push_constants.meshlet_data.meshlets[mi].vertex_offset;
-  uint triangle_offset = push_constants.meshlet_data.meshlets[mi].triangle_offset;
+  uint vertex_count = draw_data.meshlet_data.meshlets[mi].vertex_count;
+  uint triangle_count = draw_data.meshlet_data.meshlets[mi].triangle_count;
+  uint vertex_offset = draw_data.meshlet_data.meshlets[mi].vertex_offset;
+  uint triangle_offset = draw_data.meshlet_data.meshlets[mi].triangle_offset;
 
   SetMeshOutputsEXT(vertex_count, triangle_count);
 
   for (uint i = ti; i < triangle_count; i += 64) {
-    uint ia = uint(push_constants.meshlet_triangles.meshlet_triangles[triangle_offset + i * 3 + 0]);
-    uint ib = uint(push_constants.meshlet_triangles.meshlet_triangles[triangle_offset + i * 3 + 1]);
-    uint ic = uint(push_constants.meshlet_triangles.meshlet_triangles[triangle_offset + i * 3 + 2]);
+    uint ia = uint(draw_data.meshlet_triangles.meshlet_triangles[triangle_offset + i * 3 + 0]);
+    uint ib = uint(draw_data.meshlet_triangles.meshlet_triangles[triangle_offset + i * 3 + 1]);
+    uint ic = uint(draw_data.meshlet_triangles.meshlet_triangles[triangle_offset + i * 3 + 2]);
 
     gl_PrimitiveTriangleIndicesEXT[i] = uvec3(ia, ib, ic);
   }
 
   for (uint i = ti; i < vertex_count; i += 64) {
-    uint vi = push_constants.meshlet_vertices.meshlet_vertices[vertex_offset + i];
-    Vertex v = push_constants.mesh_vertex_data.vertices[vi];
-    vec4 position = push_constants.camera_data.projview * push_constants.mesh_data.model_matrix * vec4(v.vx, v.vy, v.vz, 1.0);
+    uint vi = draw_data.meshlet_vertices.meshlet_vertices[vertex_offset + i];
+    Vertex v = draw_data.mesh_vertex_data.vertices[vi];
+    vec4 position = push_constants.camera_data.projview * draw_data.mesh_data.model_matrix * vec4(v.vx, v.vy, v.vz, 1.0);
     vec3 normal = vec3(v.nx, v.ny, v.nz);
 
     gl_MeshVerticesEXT[i].gl_Position = position;

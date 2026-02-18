@@ -35,6 +35,7 @@ pub struct Asset {
     device: ash::Device,
     per_scene_node_transformation_data: std::vec::Vec<SceneNodesBuffers>,
     per_scene_node_meshlet_data: std::vec::Vec<vkutils::buffer::Buffer>,
+    per_scene_draw_mesh_tasks_indirect_buffers: std::vec::Vec<(vkutils::buffer::Buffer, usize)>,
 }
 
 impl Asset {
@@ -48,20 +49,24 @@ impl Asset {
     ) -> Self {
         let mut per_scene_node_transformation_data = vec![];
         let mut per_scene_node_meshlet_data = vec![];
+        let mut per_scene_draw_mesh_tasks_indirect_buffers = vec![];
 
         for scene in &scenes {
             let node_transformation_data =
                 build_node_transformation_data(ctx, &mut meshes, &nodes, &scene);
 
             if let MeshType::Meshlet = mesh_type {
-                let buffer = build_node_meshlet_data(
+                let instances_buffer = build_node_meshlet_data(
                     ctx,
                     &node_transformation_data.node_transform_buffer_address,
-                    &mut meshes,
+                    &meshes,
                     &nodes,
-                    &scene,
                 );
-                per_scene_node_meshlet_data.push(buffer);
+
+                let draw_mesh_tasks_buffer = build_buffer_for_indirect_draw(ctx, &meshes, &nodes);
+
+                per_scene_node_meshlet_data.push(instances_buffer);
+                per_scene_draw_mesh_tasks_indirect_buffers.push(draw_mesh_tasks_buffer);
             }
             per_scene_node_transformation_data.push(node_transformation_data);
         }
@@ -74,6 +79,7 @@ impl Asset {
             device: ctx.device.clone(),
             per_scene_node_transformation_data,
             per_scene_node_meshlet_data,
+            per_scene_draw_mesh_tasks_indirect_buffers,
         }
     }
 
@@ -87,7 +93,7 @@ impl Asset {
         push_constants: &mut GPUPushConstants,
     ) {
         let scene = &self.scenes[index];
-        for (mi, mesh) in self.meshes.iter().enumerate() {
+        'outer: for (mi, mesh) in self.meshes.iter().enumerate() {
             let mut mesh_nodes = vec![];
             for ni in &scene.nodes {
                 build_mesh_nodes(&mut mesh_nodes, &self, *ni, mi);
@@ -116,20 +122,43 @@ impl Asset {
                         push_constants.meshlet_draw = self.per_scene_node_meshlet_data[index]
                             .device_address
                             .unwrap();
-                        for meshlet in meshlets {
-                            meshlet.cmd_draw(
-                                device,
-                                mesh_shader_device,
+                        let (buf, draws_count) =
+                            &self.per_scene_draw_mesh_tasks_indirect_buffers[index];
+                        unsafe {
+                            device.cmd_push_constants(
                                 command_buffer,
                                 pipeline_layout,
-                                push_constants,
+                                vk::ShaderStageFlags::VERTEX
+                                    | vk::ShaderStageFlags::FRAGMENT
+                                    | vk::ShaderStageFlags::TASK_EXT
+                                    | vk::ShaderStageFlags::MESH_EXT,
+                                0,
+                                std::slice::from_raw_parts(
+                                    (push_constants as *const GPUPushConstants) as *const u8,
+                                    std::mem::size_of::<GPUPushConstants>(),
+                                ),
+                            );
+                            mesh_shader_device.cmd_draw_mesh_tasks_indirect(
+                                command_buffer,
+                                buf.handle,
+                                0,
+                                *draws_count as u32,
+                                12,
                             );
                         }
+                        break 'outer;
+                        // for meshlet in meshlets {
+                        //     meshlet.cmd_draw(
+                        //         device,
+                        //         mesh_shader_device,
+                        //         command_buffer,
+                        //         pipeline_layout,
+                        //         push_constants,
+                        //     );
+                        // }
                     }
                 }
             }
-
-            println!("{}: {:?}", mi, mesh_nodes);
         }
     }
 }
@@ -157,12 +186,49 @@ struct MeshInstance_MeshletDraw {
     pub meshlets_count: u32,
 }
 
+fn build_buffer_for_indirect_draw(
+    ctx: &vkutils::context::VulkanContext,
+    meshes: &std::vec::Vec<Mesh>,
+    nodes: &std::vec::Vec<Node>,
+) -> (vkutils::buffer::Buffer, usize) {
+    let mut draws = vec![];
+    // TODO same loop as in build_node_meshlet_data
+    for (node_index, node) in nodes.iter().enumerate() {
+        if let Some(mesh_index) = node.mesh_index {
+            let mesh = meshes.iter().nth(mesh_index).unwrap();
+            match &mesh.primitives {
+                super::mesh::Primitives::FixedFunctionVertexPrimitives(_) => {
+                    todo!(
+                        "ale sie kurwa zjebalo - ten branch nie powinien byc wykonywany tu nigdy"
+                    );
+                }
+                super::mesh::Primitives::Meshlets(meshlets) => {
+                    for meshlet in meshlets {
+                        let draw = vk::DrawMeshTasksIndirectCommandEXT {
+                            group_count_x: meshlet.meshlets_count / 64,
+                            group_count_y: 1,
+                            group_count_z: 1,
+                        };
+                        draws.push(draw);
+                    }
+                }
+            }
+        }
+    }
+
+    let buffer = ctx.upload_buffer(
+        &draws,
+        vk::BufferUsageFlags::INDIRECT_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+    );
+
+    (buffer, draws.len())
+}
+
 fn build_node_meshlet_data(
     ctx: &vkutils::context::VulkanContext,
     node_transform_buffer_address: &std::collections::HashMap<usize, vk::DeviceAddress>,
-    meshes: &mut std::vec::Vec<Mesh>,
+    meshes: &std::vec::Vec<Mesh>,
     nodes: &std::vec::Vec<Node>,
-    scene: &Scene,
 ) -> vkutils::buffer::Buffer {
     let mut meshlet_draws = vec![];
 

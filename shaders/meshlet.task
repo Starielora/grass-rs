@@ -1,6 +1,7 @@
 #version 450 core
 #extension GL_EXT_mesh_shader : require
 #extension GL_KHR_shader_subgroup_ballot: require
+#extension GL_ARB_shader_draw_parameters: require
 
 #include "descriptor_set.glsl"
 #include "meshlet_common.glsl"
@@ -13,13 +14,14 @@ bool clusterCull(vec3 center, float radius, vec3 cone_axis, float cone_cutoff, v
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 void main() {
+  MeshInstance_MeshletDraw draw_data = push_constants.meshlet_draws.draws[gl_DrawIDARB];
   uint meshlet_group_index = gl_WorkGroupID.x;
   uint meshlet_index_in_this_group = gl_LocalInvocationID.x;
 
   uint meshlet_index = meshlet_group_index * 64 + meshlet_index_in_this_group;
 
-  if (meshlet_index < push_constants.meshlets_count) {
-    MeshletBounds bounds = push_constants.meshlet_bounds.bounds[meshlet_index];
+  if (meshlet_index < draw_data.meshlets_count) {
+    MeshletBounds bounds = draw_data.meshlet_bounds.bounds[meshlet_index];
 
     // TODO for now this is giga trivial implementation. I must now go and learn how to do things better.
     // When I come back, pls implement accounting for projection view.
@@ -31,6 +33,7 @@ void main() {
     if (accept) {
       uint index = subgroupBallotExclusiveBitCount(ballot);
       shared_data.meshlet_index[index] = meshlet_index;
+      shared_data.instance_index = gl_DrawIDARB;
     }
 
     uint count = subgroupBallotBitCount(ballot);
