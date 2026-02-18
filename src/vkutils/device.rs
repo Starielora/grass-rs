@@ -25,6 +25,9 @@ pub fn create(
     let vk_physical_device_features =
         vk::PhysicalDeviceFeatures::default().multi_draw_indirect(true);
 
+    let mut vk11_physical_device_features =
+        vk::PhysicalDeviceVulkan11Features::default().shader_draw_parameters(true);
+
     let mut vk12_physical_device_features = vk::PhysicalDeviceVulkan12Features::default()
         .buffer_device_address(true)
         // bindless
@@ -43,6 +46,7 @@ pub fn create(
         .task_shader(true);
 
     let logical_device_create_info = vk::DeviceCreateInfo::default()
+        .push_next(&mut vk11_physical_device_features)
         .push_next(&mut vk12_physical_device_features)
         .push_next(&mut vk13_physical_device_features)
         .push_next(&mut mesh_shading_features)

@@ -5,6 +5,7 @@ use super::scene::Scene;
 use crate::assets::MeshType;
 use crate::vkutils;
 use crate::vkutils::push_constants::GPUPushConstants;
+use crate::vkutils::vk_destroy::VkDestroy;
 use ash::vk;
 
 struct SceneNodesBuffers {
@@ -147,15 +148,6 @@ impl Asset {
                             );
                         }
                         break 'outer;
-                        // for meshlet in meshlets {
-                        //     meshlet.cmd_draw(
-                        //         device,
-                        //         mesh_shader_device,
-                        //         command_buffer,
-                        //         pipeline_layout,
-                        //         push_constants,
-                        //     );
-                        // }
                     }
                 }
             }
@@ -165,12 +157,12 @@ impl Asset {
 
 impl std::ops::Drop for Asset {
     fn drop(&mut self) {
-        unsafe {
-            // for (buffer, _address, _ptr) in &self.model_data_buffers_with_addr {
-            //     self.device.destroy_buffer(*buffer, None);
-            // }
+        for buf in &self.per_scene_node_meshlet_data {
+            buf.vk_destroy();
+        }
 
-            // self.device.free_memory(self.model_buffers_memory, None);
+        for (buf, _size) in &self.per_scene_draw_mesh_tasks_indirect_buffers {
+            buf.vk_destroy();
         }
     }
 }
