@@ -6,7 +6,6 @@ pub(super) mod primitive;
 pub(super) mod scene;
 
 pub use asset::Asset;
-use meshopt::Meshlets;
 
 use crate::vkutils;
 use ash::vk;
@@ -127,14 +126,14 @@ mod internal {
     }
 }
 
-pub enum MeshType {
+pub enum DrawType {
     FixedFunctionVertex,
     Meshlet,
 }
 
 pub fn better_load(
     path: &str,
-    mesh_type: MeshType,
+    mesh_type: DrawType,
     ctx: &vkutils::context::VulkanContext,
 ) -> asset::Asset {
     println!("Loading: {}", path);
@@ -145,7 +144,7 @@ pub fn better_load(
     let mut scenes: std::vec::Vec<scene::Scene> = vec![];
 
     match mesh_type {
-        MeshType::FixedFunctionVertex => {
+        DrawType::FixedFunctionVertex => {
             for mesh in gltf_meshes {
                 let mut primitives = vec![];
                 for primitive in mesh.primitives {
@@ -177,12 +176,11 @@ pub fn better_load(
                 meshes.push(mesh::Mesh {
                     _name: mesh.name,
                     primitives: mesh::Primitives::FixedFunctionVertexPrimitives(primitives),
-                    per_parent_node_model_buffer: std::collections::HashMap::new(),
                 });
             }
         }
 
-        MeshType::Meshlet => {
+        DrawType::Meshlet => {
             for mesh in gltf_meshes {
                 let mut primitives: std::vec::Vec<meshlet::Meshlet> = vec![];
 
@@ -240,7 +238,6 @@ pub fn better_load(
                 meshes.push(mesh::Mesh {
                     _name: mesh.name,
                     primitives: mesh::Primitives::Meshlets(primitives),
-                    per_parent_node_model_buffer: std::collections::HashMap::new(),
                 });
             }
         }

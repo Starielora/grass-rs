@@ -25,7 +25,7 @@ taskPayloadSharedEXT MeshletSharedData shared_data;
 
 void main()
 {
-  MeshInstance_MeshletDraw draw_data = push_constants.meshlet_draws.draws[shared_data.instance_index];
+  MeshInstance_Meshlet draw_data = push_constants.meshlet_draws.data[shared_data.instance_index];
   uint mi = shared_data.meshlet_index[gl_WorkGroupID.x];
   uint ti = gl_LocalInvocationID.x;
 

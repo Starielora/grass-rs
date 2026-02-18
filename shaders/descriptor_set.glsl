@@ -73,7 +73,7 @@ layout(buffer_reference) readonly buffer MeshletData {
   Meshlet meshlets[];
 };
 
-struct MeshInstance_MeshletDraw {
+struct MeshInstance_Meshlet {
   MeshData mesh_data; // model matrix buffer address
   MeshletData meshlet_data;
   MeshVertexData mesh_vertex_data;
@@ -84,7 +84,7 @@ struct MeshInstance_MeshletDraw {
 };
 
 layout(buffer_reference) readonly buffer MeshletDraw_br {
-  MeshInstance_MeshletDraw draws[];
+  MeshInstance_Meshlet data[];
 };
 
 layout(push_constant) uniform constants
@@ -94,12 +94,6 @@ layout(push_constant) uniform constants
   CameraData dir_light_camera_data;
   DirLightBuffer dir_light;
   SkyboxData skybox_data;
-  MeshletData meshlet_data;
-  MeshVertexData mesh_vertex_data;
-  MeshletVertices meshlet_vertices;
-  MeshletTriangles meshlet_triangles;
-  MeshletBoundsData meshlet_bounds;
   MeshletDraw_br meshlet_draws;
-  uint meshlets_count;
   uint depth_sampler_index;
 } push_constants;

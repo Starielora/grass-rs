@@ -1,16 +1,6 @@
-use ash::vk;
 use meshopt::ffi::meshopt_Meshlet;
 
-use crate::vkutils::{self, push_constants::GPUPushConstants, vk_destroy::VkDestroy};
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct GPUMeshlet {
-    pub vertices: [u32; 64],
-    pub indices: [u32; 126 * 3],
-    pub triangle_count: u32,
-    pub vertex_count: u32,
-}
+use crate::vkutils::{self, vk_destroy::VkDestroy};
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -24,18 +14,6 @@ pub struct MeshletBounds {
     remaining_cone_data: f32,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct MeshletDraw {
-    pub mesh_data_aka_model_matrix_buffer_reference: u64,
-    pub meshlet_data: u64,
-    pub mesh_vertex_data: u64,
-    pub meshlet_vertices: u64,
-    pub meshlet_triangles: u64,
-    pub meshlet_bounds: u64,
-    pub meshlets_count: u32,
-}
-
 pub struct Meshlet {
     pub meshlet_buffer: vkutils::buffer::Buffer,
     pub vertex_buffer: vkutils::buffer::Buffer,
@@ -44,42 +22,6 @@ pub struct Meshlet {
     pub meshlet_bounds_buffer: vkutils::buffer::Buffer,
     pub meshlets_count: u32,
     pub bounds_count: u32,
-}
-
-impl Meshlet {
-    pub fn cmd_draw(
-        &self,
-        device: &ash::Device,
-        mesh_shader_device: &ash::ext::mesh_shader::Device,
-        command_buffer: vk::CommandBuffer,
-        pipeline_layout: vk::PipelineLayout,
-        push_constants: &mut GPUPushConstants,
-    ) {
-        push_constants.meshlet_data = self.meshlet_buffer.device_address.unwrap();
-        push_constants.mesh_vertex_data = self.vertex_buffer.device_address.unwrap();
-        push_constants.mesh_triangle_data = self.triangle_buffer.device_address.unwrap();
-        push_constants.meshlet_vertex_indices = self.meshlet_vertices.device_address.unwrap();
-        push_constants.meshlet_bounds_data = self.meshlet_bounds_buffer.device_address.unwrap();
-        push_constants.meshlets_count = self.bounds_count; // TODO !!!!!
-
-        unsafe {
-            device.cmd_push_constants(
-                command_buffer,
-                pipeline_layout,
-                vk::ShaderStageFlags::VERTEX
-                    | vk::ShaderStageFlags::FRAGMENT
-                    | vk::ShaderStageFlags::TASK_EXT
-                    | vk::ShaderStageFlags::MESH_EXT,
-                0,
-                std::slice::from_raw_parts(
-                    (push_constants as *const GPUPushConstants) as *const u8,
-                    std::mem::size_of::<GPUPushConstants>(),
-                ),
-            );
-
-            mesh_shader_device.cmd_draw_mesh_tasks(command_buffer, self.meshlets_count / 64, 1, 1);
-        }
-    }
 }
 
 impl std::ops::Drop for Meshlet {

@@ -14,7 +14,7 @@ bool clusterCull(vec3 center, float radius, vec3 cone_axis, float cone_cutoff, v
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 void main() {
-  MeshInstance_MeshletDraw draw_data = push_constants.meshlet_draws.draws[gl_DrawIDARB];
+  MeshInstance_Meshlet draw_data = push_constants.meshlet_draws.data[gl_DrawIDARB];
   uint meshlet_group_index = gl_WorkGroupID.x;
   uint meshlet_index_in_this_group = gl_LocalInvocationID.x;
 

@@ -5,7 +5,7 @@ mod scene_render;
 mod target_render_picker;
 
 use crate::{
-    assets::{self, MeshType},
+    assets::{self, DrawType},
     camera::GPUCameraData,
     dir_light::{self, GPUDirLight},
     grid, gui,
@@ -63,18 +63,18 @@ impl Renderer {
 
         let t1 = std::time::Instant::now();
         let cube_asset =
-            assets::better_load("assets/cube.gltf", MeshType::FixedFunctionVertex, &ctx);
+            assets::better_load("assets/cube.gltf", DrawType::FixedFunctionVertex, &ctx);
 
         let asset_path = std::str::from_utf8(
-            // b"/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
+            b"/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
             // b"/home/starielora/dev/repos/glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf",
-            b"/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
+            // b"/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
             // b"/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
         )
         .unwrap();
 
-        let bistro_asset = assets::better_load(asset_path, MeshType::FixedFunctionVertex, &ctx);
-        let brabon_asset = assets::better_load(asset_path, MeshType::Meshlet, &ctx);
+        let bistro_asset = assets::better_load(asset_path, DrawType::FixedFunctionVertex, &ctx);
+        let brabon_asset = assets::better_load(asset_path, DrawType::Meshlet, &ctx);
         println!("Load time: {:?}", t1.elapsed());
 
         let mut assets = vec![];
