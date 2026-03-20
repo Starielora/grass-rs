@@ -38,6 +38,9 @@ pub struct Asset {
     per_scene_node_transformation_data: std::vec::Vec<SceneNodesBuffers>,
     per_scene_node_meshlet_data: std::vec::Vec<vkutils::buffer::Buffer>,
     per_scene_draw_mesh_tasks_indirect_buffers: std::vec::Vec<(vkutils::buffer::Buffer, usize)>,
+
+    fvf_instances_buffers: std::vec::Vec<vkutils::buffer::Buffer>,
+    fvf_offsets_buffers: std::vec::Vec<vkutils::buffer::Buffer>,
 }
 
 impl Asset {
@@ -52,13 +55,25 @@ impl Asset {
         let mut per_scene_node_transformation_data = vec![];
         let mut per_scene_node_meshlet_data = vec![];
         let mut per_scene_draw_mesh_tasks_indirect_buffers = vec![];
+        let mut fvf_instances_buffers = vec![];
+        let mut fvf_offsets_buffers = vec![];
 
         for scene in &scenes {
             let node_transformation_data =
                 build_node_transformation_data(ctx, &mut meshes, &nodes, &scene);
 
+            if let DrawType::FixedVertexFunctionCombined = mesh_type {
+                let (offsets_buffer, instances_buffer) = fvf_build_instance_data(
+                    ctx,
+                    &node_transformation_data.node_transform_buffer_address,
+                    &meshes,
+                );
+                fvf_offsets_buffers.push(offsets_buffer);
+                fvf_instances_buffers.push(instances_buffer);
+            }
+
             if let DrawType::Meshlet = mesh_type {
-                let instances_buffer = build_node_meshlet_data(
+                let instances_buffer = build_instance_data(
                     ctx,
                     &node_transformation_data.node_transform_buffer_address,
                     &meshes,
@@ -82,6 +97,8 @@ impl Asset {
             per_scene_node_transformation_data,
             per_scene_node_meshlet_data,
             per_scene_draw_mesh_tasks_indirect_buffers,
+            fvf_instances_buffers,
+            fvf_offsets_buffers,
         }
     }
 
@@ -97,6 +114,74 @@ impl Asset {
         let scene = &self.scenes[index];
 
         match self.mesh_type {
+            DrawType::FixedVertexFunctionCombined => {
+                // should be 1 element in  array
+                for mesh in &self.meshes {
+                    if let super::mesh::Primitives::FixedVertexFunctionCombined(primitives) =
+                        &mesh.primitives
+                    {
+                        push_constants.fvf_instances =
+                            self.fvf_instances_buffers[index].device_address.unwrap();
+                        push_constants.fvf_instance_offsets =
+                            self.fvf_offsets_buffers[index].device_address.unwrap();
+
+                        unsafe {
+                            for (primitive_index, index_count) in
+                                primitives.primitive_index_count.iter().enumerate()
+                            {
+                                device.cmd_push_constants(
+                                    command_buffer,
+                                    pipeline_layout,
+                                    vk::ShaderStageFlags::VERTEX
+                                        | vk::ShaderStageFlags::FRAGMENT
+                                        | vk::ShaderStageFlags::TASK_EXT
+                                        | vk::ShaderStageFlags::MESH_EXT,
+                                    0,
+                                    std::slice::from_raw_parts(
+                                        (push_constants as *const GPUPushConstants) as *const u8,
+                                        std::mem::size_of::<GPUPushConstants>(),
+                                    ),
+                                );
+
+                                device.cmd_bind_index_buffer(
+                                    command_buffer,
+                                    primitives.ib.handle,
+                                    0,
+                                    ash::vk::IndexType::UINT32,
+                                );
+
+                                device.cmd_bind_vertex_buffers(
+                                    command_buffer,
+                                    0,
+                                    &[primitives.vb.handle],
+                                    &[0],
+                                );
+                                let mut first_index = primitives
+                                    .primitive_index_offset_in_combined_index_buffer
+                                    [primitive_index];
+                                let mut vertex_offset = primitives
+                                    .primitive_vertex_offset_in_combined_vertex_buffer
+                                    [primitive_index];
+
+                                println!(
+                                    "vertex offset: {}, first index: {}",
+                                    vertex_offset, first_index
+                                );
+
+                                device.cmd_draw_indexed(
+                                    command_buffer,
+                                    *index_count,
+                                    primitives.primitive_parent_node_indices[primitive_index].len()
+                                        as u32,
+                                    first_index,
+                                    vertex_offset as i32,
+                                    0,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
             DrawType::FixedFunctionVertex => {
                 for (mi, mesh) in self.meshes.iter().enumerate() {
                     let mut mesh_nodes = vec![];
@@ -192,6 +277,9 @@ fn build_buffer_for_indirect_draw(
         if let Some(mesh_index) = node.mesh_index {
             let mesh = meshes.iter().nth(mesh_index).unwrap();
             match &mesh.primitives {
+                super::mesh::Primitives::FixedVertexFunctionCombined(_) => {
+                    todo!();
+                }
                 super::mesh::Primitives::FixedFunctionVertexPrimitives(_) => {
                     todo!(
                         "ale sie kurwa zjebalo - ten branch nie powinien byc wykonywany tu nigdy"
@@ -216,7 +304,49 @@ fn build_buffer_for_indirect_draw(
     (buffer, draws.len())
 }
 
-fn build_node_meshlet_data(
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct FVFInstanceData {
+    pub mesh_data_br: vk::DeviceAddress,
+}
+
+fn fvf_build_instance_data(
+    ctx: &vkutils::context::VulkanContext,
+    node_transform_buffer_address: &std::collections::HashMap<usize, vk::DeviceAddress>,
+    meshes: &std::vec::Vec<Mesh>,
+) -> (vkutils::buffer::Buffer, vkutils::buffer::Buffer) {
+    let mut instance_data = vec![];
+    let mut instance_offset = vec![]; // offset in instance buffer
+    for mesh in meshes {
+        if let super::mesh::Primitives::FixedVertexFunctionCombined(primitives) = &mesh.primitives {
+            let mut offset = 0 as u32;
+            for node_indices in &primitives.primitive_parent_node_indices {
+                for node_index in node_indices {
+                    instance_data.push(FVFInstanceData {
+                        mesh_data_br: *node_transform_buffer_address.get(node_index).unwrap(),
+                    });
+                }
+                instance_offset.push(offset);
+                offset += node_indices.len() as u32;
+            }
+        }
+    }
+
+    let offsets_buf = ctx.upload_buffer(
+        &instance_offset,
+        ash::vk::BufferUsageFlags::STORAGE_BUFFER
+            | ash::vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+    );
+    let instances_buf = ctx.upload_buffer(
+        &instance_data,
+        ash::vk::BufferUsageFlags::STORAGE_BUFFER
+            | ash::vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+    );
+
+    (offsets_buf, instances_buf)
+}
+
+fn build_instance_data(
     ctx: &vkutils::context::VulkanContext,
     node_transform_buffer_address: &std::collections::HashMap<usize, vk::DeviceAddress>,
     meshes: &std::vec::Vec<Mesh>,
@@ -247,6 +377,9 @@ fn build_node_meshlet_data(
                         };
                         meshlet_draws.push(draw);
                     }
+                }
+                super::mesh::Primitives::FixedVertexFunctionCombined(_) => {
+                    todo!();
                 }
             }
         }

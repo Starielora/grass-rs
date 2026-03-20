@@ -11,6 +11,8 @@ pub struct GPUPushConstants {
     pub dir_light_buffer_address: vk::DeviceAddress,
     pub skybox_data: vk::DeviceAddress,
     pub meshlet_draw: vk::DeviceAddress,
+    pub fvf_instances: vk::DeviceAddress,
+    pub fvf_instance_offsets: vk::DeviceAddress,
     pub depth_sampler_index: u32,
 }
 

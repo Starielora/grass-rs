@@ -73,12 +73,15 @@ impl Renderer {
         )
         .unwrap();
 
-        let bistro_asset = assets::better_load(asset_path, DrawType::FixedFunctionVertex, &ctx);
+        // let bistro_asset = assets::better_load(asset_path, DrawType::FixedFunctionVertex, &ctx);
         let brabon_asset = assets::better_load(asset_path, DrawType::Meshlet, &ctx);
+        let combined_asset =
+            assets::better_load(asset_path, DrawType::FixedVertexFunctionCombined, &ctx);
         println!("Load time: {:?}", t1.elapsed());
 
         let mut assets = vec![];
-        assets.push(bistro_asset);
+        // assets.push(bistro_asset);
+        assets.push(combined_asset);
 
         let mut meshlet_assets = vec![];
         meshlet_assets.push(brabon_asset);
@@ -131,6 +134,9 @@ impl Renderer {
                     primitives[0].indices_count,
                 ),
                 assets::mesh::Primitives::Meshlets(_meshlets) => todo!(),
+                assets::mesh::Primitives::FixedVertexFunctionCombined(fvfcombined_primitives) => {
+                    todo!()
+                }
             };
 
         let skybox = skybox::Skybox::new(

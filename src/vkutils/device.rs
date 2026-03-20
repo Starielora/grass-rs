@@ -22,8 +22,15 @@ pub fn create(
         // was supposed to support performance queries
     ];
 
-    let vk_physical_device_features =
-        vk::PhysicalDeviceFeatures::default().multi_draw_indirect(true);
+    let vk_physical_device_features = vk::PhysicalDeviceFeatures::default()
+        .multi_draw_indirect(true)
+        .robust_buffer_access(true);
+
+    let mut robustness2 =
+        vk::PhysicalDeviceRobustness2FeaturesEXT::default().robust_buffer_access2(true);
+    let mut vk_physical_device_features2 = vk::PhysicalDeviceFeatures2::default()
+        .push_next(&mut robustness2)
+        .features(vk_physical_device_features);
 
     let mut vk11_physical_device_features =
         vk::PhysicalDeviceVulkan11Features::default().shader_draw_parameters(true);
@@ -50,8 +57,9 @@ pub fn create(
         .push_next(&mut vk12_physical_device_features)
         .push_next(&mut vk13_physical_device_features)
         .push_next(&mut mesh_shading_features)
+        .push_next(&mut vk_physical_device_features2)
         .queue_create_infos(&queue_create_infos)
-        .enabled_features(&vk_physical_device_features)
+        // .enabled_features(&vk_physical_device_features)
         .enabled_extension_names(&device_extensions);
 
     unsafe { instance.create_device(physical_device, &logical_device_create_info, None) }

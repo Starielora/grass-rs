@@ -3,6 +3,16 @@ use crate::vkutils::push_constants::GPUPushConstants;
 use crate::vkutils::vk_destroy::VkDestroy;
 use ash::vk;
 
+pub struct FVFCombinedPrimitives {
+    pub vb: vkutils::buffer::Buffer,
+    pub ib: vkutils::buffer::Buffer,
+    pub primitive_vertex_count: std::vec::Vec<u32>, // number of vertices for a primitive at index
+    pub primitive_vertex_offset_in_combined_vertex_buffer: std::vec::Vec<u32>,
+    pub primitive_index_count: std::vec::Vec<u32>, // number of indices for a primitive at index
+    pub primitive_index_offset_in_combined_index_buffer: std::vec::Vec<u32>,
+    pub primitive_parent_node_indices: std::vec::Vec<std::vec::Vec<usize>>,
+}
+
 pub struct Primitive {
     pub vertex_buffer: vkutils::buffer::Buffer, // TODO this would be better to be mod private. I need to move skybox
     pub index_buffer: vkutils::buffer::Buffer,

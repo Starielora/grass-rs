@@ -129,6 +129,7 @@ mod internal {
 pub enum DrawType {
     FixedFunctionVertex,
     Meshlet,
+    FixedVertexFunctionCombined,
 }
 
 pub fn better_load(
@@ -179,7 +180,6 @@ pub fn better_load(
                 });
             }
         }
-
         DrawType::Meshlet => {
             for mesh in gltf_meshes {
                 let mut primitives: std::vec::Vec<meshlet::Meshlet> = vec![];
@@ -240,6 +240,77 @@ pub fn better_load(
                     primitives: mesh::Primitives::Meshlets(primitives),
                 });
             }
+        }
+        DrawType::FixedVertexFunctionCombined => {
+            let mut vertices = vec![];
+            let mut indices = vec![];
+            let mut primitive_vertex_count = vec![]; // number of vertices for a primitive at index
+            let mut primitive_vertex_offset_in_combined_vertex_buffer = vec![];
+            let mut primitive_index_count = vec![]; // number of indices for a primitive at index
+            let mut primitive_index_offset_in_combined_index_buffer = vec![];
+            let mut primitive_parent_node_indices = vec![]; // also instances count
+
+            let mut vertex_offset_in_combined_vb = 0 as u32;
+            let mut index_offset_in_combined_ib = 0 as u32;
+
+            for (mesh_index, mesh) in gltf_meshes.iter().enumerate() {
+                for primitive in &mesh.primitives {
+                    let mut parent_node_indices: std::vec::Vec<usize> = vec![];
+                    for (node_index, node) in gltf_nodes.iter().enumerate() {
+                        if let Some(node_mesh_index) = node.mesh_index {
+                            if node_mesh_index == mesh_index {
+                                parent_node_indices.push(node_index);
+                            }
+                        }
+                    }
+
+                    primitive_parent_node_indices.push(parent_node_indices);
+
+                    {
+                        vertices.append(&mut primitive.vertex_buffer.clone());
+                        let vertex_count = (primitive.vertex_buffer.len() / 8) as u32;
+                        primitive_vertex_count.push(vertex_count);
+                        primitive_vertex_offset_in_combined_vertex_buffer
+                            .push(vertex_offset_in_combined_vb);
+                        vertex_offset_in_combined_vb += vertex_count;
+
+                        // TODO coalesce all indices into u32. A bit wasteful memory-wise, but is a superset for all current use cases. Maybe later I'll figure out how to make it better
+                        let mut ib = match &primitive.index_buffer {
+                            IndexBufferType::U16(items) => {
+                                let mut v = vec![];
+                                for i in items {
+                                    v.push(*i as u32);
+                                }
+                                v
+                            }
+                            IndexBufferType::U32(items) => items.clone(),
+                        };
+                        primitive_index_count.push(ib.len() as u32);
+                        primitive_index_offset_in_combined_index_buffer
+                            .push(index_offset_in_combined_ib);
+                        index_offset_in_combined_ib += ib.len() as u32;
+                        indices.append(&mut ib);
+                    }
+                }
+            }
+
+            let vb = ctx.upload_buffer(&vertices, ash::vk::BufferUsageFlags::VERTEX_BUFFER);
+            let ib = ctx.upload_buffer(&indices, ash::vk::BufferUsageFlags::INDEX_BUFFER);
+
+            meshes.push(mesh::Mesh {
+                _name: Some("TODO sraken pierdaken".to_string()), // TODO
+                primitives: mesh::Primitives::FixedVertexFunctionCombined(
+                    primitive::FVFCombinedPrimitives {
+                        vb,
+                        ib,
+                        primitive_vertex_count,
+                        primitive_vertex_offset_in_combined_vertex_buffer,
+                        primitive_index_count,
+                        primitive_index_offset_in_combined_index_buffer,
+                        primitive_parent_node_indices,
+                    },
+                ),
+            });
         }
     }
 

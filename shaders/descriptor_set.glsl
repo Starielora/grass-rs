@@ -87,6 +87,14 @@ layout(buffer_reference) readonly buffer MeshletDraw_br {
   MeshInstance_Meshlet data[];
 };
 
+layout(buffer_reference) readonly buffer FVFInstance_br {
+  MeshData mesh_data[]; // access with instance index
+};
+
+layout(buffer_reference) readonly buffer FVFInstanceOffset_br {
+  uint offset[]; // access with gl_DrawID
+};
+
 layout(push_constant) uniform constants
 {
   MeshData mesh_data;
@@ -95,5 +103,7 @@ layout(push_constant) uniform constants
   DirLightBuffer dir_light;
   SkyboxData skybox_data;
   MeshletDraw_br meshlet_draws;
+  FVFInstance_br fvf_instances;
+  FVFInstanceOffset_br fvf_instance_offsets;
   uint depth_sampler_index;
 } push_constants;
