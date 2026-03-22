@@ -41,6 +41,8 @@ pub struct Asset {
 
     fvf_instances_buffers: std::vec::Vec<vkutils::buffer::Buffer>,
     fvf_offsets_buffers: std::vec::Vec<vkutils::buffer::Buffer>,
+    fvf_indirect_draw_buffers: Vec<(vkutils::buffer::Buffer, usize)>,
+
 }
 
 impl Asset {
@@ -57,6 +59,7 @@ impl Asset {
         let mut per_scene_draw_mesh_tasks_indirect_buffers = vec![];
         let mut fvf_instances_buffers = vec![];
         let mut fvf_offsets_buffers = vec![];
+        let mut fvf_indirect_draw_buffers = vec![];
 
         for scene in &scenes {
             let node_transformation_data =
@@ -68,8 +71,10 @@ impl Asset {
                     &node_transformation_data.node_transform_buffer_address,
                     &meshes,
                 );
+                let indirect_draw_buffers = fvf_build_indirect_buffer(ctx, &meshes);
                 fvf_offsets_buffers.push(offsets_buffer);
                 fvf_instances_buffers.push(instances_buffer);
+                fvf_indirect_draw_buffers.push(indirect_draw_buffers);
             }
 
             if let DrawType::Meshlet = mesh_type {
@@ -99,6 +104,7 @@ impl Asset {
             per_scene_draw_mesh_tasks_indirect_buffers,
             fvf_instances_buffers,
             fvf_offsets_buffers,
+            fvf_indirect_draw_buffers,
         }
     }
 
@@ -115,69 +121,51 @@ impl Asset {
 
         match self.mesh_type {
             DrawType::FixedVertexFunctionCombined => {
-                // should be 1 element in  array
                 for mesh in &self.meshes {
-                    if let super::mesh::Primitives::FixedVertexFunctionCombined(primitives) =
-                        &mesh.primitives
-                    {
+                    if let super::mesh::Primitives::FixedVertexFunctionCombined(primitives) = &mesh.primitives {
                         push_constants.fvf_instances =
                             self.fvf_instances_buffers[index].device_address.unwrap();
                         push_constants.fvf_instance_offsets =
                             self.fvf_offsets_buffers[index].device_address.unwrap();
 
+                        let (indirect_buf, draw_count) = &self.fvf_indirect_draw_buffers[index];
+
                         unsafe {
-                            for (primitive_index, index_count) in
-                                primitives.primitive_index_count.iter().enumerate()
-                            {
-                                device.cmd_push_constants(
-                                    command_buffer,
-                                    pipeline_layout,
-                                    vk::ShaderStageFlags::VERTEX
-                                        | vk::ShaderStageFlags::FRAGMENT
-                                        | vk::ShaderStageFlags::TASK_EXT
-                                        | vk::ShaderStageFlags::MESH_EXT,
-                                    0,
-                                    std::slice::from_raw_parts(
-                                        (push_constants as *const GPUPushConstants) as *const u8,
-                                        std::mem::size_of::<GPUPushConstants>(),
-                                    ),
-                                );
+                            device.cmd_push_constants(
+                                command_buffer,
+                                pipeline_layout,
+                                vk::ShaderStageFlags::VERTEX
+                                    | vk::ShaderStageFlags::FRAGMENT
+                                    | vk::ShaderStageFlags::TASK_EXT
+                                    | vk::ShaderStageFlags::MESH_EXT,
+                                0,
+                                std::slice::from_raw_parts(
+                                    (push_constants as *const GPUPushConstants) as *const u8,
+                                    std::mem::size_of::<GPUPushConstants>(),
+                                ),
+                            );
 
-                                device.cmd_bind_index_buffer(
-                                    command_buffer,
-                                    primitives.ib.handle,
-                                    0,
-                                    ash::vk::IndexType::UINT32,
-                                );
+                            device.cmd_bind_index_buffer(
+                                command_buffer,
+                                primitives.ib.handle,
+                                0,
+                                vk::IndexType::UINT32,
+                            );
 
-                                device.cmd_bind_vertex_buffers(
-                                    command_buffer,
-                                    0,
-                                    &[primitives.vb.handle],
-                                    &[0],
-                                );
-                                let first_index = primitives
-                                    .primitive_index_offset_in_combined_index_buffer
-                                    [primitive_index];
-                                let vertex_offset = primitives
-                                    .primitive_vertex_offset_in_combined_vertex_buffer
-                                    [primitive_index];
+                            device.cmd_bind_vertex_buffers(
+                                command_buffer,
+                                0,
+                                &[primitives.vb.handle],
+                                &[0],
+                            );
 
-                                println!(
-                                    "vertex offset: {}, first index: {}",
-                                    vertex_offset, first_index
-                                );
-
-                                device.cmd_draw_indexed(
-                                    command_buffer,
-                                    *index_count,
-                                    primitives.primitive_parent_node_indices[primitive_index].len()
-                                        as u32,
-                                    first_index,
-                                    vertex_offset as i32,
-                                    0,
-                                );
-                            }
+                            device.cmd_draw_indexed_indirect(
+                                command_buffer,
+                                indirect_buf.handle,
+                                0,
+                                *draw_count as u32,
+                                std::mem::size_of::<vk::DrawIndexedIndirectCommand>() as u32,
+                            );
                         }
                     }
                 }
@@ -264,6 +252,29 @@ struct MeshInstance_MeshletDraw {
     pub meshlet_triangles: vk::DeviceAddress,
     pub meshlet_bounds: vk::DeviceAddress,
     pub meshlets_count: u32,
+}
+
+fn fvf_build_indirect_buffer(
+    ctx: &vkutils::context::VulkanContext,
+    meshes: &[Mesh],
+) -> (vkutils::buffer::Buffer, usize) {
+    let mut draws = vec![];
+    for mesh in meshes {
+        if let super::mesh::Primitives::FixedVertexFunctionCombined(primitives) = &mesh.primitives {
+            for (i, &index_count) in primitives.primitive_index_count.iter().enumerate() {
+                draws.push(vk::DrawIndexedIndirectCommand {
+                    index_count,
+                    instance_count: primitives.primitive_parent_node_indices[i].len() as u32,
+                    first_index: primitives.primitive_index_offset_in_combined_index_buffer[i],
+                    vertex_offset: primitives.primitive_vertex_offset_in_combined_vertex_buffer[i] as i32,
+                    first_instance: 0,
+                });
+            }
+        }
+    }
+    let draw_count = draws.len();
+    let buffer = ctx.upload_buffer(&draws, vk::BufferUsageFlags::INDIRECT_BUFFER);
+    (buffer, draw_count)
 }
 
 fn build_buffer_for_indirect_draw(

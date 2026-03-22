@@ -66,9 +66,9 @@ impl Renderer {
             assets::better_load("assets/cube.gltf", DrawType::FixedFunctionVertex, &ctx);
 
         let asset_path = std::str::from_utf8(
-            b"/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
+            // b"/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
             // b"/home/starielora/dev/repos/glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf",
-            // b"/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
+            b"/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
             // b"/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
         )
         .unwrap();
