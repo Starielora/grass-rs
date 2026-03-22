@@ -156,10 +156,10 @@ impl Asset {
                                     &[primitives.vb.handle],
                                     &[0],
                                 );
-                                let mut first_index = primitives
+                                let first_index = primitives
                                     .primitive_index_offset_in_combined_index_buffer
                                     [primitive_index];
-                                let mut vertex_offset = primitives
+                                let vertex_offset = primitives
                                     .primitive_vertex_offset_in_combined_vertex_buffer
                                     [primitive_index];
 
