@@ -52,7 +52,7 @@ pub fn build_meshlets2(
     // TODO revise max vertices and triangle count - fix in shaders as well
     // TODO use cone weight, when implementing cone culling
     let mut meshopt_meshlets =
-        meshopt::build_meshlets(indices.as_slice(), &vertex_adapter, 64, 124, 0.0);
+        meshopt::build_meshlets(indices.as_slice(), &vertex_adapter, 64, 124, 0.5);
 
     // TODO does it really work?
     for meshlet in meshopt_meshlets.meshlets.iter_mut() {

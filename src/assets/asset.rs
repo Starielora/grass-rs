@@ -42,7 +42,6 @@ pub struct Asset {
     fvf_instances_buffers: std::vec::Vec<vkutils::buffer::Buffer>,
     fvf_offsets_buffers: std::vec::Vec<vkutils::buffer::Buffer>,
     fvf_indirect_draw_buffers: Vec<(vkutils::buffer::Buffer, usize)>,
-
 }
 
 impl Asset {
@@ -122,7 +121,9 @@ impl Asset {
         match self.mesh_type {
             DrawType::FixedVertexFunctionCombined => {
                 for mesh in &self.meshes {
-                    if let super::mesh::Primitives::FixedVertexFunctionCombined(primitives) = &mesh.primitives {
+                    if let super::mesh::Primitives::FixedVertexFunctionCombined(primitives) =
+                        &mesh.primitives
+                    {
                         push_constants.fvf_instances =
                             self.fvf_instances_buffers[index].device_address.unwrap();
                         push_constants.fvf_instance_offsets =
@@ -240,6 +241,18 @@ impl std::ops::Drop for Asset {
         for (buf, _size) in &self.per_scene_draw_mesh_tasks_indirect_buffers {
             buf.vk_destroy();
         }
+
+        for buf in &self.fvf_instances_buffers {
+            buf.vk_destroy();
+        }
+
+        for buf in &self.fvf_offsets_buffers {
+            buf.vk_destroy();
+        }
+
+        for (buf, _) in &self.fvf_indirect_draw_buffers {
+            buf.vk_destroy();
+        }
     }
 }
 #[repr(C)]
@@ -266,7 +279,8 @@ fn fvf_build_indirect_buffer(
                     index_count,
                     instance_count: primitives.primitive_parent_node_indices[i].len() as u32,
                     first_index: primitives.primitive_index_offset_in_combined_index_buffer[i],
-                    vertex_offset: primitives.primitive_vertex_offset_in_combined_vertex_buffer[i] as i32,
+                    vertex_offset: primitives.primitive_vertex_offset_in_combined_vertex_buffer[i]
+                        as i32,
                     first_instance: 0,
                 });
             }

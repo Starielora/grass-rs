@@ -20,6 +20,13 @@ pub struct Primitive {
     pub index_type: ash::vk::IndexType,
 }
 
+impl std::ops::Drop for FVFCombinedPrimitives {
+    fn drop(&mut self) {
+        self.vb.vk_destroy();
+        self.ib.vk_destroy();
+    }
+}
+
 impl Primitive {
     pub fn cmd_draw(
         &self,
