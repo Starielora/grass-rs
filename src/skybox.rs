@@ -531,7 +531,7 @@ impl Skybox {
                 command_buffer,
                 self.index_buffer,
                 0,
-                vk::IndexType::UINT16,
+                vk::IndexType::UINT32,
             );
             self.device
                 .cmd_draw_indexed(command_buffer, self.indices_count as u32, 1, 0, 0, 0);

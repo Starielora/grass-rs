@@ -62,13 +62,16 @@ impl Renderer {
         );
 
         let t1 = std::time::Instant::now();
-        let cube_asset =
-            assets::better_load("assets/cube.gltf", DrawType::FixedFunctionVertex, &ctx);
+        let cube_asset = assets::better_load(
+            "assets/cube.gltf",
+            DrawType::FixedVertexFunctionCombined,
+            &ctx,
+        );
 
         let asset_path = std::str::from_utf8(
-            b"/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
+            // b"/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
             // b"/home/starielora/dev/repos/glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf",
-            // b"/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
+            b"/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
             // b"/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
         )
         .unwrap();
@@ -128,15 +131,12 @@ impl Renderer {
         // TODO this is pepega
         let (skybox_vertex_buffer_handle, skybox_index_buffer_handle, skybox_indices_count) =
             match &cube_asset.meshes[0].primitives {
-                assets::mesh::Primitives::FixedFunctionVertexPrimitives(primitives) => (
-                    primitives[0].vertex_buffer.handle,
-                    primitives[0].index_buffer.handle,
-                    primitives[0].indices_count,
-                ),
                 assets::mesh::Primitives::Meshlets(_meshlets) => todo!(),
-                assets::mesh::Primitives::FixedVertexFunctionCombined(fvfcombined_primitives) => {
-                    todo!()
-                }
+                assets::mesh::Primitives::FixedVertexFunctionCombined(primitives) => (
+                    primitives.vb.handle,
+                    primitives.ib.handle,
+                    primitives.primitive_index_count[0] as usize,
+                ),
             };
 
         let skybox = skybox::Skybox::new(

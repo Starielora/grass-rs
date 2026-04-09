@@ -18,7 +18,7 @@ pub fn create(entry: &ash::Entry, window_required_extensions: &[*const i8]) -> a
         .collect::<Vec<_>>();
 
     let enabled = [vk::ValidationFeatureEnableEXT::GPU_ASSISTED];
-    let mut validation_features =
+    let mut _validation_features =
         vk::ValidationFeaturesEXT::default().enabled_validation_features(&enabled);
 
     let mut extensions: Vec<*const i8> = vec![ash::ext::debug_utils::NAME.as_ptr()];

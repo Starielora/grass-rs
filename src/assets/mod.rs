@@ -126,8 +126,8 @@ mod internal {
     }
 }
 
+#[derive(Debug)]
 pub enum DrawType {
-    FixedFunctionVertex,
     Meshlet,
     FixedVertexFunctionCombined,
 }
@@ -145,41 +145,6 @@ pub fn better_load(
     let mut scenes: std::vec::Vec<scene::Scene> = vec![];
 
     match mesh_type {
-        DrawType::FixedFunctionVertex => {
-            for mesh in gltf_meshes {
-                let mut primitives = vec![];
-                for primitive in mesh.primitives {
-                    let vertex_buffer = ctx.upload_buffer(
-                        &primitive.vertex_buffer,
-                        vk::BufferUsageFlags::VERTEX_BUFFER,
-                    );
-                    let (index_buffer, indices_count, index_type) = match primitive.index_buffer {
-                        IndexBufferType::U16(items) => (
-                            ctx.upload_buffer(&items, vk::BufferUsageFlags::INDEX_BUFFER),
-                            items.len(),
-                            ash::vk::IndexType::UINT16,
-                        ),
-                        IndexBufferType::U32(items) => (
-                            ctx.upload_buffer(&items, vk::BufferUsageFlags::INDEX_BUFFER),
-                            items.len(),
-                            ash::vk::IndexType::UINT32,
-                        ),
-                    };
-
-                    primitives.push(primitive::Primitive {
-                        vertex_buffer,
-                        index_buffer,
-                        indices_count,
-                        index_type,
-                    });
-                }
-
-                meshes.push(mesh::Mesh {
-                    _name: mesh.name,
-                    primitives: mesh::Primitives::FixedFunctionVertexPrimitives(primitives),
-                });
-            }
-        }
         DrawType::Meshlet => {
             for mesh in gltf_meshes {
                 let mut primitives: std::vec::Vec<meshlet::Meshlet> = vec![];
@@ -303,7 +268,7 @@ pub fn better_load(
                     primitive::FVFCombinedPrimitives {
                         vb,
                         ib,
-                        primitive_vertex_count,
+                        // primitive_vertex_count,
                         primitive_vertex_offset_in_combined_vertex_buffer,
                         primitive_index_count,
                         primitive_index_offset_in_combined_index_buffer,

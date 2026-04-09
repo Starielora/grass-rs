@@ -29,13 +29,11 @@ impl std::ops::Drop for SceneNodesBuffers {
 
 pub struct Asset {
     pub meshes: std::vec::Vec<Mesh>,
-    pub nodes: std::vec::Vec<Node>, // TODO cleanup, don't depend on gltf_loader
-    pub scenes: std::vec::Vec<Scene>,
     pub default_scene: Option<usize>,
 
     // TODO structure this properly. Take into consideration that scene indices may not correspond to vector indices
     mesh_type: DrawType,
-    per_scene_node_transformation_data: std::vec::Vec<SceneNodesBuffers>,
+    _per_scene_node_transformation_data: std::vec::Vec<SceneNodesBuffers>,
     per_scene_node_meshlet_data: std::vec::Vec<vkutils::buffer::Buffer>,
     per_scene_draw_mesh_tasks_indirect_buffers: std::vec::Vec<(vkutils::buffer::Buffer, usize)>,
 
@@ -59,6 +57,8 @@ impl Asset {
         let mut fvf_instances_buffers = vec![];
         let mut fvf_offsets_buffers = vec![];
         let mut fvf_indirect_draw_buffers = vec![];
+
+        println!("Meshes count: {}, mesh type: {:?}", meshes.len(), mesh_type);
 
         for scene in &scenes {
             let node_transformation_data =
@@ -94,11 +94,9 @@ impl Asset {
 
         Self {
             meshes,
-            nodes,
-            scenes,
             default_scene,
             mesh_type,
-            per_scene_node_transformation_data,
+            _per_scene_node_transformation_data: per_scene_node_transformation_data,
             per_scene_node_meshlet_data,
             per_scene_draw_mesh_tasks_indirect_buffers,
             fvf_instances_buffers,
@@ -116,8 +114,6 @@ impl Asset {
         pipeline_layout: vk::PipelineLayout,
         push_constants: &mut GPUPushConstants,
     ) {
-        let scene = &self.scenes[index];
-
         match self.mesh_type {
             DrawType::FixedVertexFunctionCombined => {
                 for mesh in &self.meshes {
@@ -167,35 +163,6 @@ impl Asset {
                                 *draw_count as u32,
                                 std::mem::size_of::<vk::DrawIndexedIndirectCommand>() as u32,
                             );
-                        }
-                    }
-                }
-            }
-            DrawType::FixedFunctionVertex => {
-                for (mi, mesh) in self.meshes.iter().enumerate() {
-                    let mut mesh_nodes = vec![];
-                    for ni in &scene.nodes {
-                        build_mesh_nodes(&mut mesh_nodes, &self, *ni, mi);
-                    }
-
-                    // TODO replace with draw_indexed
-                    for node_index in &mesh_nodes {
-                        push_constants.mesh_data = *self.per_scene_node_transformation_data[index]
-                            .node_transform_buffer_address
-                            .get(node_index)
-                            .unwrap() as u64;
-
-                        if let super::mesh::Primitives::FixedFunctionVertexPrimitives(primitives) =
-                            &mesh.primitives
-                        {
-                            for primitive in primitives {
-                                primitive.cmd_draw(
-                                    device,
-                                    command_buffer,
-                                    pipeline_layout,
-                                    push_constants,
-                                );
-                            }
                         }
                     }
                 }
@@ -257,7 +224,7 @@ impl std::ops::Drop for Asset {
 }
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-struct MeshInstance_MeshletDraw {
+struct MeshInstanceMeshletDraw {
     pub mesh_data: vk::DeviceAddress, // model matrix buffer address
     pub meshlet_data: vk::DeviceAddress,
     pub mesh_vertex_data: vk::DeviceAddress,
@@ -304,11 +271,6 @@ fn build_buffer_for_indirect_draw(
             match &mesh.primitives {
                 super::mesh::Primitives::FixedVertexFunctionCombined(_) => {
                     todo!();
-                }
-                super::mesh::Primitives::FixedFunctionVertexPrimitives(_) => {
-                    todo!(
-                        "ale sie kurwa zjebalo - ten branch nie powinien byc wykonywany tu nigdy"
-                    );
                 }
                 super::mesh::Primitives::Meshlets(meshlets) => {
                     for meshlet in meshlets {
@@ -383,14 +345,9 @@ fn build_instance_data(
         if let Some(mesh_index) = node.mesh_index {
             let mesh = meshes.iter().nth(mesh_index).unwrap();
             match &mesh.primitives {
-                super::mesh::Primitives::FixedFunctionVertexPrimitives(_) => {
-                    todo!(
-                        "ale sie kurwa zjebalo - ten branch nie powinien byc wykonywany tu nigdy"
-                    );
-                }
                 super::mesh::Primitives::Meshlets(meshlets) => {
                     for meshlet in meshlets {
-                        let draw = MeshInstance_MeshletDraw {
+                        let draw = MeshInstanceMeshletDraw {
                             mesh_data: *node_transform_buffer_address.get(&node_index).unwrap()
                                 as vk::DeviceAddress,
                             meshlet_data: meshlet.meshlet_buffer.device_address.unwrap(),
@@ -583,18 +540,5 @@ fn upload_model_data(
             node_transform_buffer_address,
             current_buffer_index,
         );
-    }
-}
-
-fn build_mesh_nodes(mesh_nodes: &mut Vec<usize>, asset: &Asset, node_index: usize, mi: usize) {
-    let node = &asset.nodes[node_index];
-    if let Some(mesh_index) = node.mesh_index {
-        if mesh_index == mi {
-            mesh_nodes.push(node_index);
-        }
-    }
-
-    for child in &node.children {
-        build_mesh_nodes(mesh_nodes, asset, *child, mi);
     }
 }
