@@ -63,11 +63,7 @@ impl Renderer {
 
         let t1 = std::time::Instant::now();
         let cube_asset_data = gltf_asset::GltfAssetData::new("assets/cube.gltf");
-        let cube_asset = Asset::new2(
-            &ctx,
-            DrawMode::FixedVertexFunctionCombined,
-            &cube_asset_data,
-        );
+        let cube_asset = Asset::new2(&ctx, DrawMode::Traditional, &cube_asset_data);
 
         let asset_path = std::str::from_utf8(
             // b"/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
@@ -79,8 +75,7 @@ impl Renderer {
 
         let asset_data = gltf_asset::GltfAssetData::new(asset_path);
         let meshlet_asset = Asset::new2(&ctx, DrawMode::Meshlet, &asset_data);
-        let traditional_asset =
-            Asset::new2(&ctx, DrawMode::FixedVertexFunctionCombined, &asset_data);
+        let traditional_asset = Asset::new2(&ctx, DrawMode::Traditional, &asset_data);
         println!("Load time: {:?}", t1.elapsed());
 
         let mut assets = vec![];

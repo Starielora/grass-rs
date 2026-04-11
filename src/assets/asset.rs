@@ -202,14 +202,7 @@ fn load_as_traditional(ctx: &vkutils::context::VulkanContext, asset_data: &GltfA
     }
 
     // TODO yeet the drawmode from here - requires refactor
-    Asset::new(
-        &ctx,
-        meshes,
-        nodes,
-        scenes,
-        None,
-        DrawMode::FixedVertexFunctionCombined,
-    )
+    Asset::new(&ctx, meshes, nodes, scenes, None, DrawMode::Traditional)
 }
 
 impl Asset {
@@ -220,7 +213,7 @@ impl Asset {
     ) -> Self {
         match draw_mode {
             DrawMode::Meshlet => load_as_meshlet(ctx, asset_data),
-            DrawMode::FixedVertexFunctionCombined => load_as_traditional(ctx, asset_data),
+            DrawMode::Traditional => load_as_traditional(ctx, asset_data),
         }
     }
 
@@ -245,7 +238,7 @@ impl Asset {
             let node_transformation_data =
                 build_node_transformation_data(ctx, &mut meshes, &nodes, &scene);
 
-            if let DrawMode::FixedVertexFunctionCombined = mesh_type {
+            if let DrawMode::Traditional = mesh_type {
                 let (offsets_buffer, instances_buffer) = fvf_build_instance_data(
                     ctx,
                     &node_transformation_data.node_transform_buffer_address,
@@ -296,7 +289,7 @@ impl Asset {
         push_constants: &mut GPUPushConstants,
     ) {
         match self.mesh_type {
-            DrawMode::FixedVertexFunctionCombined => {
+            DrawMode::Traditional => {
                 for mesh in &self.meshes {
                     if let super::mesh::Primitives::FixedVertexFunctionCombined(primitives) =
                         &mesh.primitives

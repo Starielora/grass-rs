@@ -11,5 +11,5 @@ pub use asset::Asset;
 #[derive(Debug)]
 pub enum DrawMode {
     Meshlet,
-    FixedVertexFunctionCombined,
+    Traditional,
 }
