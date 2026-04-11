@@ -3,7 +3,6 @@ pub enum IndexBufferType {
     U32(std::vec::Vec<u32>),
 }
 
-#[derive(Clone)]
 pub struct Node {
     pub name: Option<std::string::String>,
     pub children: std::vec::Vec<usize>,
@@ -21,7 +20,6 @@ pub struct Mesh {
     pub primitives: std::vec::Vec<self::Primitive>,
 }
 
-#[derive(Clone)]
 pub struct Scene {
     pub name: Option<std::string::String>,
     pub nodes: std::vec::Vec<usize>,

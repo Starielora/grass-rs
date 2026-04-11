@@ -232,7 +232,7 @@ impl Asset {
         let mut fvf_offsets_buffers = vec![];
         let mut fvf_indirect_draw_buffers = vec![];
 
-        println!("Meshes count: {}, mesh type: {:?}", meshes.len(), mesh_type);
+        println!("Meshes count: {}, draw mode: {:?}", meshes.len(), mesh_type);
 
         for scene in &scenes {
             let node_transformation_data =
