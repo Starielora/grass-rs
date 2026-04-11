@@ -1,11 +1,11 @@
 use super::gltf_asset::GltfAssetData;
 use super::gltf_asset::IndexBufferType;
+use super::gltf_asset::Node;
+use super::gltf_asset::Scene;
 use super::mesh::Mesh;
 use super::mesh::Primitives;
 use super::meshlet::build_meshlets2;
 use super::meshlet::Meshlet;
-use super::node::Node;
-use super::scene::Scene;
 
 use crate::assets::DrawMode;
 use crate::vkutils;
@@ -100,21 +100,13 @@ fn load_as_meshlet(ctx: &vkutils::context::VulkanContext, asset_data: &GltfAsset
             });
         }
         meshes.push(Mesh {
-            _name: mesh.name.clone(),
+            _name: mesh._name.clone(),
             primitives: Primitives::Meshlets(primitives),
         });
     }
 
-    for node in &asset_data.nodes {
-        nodes.push(Node::new(&node));
-    }
-
-    for scene in &asset_data.scenes {
-        scenes.push(Scene {
-            _name: scene.name.clone(),
-            nodes: scene.nodes.clone(),
-        });
-    }
+    nodes.clone_from(&asset_data.nodes);
+    scenes.clone_from(&asset_data.scenes);
 
     // TODO yeet the drawmode from here - requires refactor
     Asset::new(&ctx, meshes, nodes, scenes, None, DrawMode::Meshlet)
@@ -190,13 +182,11 @@ fn load_as_traditional(ctx: &vkutils::context::VulkanContext, asset_data: &GltfA
         ),
     });
 
-    for node in &asset_data.nodes {
-        nodes.push(Node::new(&node));
-    }
+    nodes.clone_from(&asset_data.nodes);
 
     for scene in &asset_data.scenes {
         scenes.push(Scene {
-            _name: scene.name.clone(),
+            _name: scene._name.clone(),
             nodes: scene.nodes.clone(),
         });
     }

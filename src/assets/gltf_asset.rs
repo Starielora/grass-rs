@@ -3,8 +3,9 @@ pub enum IndexBufferType {
     U32(std::vec::Vec<u32>),
 }
 
+#[derive(Clone)]
 pub struct Node {
-    pub name: Option<std::string::String>,
+    pub _name: Option<std::string::String>,
     pub children: std::vec::Vec<usize>,
     pub matrix: glm::Mat4,
     pub mesh_index: Option<usize>,
@@ -16,12 +17,13 @@ pub struct Primitive {
 }
 
 pub struct Mesh {
-    pub name: Option<std::string::String>,
+    pub _name: Option<std::string::String>,
     pub primitives: std::vec::Vec<self::Primitive>,
 }
 
+#[derive(Clone)]
 pub struct Scene {
-    pub name: Option<std::string::String>,
+    pub _name: Option<std::string::String>,
     pub nodes: std::vec::Vec<usize>,
 }
 
@@ -189,7 +191,7 @@ impl GltfAssetData {
             }
 
             meshes.push(Mesh {
-                name: mesh.name().map(|strslice| strslice.to_string()),
+                _name: mesh.name().map(|strslice| strslice.to_string()),
                 primitives,
             });
         }
@@ -240,7 +242,7 @@ impl GltfAssetData {
             let mesh_index = node.mesh().map(|v| v.index());
 
             nodes.push(Node {
-                name: node.name().map(|strslice| strslice.to_string()),
+                _name: node.name().map(|strslice| strslice.to_string()),
                 children,
                 matrix,
                 mesh_index,
@@ -249,7 +251,7 @@ impl GltfAssetData {
 
         for scene in document.scenes() {
             scenes.push(Scene {
-                name: scene.name().map(|s| s.to_string()),
+                _name: scene.name().map(|s| s.to_string()),
                 nodes: scene.nodes().map(|node| node.index()).collect(),
             });
         }
