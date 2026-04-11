@@ -6,7 +6,7 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(node: &super::internal::Node) -> Self {
+    pub fn new(node: &super::gltf_asset::Node) -> Self {
         Self {
             _name: node.name.clone(),
             children: node.children.clone(),

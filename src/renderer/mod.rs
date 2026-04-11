@@ -5,7 +5,7 @@ mod scene_render;
 mod target_render_picker;
 
 use crate::{
-    assets::{self, DrawType},
+    assets::{self, gltf_asset, Asset, DrawMode},
     camera::GPUCameraData,
     dir_light::{self, GPUDirLight},
     grid, gui,
@@ -62,10 +62,11 @@ impl Renderer {
         );
 
         let t1 = std::time::Instant::now();
-        let cube_asset = assets::better_load(
-            "assets/cube.gltf",
-            DrawType::FixedVertexFunctionCombined,
+        let cube_asset_data = gltf_asset::GltfAssetData::new("assets/cube.gltf");
+        let cube_asset = Asset::new2(
             &ctx,
+            DrawMode::FixedVertexFunctionCombined,
+            &cube_asset_data,
         );
 
         let asset_path = std::str::from_utf8(
@@ -76,18 +77,18 @@ impl Renderer {
         )
         .unwrap();
 
-        // let bistro_asset = assets::better_load(asset_path, DrawType::FixedFunctionVertex, &ctx);
-        let brabon_asset = assets::better_load(asset_path, DrawType::Meshlet, &ctx);
-        let combined_asset =
-            assets::better_load(asset_path, DrawType::FixedVertexFunctionCombined, &ctx);
+        let asset_data = gltf_asset::GltfAssetData::new(asset_path);
+        let meshlet_asset = Asset::new2(&ctx, DrawMode::Meshlet, &asset_data);
+        let traditional_asset =
+            Asset::new2(&ctx, DrawMode::FixedVertexFunctionCombined, &asset_data);
         println!("Load time: {:?}", t1.elapsed());
 
         let mut assets = vec![];
         // assets.push(bistro_asset);
-        assets.push(combined_asset);
+        assets.push(traditional_asset);
 
         let mut meshlet_assets = vec![];
-        meshlet_assets.push(brabon_asset);
+        meshlet_assets.push(meshlet_asset);
 
         let dir_light = dir_light::DirLight::new(
             GPUDirLight {

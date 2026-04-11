@@ -1,8 +1,13 @@
+use super::gltf_asset::GltfAssetData;
+use super::gltf_asset::IndexBufferType;
 use super::mesh::Mesh;
+use super::mesh::Primitives;
+use super::meshlet::build_meshlets2;
+use super::meshlet::Meshlet;
 use super::node::Node;
 use super::scene::Scene;
 
-use crate::assets::DrawType;
+use crate::assets::DrawMode;
 use crate::vkutils;
 use crate::vkutils::push_constants::GPUPushConstants;
 use crate::vkutils::vk_destroy::VkDestroy;
@@ -32,7 +37,7 @@ pub struct Asset {
     pub default_scene: Option<usize>,
 
     // TODO structure this properly. Take into consideration that scene indices may not correspond to vector indices
-    mesh_type: DrawType,
+    mesh_type: DrawMode,
     _per_scene_node_transformation_data: std::vec::Vec<SceneNodesBuffers>,
     per_scene_node_meshlet_data: std::vec::Vec<vkutils::buffer::Buffer>,
     per_scene_draw_mesh_tasks_indirect_buffers: std::vec::Vec<(vkutils::buffer::Buffer, usize)>,
@@ -42,14 +47,190 @@ pub struct Asset {
     fvf_indirect_draw_buffers: Vec<(vkutils::buffer::Buffer, usize)>,
 }
 
+fn load_as_meshlet(ctx: &vkutils::context::VulkanContext, asset_data: &GltfAssetData) -> Asset {
+    let mut meshes: std::vec::Vec<Mesh> = vec![];
+    let mut nodes: std::vec::Vec<Node> = vec![];
+    let mut scenes: std::vec::Vec<Scene> = vec![];
+
+    for mesh in &asset_data.meshes {
+        let mut primitives: std::vec::Vec<Meshlet> = vec![];
+
+        for primitive in &mesh.primitives {
+            let vertex_data = &primitive.vertex_buffer;
+            let index_data: std::vec::Vec<u32> = match &primitive.index_buffer {
+                IndexBufferType::U16(items) => items.iter().map(|u16val| *u16val as u32).collect(),
+                IndexBufferType::U32(items) => items.clone(),
+            };
+            // let meshlets = meshlet::build_meshlets(&vertex_data, &index_data);
+
+            let (meshlets, bounds) = build_meshlets2(&vertex_data, &index_data);
+
+            let meshlet_buffer = ctx.upload_buffer(
+                &meshlets.meshlets,
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            );
+            let vertex_buffer = ctx.upload_buffer(
+                &vertex_data,
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            );
+            let meshlet_vertices = ctx.upload_buffer(
+                &meshlets.vertices,
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            );
+            let triangle_buffer = ctx.upload_buffer(
+                &meshlets.triangles,
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            );
+            let meshlet_bounds_buffer = ctx.upload_buffer(
+                &bounds,
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            );
+
+            primitives.push(Meshlet {
+                meshlet_buffer,
+                vertex_buffer,
+                meshlet_vertices,
+                triangle_buffer,
+                meshlet_bounds_buffer,
+                meshlets_count: meshlets.len() as u32,
+                bounds_count: bounds.len() as u32, // meshlets are rounded up to % 64
+                                                   // which gives incorrect real value. I
+                                                   // could alos round up bounds data,
+                                                   // dunno
+            });
+        }
+        meshes.push(Mesh {
+            _name: mesh.name.clone(),
+            primitives: Primitives::Meshlets(primitives),
+        });
+    }
+
+    for node in &asset_data.nodes {
+        nodes.push(Node::new(&node));
+    }
+
+    for scene in &asset_data.scenes {
+        scenes.push(Scene {
+            _name: scene.name.clone(),
+            nodes: scene.nodes.clone(),
+        });
+    }
+
+    // TODO yeet the drawmode from here - requires refactor
+    Asset::new(&ctx, meshes, nodes, scenes, None, DrawMode::Meshlet)
+}
+
+fn load_as_traditional(ctx: &vkutils::context::VulkanContext, asset_data: &GltfAssetData) -> Asset {
+    let mut meshes: std::vec::Vec<Mesh> = vec![];
+    let mut nodes: std::vec::Vec<Node> = vec![];
+    let mut scenes: std::vec::Vec<Scene> = vec![];
+    let mut vertices = vec![];
+    let mut indices = vec![];
+    let mut primitive_vertex_count = vec![]; // number of vertices for a primitive at index
+    let mut primitive_vertex_offset_in_combined_vertex_buffer = vec![];
+    let mut primitive_index_count = vec![]; // number of indices for a primitive at index
+    let mut primitive_index_offset_in_combined_index_buffer = vec![];
+    let mut primitive_parent_node_indices = vec![]; // also instances count
+
+    let mut vertex_offset_in_combined_vb = 0 as u32;
+    let mut index_offset_in_combined_ib = 0 as u32;
+
+    for (mesh_index, mesh) in asset_data.meshes.iter().enumerate() {
+        for primitive in &mesh.primitives {
+            let mut parent_node_indices: std::vec::Vec<usize> = vec![];
+            for (node_index, node) in asset_data.nodes.iter().enumerate() {
+                if let Some(node_mesh_index) = node.mesh_index {
+                    if node_mesh_index == mesh_index {
+                        parent_node_indices.push(node_index);
+                    }
+                }
+            }
+
+            primitive_parent_node_indices.push(parent_node_indices);
+
+            vertices.append(&mut primitive.vertex_buffer.clone());
+            let vertex_count = (primitive.vertex_buffer.len() / 8) as u32;
+            primitive_vertex_count.push(vertex_count);
+            primitive_vertex_offset_in_combined_vertex_buffer.push(vertex_offset_in_combined_vb);
+            vertex_offset_in_combined_vb += vertex_count;
+
+            // TODO coalesce all indices into u32. A bit wasteful memory-wise, but is a superset for all current use cases. Maybe later I'll figure out how to make it better
+            let mut ib = match &primitive.index_buffer {
+                IndexBufferType::U16(items) => {
+                    let mut v = vec![];
+                    for i in items {
+                        v.push(*i as u32);
+                    }
+                    v
+                }
+                IndexBufferType::U32(items) => items.clone(),
+            };
+            primitive_index_count.push(ib.len() as u32);
+            primitive_index_offset_in_combined_index_buffer.push(index_offset_in_combined_ib);
+            index_offset_in_combined_ib += ib.len() as u32;
+            indices.append(&mut ib);
+        }
+    }
+
+    let vb = ctx.upload_buffer(&vertices, ash::vk::BufferUsageFlags::VERTEX_BUFFER);
+    let ib = ctx.upload_buffer(&indices, ash::vk::BufferUsageFlags::INDEX_BUFFER);
+
+    meshes.push(Mesh {
+        _name: Some("TODO sraken pierdaken".to_string()), // TODO
+        primitives: Primitives::FixedVertexFunctionCombined(
+            super::primitive::FVFCombinedPrimitives {
+                vb,
+                ib,
+                // primitive_vertex_count,
+                primitive_vertex_offset_in_combined_vertex_buffer,
+                primitive_index_count,
+                primitive_index_offset_in_combined_index_buffer,
+                primitive_parent_node_indices,
+            },
+        ),
+    });
+
+    for node in &asset_data.nodes {
+        nodes.push(Node::new(&node));
+    }
+
+    for scene in &asset_data.scenes {
+        scenes.push(Scene {
+            _name: scene.name.clone(),
+            nodes: scene.nodes.clone(),
+        });
+    }
+
+    // TODO yeet the drawmode from here - requires refactor
+    Asset::new(
+        &ctx,
+        meshes,
+        nodes,
+        scenes,
+        None,
+        DrawMode::FixedVertexFunctionCombined,
+    )
+}
+
 impl Asset {
+    pub fn new2(
+        ctx: &vkutils::context::VulkanContext,
+        draw_mode: DrawMode,
+        asset_data: &GltfAssetData,
+    ) -> Self {
+        match draw_mode {
+            DrawMode::Meshlet => load_as_meshlet(ctx, asset_data),
+            DrawMode::FixedVertexFunctionCombined => load_as_traditional(ctx, asset_data),
+        }
+    }
+
     pub fn new(
         ctx: &vkutils::context::VulkanContext,
         mut meshes: std::vec::Vec<Mesh>,
         nodes: std::vec::Vec<Node>,
         scenes: std::vec::Vec<Scene>,
         default_scene: Option<usize>,
-        mesh_type: DrawType,
+        mesh_type: DrawMode,
     ) -> Self {
         let mut per_scene_node_transformation_data = vec![];
         let mut per_scene_node_meshlet_data = vec![];
@@ -64,7 +245,7 @@ impl Asset {
             let node_transformation_data =
                 build_node_transformation_data(ctx, &mut meshes, &nodes, &scene);
 
-            if let DrawType::FixedVertexFunctionCombined = mesh_type {
+            if let DrawMode::FixedVertexFunctionCombined = mesh_type {
                 let (offsets_buffer, instances_buffer) = fvf_build_instance_data(
                     ctx,
                     &node_transformation_data.node_transform_buffer_address,
@@ -76,7 +257,7 @@ impl Asset {
                 fvf_indirect_draw_buffers.push(indirect_draw_buffers);
             }
 
-            if let DrawType::Meshlet = mesh_type {
+            if let DrawMode::Meshlet = mesh_type {
                 let instances_buffer = build_instance_data(
                     ctx,
                     &node_transformation_data.node_transform_buffer_address,
@@ -115,7 +296,7 @@ impl Asset {
         push_constants: &mut GPUPushConstants,
     ) {
         match self.mesh_type {
-            DrawType::FixedVertexFunctionCombined => {
+            DrawMode::FixedVertexFunctionCombined => {
                 for mesh in &self.meshes {
                     if let super::mesh::Primitives::FixedVertexFunctionCombined(primitives) =
                         &mesh.primitives
@@ -167,7 +348,7 @@ impl Asset {
                     }
                 }
             }
-            DrawType::Meshlet => {
+            DrawMode::Meshlet => {
                 push_constants.meshlet_draw = self.per_scene_node_meshlet_data[index]
                     .device_address
                     .unwrap();
