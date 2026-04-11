@@ -1,7 +1,8 @@
+use crate::assets::TraditionalAsset;
 use crate::vkutils::descriptor_set::bindless;
 use crate::vkutils::push_constants::GPUPushConstants;
 use crate::vkutils::vk_destroy::VkDestroy;
-use crate::{assets, vkutils};
+use crate::vkutils;
 use ash::vk;
 
 pub struct ShadowMapPass {
@@ -27,7 +28,7 @@ impl ShadowMapPass {
     pub fn new(
         ctx: &mut vkutils::context::VulkanContext,
         light_pov_camera_buffer_device_address: vk::DeviceAddress,
-        assets: &mut [assets::Asset],
+        assets: &[TraditionalAsset],
     ) -> Self {
         let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
             vk::CommandBufferLevel::PRIMARY,
@@ -53,7 +54,6 @@ impl ShadowMapPass {
         for command_buffer in &command_buffers {
             record(
                 &ctx.device,
-                &ctx.mesh_shader_device,
                 *command_buffer,
                 &ctx.bindless_descriptor_set,
                 pipeline,
@@ -88,7 +88,6 @@ impl ShadowMapPass {
 
 fn record(
     device: &ash::Device,
-    mesh_shader_device: &ash::ext::mesh_shader::Device,
     command_buffer: vk::CommandBuffer,
     descriptor_set: &bindless::DescriptorSet,
     pipeline: vk::Pipeline,
@@ -96,14 +95,14 @@ fn record(
     extent: vk::Extent2D,
     light_pov_depth_image: (vk::Image, vk::ImageView),
     light_camera_data_buffer_address: vk::DeviceAddress,
-    assets: &mut [assets::Asset],
+    assets: &[TraditionalAsset],
     timestamp_query: &vkutils::timestamp_query::TimestampQuery,
 ) {
     let (camera_pov_depth_image, camera_pov_depth_image_view) = light_pov_depth_image;
 
     let mut push_constants = GPUPushConstants::default();
-    push_constants.camera_data_buffer_address = light_camera_data_buffer_address;
-    push_constants.dir_light_camera_buffer_address = light_camera_data_buffer_address;
+    push_constants.camera = light_camera_data_buffer_address;
+    push_constants.dir_light_camera = light_camera_data_buffer_address;
 
     let begin_info = vk::CommandBufferBeginInfo::default();
     unsafe {
@@ -163,7 +162,6 @@ fn record(
         asset.draw_scene(
             asset.default_scene.unwrap_or(0),
             device,
-            mesh_shader_device,
             command_buffer,
             pipeline_layout,
             &mut push_constants,

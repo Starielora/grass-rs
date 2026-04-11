@@ -1,4 +1,4 @@
-use crate::assets;
+use crate::assets::MeshletAsset;
 use crate::vkutils::push_constants::GPUPushConstants;
 use crate::vkutils::{self, vk_destroy::VkDestroy};
 use ash::vk;
@@ -17,7 +17,7 @@ pub struct MeshletPass {
 impl MeshletPass {
     pub fn new(
         ctx: &mut vkutils::context::VulkanContext,
-        assets: &mut [assets::Asset],
+        assets: &[MeshletAsset],
         camera_data: vk::DeviceAddress,
     ) -> Self {
         let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
@@ -115,7 +115,7 @@ fn record(
     depth_image: (vk::Image, vk::ImageView),
     extent: vk::Extent2D,
     pipeline: vk::Pipeline,
-    assets: &mut [assets::Asset],
+    assets: &[MeshletAsset],
     camera_buffer_address: vk::DeviceAddress,
     pipeline_layout: vk::PipelineLayout,
     descriptor_set: vk::DescriptorSet,
@@ -161,7 +161,7 @@ fn record(
     }
 
     let mut push_constants = GPUPushConstants::default();
-    push_constants.camera_data_buffer_address = camera_buffer_address;
+    push_constants.camera = camera_buffer_address;
 
     for asset in assets {
         asset.draw_scene(

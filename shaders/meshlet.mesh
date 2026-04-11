@@ -12,49 +12,49 @@ layout(location = 0) out vec4 color[];
 
 uint hash(uint a)
 {
-  a = (a + 0x7ed55d16) + (a << 12);
-  a = (a ^ 0xc761c23c) ^ (a >> 19);
-  a = (a + 0x165667b1) + (a << 5);
-  a = (a + 0xd3a2646c) ^ (a << 9);
-  a = (a + 0xfd7046c5) + (a << 3);
-  a = (a ^ 0xb55a4f09) ^ (a >> 16);
-  return a;
+    a = (a + 0x7ed55d16) + (a << 12);
+    a = (a ^ 0xc761c23c) ^ (a >> 19);
+    a = (a + 0x165667b1) + (a << 5);
+    a = (a + 0xd3a2646c) ^ (a << 9);
+    a = (a + 0xfd7046c5) + (a << 3);
+    a = (a ^ 0xb55a4f09) ^ (a >> 16);
+    return a;
 }
 
 taskPayloadSharedEXT MeshletSharedData shared_data;
 
 void main()
 {
-  MeshInstance_Meshlet draw_data = push_constants.meshlet_draws.data[shared_data.instance_index];
-  uint mi = shared_data.meshlet_index[gl_WorkGroupID.x];
-  uint ti = gl_LocalInvocationID.x;
+    MeshletDraw draw_data = push_constants.meshlet_draws.draws[shared_data.instance_index];
+    uint mi = shared_data.meshlet_index[gl_WorkGroupID.x];
+    uint ti = gl_LocalInvocationID.x;
 
-  uint vertex_count = draw_data.meshlet_data.meshlets[mi].vertex_count;
-  uint triangle_count = draw_data.meshlet_data.meshlets[mi].triangle_count;
-  uint vertex_offset = draw_data.meshlet_data.meshlets[mi].vertex_offset;
-  uint triangle_offset = draw_data.meshlet_data.meshlets[mi].triangle_offset;
+    uint vertex_count = draw_data.meshlets.meshlets[mi].vertex_count;
+    uint triangle_count = draw_data.meshlets.meshlets[mi].triangle_count;
+    uint vertex_offset = draw_data.meshlets.meshlets[mi].vertex_offset;
+    uint triangle_offset = draw_data.meshlets.meshlets[mi].triangle_offset;
 
-  SetMeshOutputsEXT(vertex_count, triangle_count);
+    SetMeshOutputsEXT(vertex_count, triangle_count);
 
-  for (uint i = ti; i < triangle_count; i += 64) {
-    uint ia = uint(draw_data.meshlet_triangles.meshlet_triangles[triangle_offset + i * 3 + 0]);
-    uint ib = uint(draw_data.meshlet_triangles.meshlet_triangles[triangle_offset + i * 3 + 1]);
-    uint ic = uint(draw_data.meshlet_triangles.meshlet_triangles[triangle_offset + i * 3 + 2]);
+    for (uint i = ti; i < triangle_count; i += 64) {
+        uint ia = uint(draw_data.tri_indices.meshlet_triangles[triangle_offset + i * 3 + 0]);
+        uint ib = uint(draw_data.tri_indices.meshlet_triangles[triangle_offset + i * 3 + 1]);
+        uint ic = uint(draw_data.tri_indices.meshlet_triangles[triangle_offset + i * 3 + 2]);
 
-    gl_PrimitiveTriangleIndicesEXT[i] = uvec3(ia, ib, ic);
-  }
+        gl_PrimitiveTriangleIndicesEXT[i] = uvec3(ia, ib, ic);
+    }
 
-  for (uint i = ti; i < vertex_count; i += 64) {
-    uint vi = draw_data.meshlet_vertices.meshlet_vertices[vertex_offset + i];
-    Vertex v = draw_data.mesh_vertex_data.vertices[vi];
-    vec4 position = push_constants.camera_data.projview * draw_data.mesh_data.model_matrix * vec4(v.vx, v.vy, v.vz, 1.0);
-    vec3 normal = vec3(v.nx, v.ny, v.nz);
+    for (uint i = ti; i < vertex_count; i += 64) {
+        uint vi = draw_data.vertex_indices.meshlet_vertices[vertex_offset + i];
+        Vertex v = draw_data.vertices.vertices[vi];
+        vec4 position = push_constants.camera.projview * draw_data.transform.model_matrix * vec4(v.vx, v.vy, v.vz, 1.0);
+        vec3 normal = vec3(v.nx, v.ny, v.nz);
 
-    gl_MeshVerticesEXT[i].gl_Position = position;
+        gl_MeshVerticesEXT[i].gl_Position = position;
 
-    uint mhash = hash(mi);
-    vec3 mcolor = vec3(float(mhash & 255), float((mhash >> 8) & 255), float((mhash >> 16) & 255)) / 255.0;
-    color[i] = vec4(mcolor, 1.0);
-    // color[i] = vec4(normal.x, -normal.z, normal.y, 1.0);
-  }
+        uint mhash = hash(mi);
+        vec3 mcolor = vec3(float(mhash & 255), float((mhash >> 8) & 255), float((mhash >> 16) & 255)) / 255.0;
+        color[i] = vec4(mcolor, 1.0);
+        // color[i] = vec4(normal.x, -normal.z, normal.y, 1.0);
+    }
 }

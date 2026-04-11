@@ -5,105 +5,120 @@
 layout(set = 0, binding = 0) uniform samplerCube skybox_tx[];
 layout(set = 0, binding = 1) uniform sampler2D depth_textures[];
 
-layout(buffer_reference) readonly buffer CameraData {
-  vec4 position;
-  mat4 projview;
+layout(buffer_reference) readonly buffer CameraDataBuf {
+    vec4 position;
+    mat4 projview;
 };
 
-layout(buffer_reference) readonly buffer MeshData {
-  mat4 model_matrix;
+// Per-instance model transform. Both paths store an address to
+// one of these per scene node.
+layout(buffer_reference) readonly buffer TransformBuf {
+    mat4 model_matrix;
 };
 
 struct DirLight {
-  vec4 dir;
-  vec4 color;
+    vec4 dir;
+    vec4 color;
 };
 
-layout(buffer_reference) readonly buffer DirLightBuffer {
-  DirLight data;
+layout(buffer_reference) readonly buffer DirLightBuf {
+    DirLight data;
 };
 
-// lol
-layout(buffer_reference) readonly buffer SkyboxData {
-  uint current_texture_id;
+layout(buffer_reference) readonly buffer SkyboxBuf {
+    uint current_texture_id;
 };
+
+// -------------------------------------------------------------
+// Meshlet rendering path — used only by meshlet.task / meshlet.mesh
+// -------------------------------------------------------------
 
 struct Vertex {
-  float vx, vy, vz;
-  float nx, ny, nz;
-  float tx, ty;
+    float vx, vy, vz;
+    float nx, ny, nz;
+    float tx, ty;
 };
 
-layout(buffer_reference) readonly buffer MeshVertexData {
-  Vertex vertices[];
+layout(buffer_reference) readonly buffer VertexBuf {
+    Vertex vertices[];
 };
 
-layout(buffer_reference) readonly buffer MeshletTriangles {
-  uint8_t meshlet_triangles[];
+layout(buffer_reference) readonly buffer TriangleIndexBuf {
+    uint8_t meshlet_triangles[];
 };
 
-layout(buffer_reference) readonly buffer MeshletVertices {
-  uint meshlet_vertices[];
+layout(buffer_reference) readonly buffer VertexIndexBuf {
+    uint meshlet_vertices[];
 };
 
 struct MeshletBounds {
-  vec3 center;
-  float radius;
-  vec3 cone_apex;
-  float cone_cutoff;
-  vec3 cone_axis;
-  // TODO its actually signed int - I wanted to avoid another glsl extensions
-  float remaining_cone_data;
-  // uint8_t cone_axis_s8;
-  // uint8_t cone_cutoff_s8;
+    vec3 center;
+    float radius;
+    vec3 cone_apex;
+    float cone_cutoff;
+    vec3 cone_axis;
+    // TODO its actually signed int - I wanted to avoid another glsl extension
+    float remaining_cone_data;
+    // uint8_t cone_axis_s8;
+    // uint8_t cone_cutoff_s8;
 };
 
-layout(buffer_reference) readonly buffer MeshletBoundsData {
-  MeshletBounds bounds[];
+layout(buffer_reference) readonly buffer MeshletBoundsBuf {
+    MeshletBounds bounds[];
 };
 
 struct Meshlet {
-  uint vertex_offset;
-  uint triangle_offset;
-  uint vertex_count;
-  uint triangle_count;
+    uint vertex_offset;
+    uint triangle_offset;
+    uint vertex_count;
+    uint triangle_count;
 };
 
-layout(buffer_reference) readonly buffer MeshletData {
-  Meshlet meshlets[];
+layout(buffer_reference) readonly buffer MeshletBuf {
+    Meshlet meshlets[];
 };
 
-struct MeshInstance_Meshlet {
-  MeshData mesh_data; // model matrix buffer address
-  MeshletData meshlet_data;
-  MeshVertexData mesh_vertex_data;
-  MeshletVertices meshlet_vertices;
-  MeshletTriangles meshlet_triangles;
-  MeshletBoundsData meshlet_bounds;
-  uint meshlets_count;
+// One entry per indirect draw call in the meshlet path.
+struct MeshletDraw {
+    TransformBuf transform; // per-instance model matrix
+    MeshletBuf meshlets;
+    VertexBuf vertices;
+    VertexIndexBuf vertex_indices;
+    TriangleIndexBuf tri_indices;
+    MeshletBoundsBuf bounds;
+    uint meshlets_count;
 };
 
-layout(buffer_reference) readonly buffer MeshletDraw_br {
-  MeshInstance_Meshlet data[];
+layout(buffer_reference) readonly buffer MeshletDrawBuf {
+    MeshletDraw draws[];
 };
 
-layout(buffer_reference) readonly buffer FVFInstance_br {
-  MeshData mesh_data[]; // access with instance index
+// -------------------------------------------------------------
+// Traditional rendering path — used only by cube.vert / cube.frag
+// -------------------------------------------------------------
+
+// Array of per-instance transforms, indexed by instance index.
+layout(buffer_reference) readonly buffer TraditionalInstanceBuf {
+    TransformBuf transforms[];
 };
 
-layout(buffer_reference) readonly buffer FVFInstanceOffset_br {
-  uint offset[]; // access with gl_DrawID
+// Per-draw-call offset into the instance buffer, indexed by gl_DrawID.
+layout(buffer_reference) readonly buffer TraditionalOffsetBuf {
+    uint offset[];
 };
 
 layout(push_constant) uniform constants
 {
-  MeshData mesh_data;
-  CameraData camera_data;
-  CameraData dir_light_camera_data;
-  DirLightBuffer dir_light;
-  SkyboxData skybox_data;
-  MeshletDraw_br meshlet_draws;
-  FVFInstance_br fvf_instances;
-  FVFInstanceOffset_br fvf_instance_offsets;
-  uint depth_sampler_index;
+    TransformBuf mesh_transform; // currently unused at runtime
+    CameraDataBuf camera;
+    CameraDataBuf dir_light_camera;
+    DirLightBuf dir_light;
+    SkyboxBuf skybox;
+    // Meshlet path only:
+    MeshletDrawBuf meshlet_draws;
+    // Traditional path only:
+    TraditionalInstanceBuf instances;
+    TraditionalOffsetBuf instance_offsets;
+    // Shared:
+    uint depth_sampler_index;
 } push_constants;

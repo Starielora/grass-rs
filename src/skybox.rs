@@ -507,7 +507,7 @@ impl Skybox {
                 self.pipeline,
             );
 
-            push_constants.skybox_data = self.buffer_device_address;
+            push_constants.skybox = self.buffer_device_address;
 
             self.device.cmd_push_constants(
                 command_buffer,

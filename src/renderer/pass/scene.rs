@@ -1,4 +1,4 @@
-use crate::assets;
+use crate::assets::TraditionalAsset;
 use ash::vk;
 
 use crate::{
@@ -40,7 +40,7 @@ impl SceneColorPass {
         dir_light_camera_buffer_address: vk::DeviceAddress,
         shadow_map: (vk::Image, vk::ImageView),
         sampler: vk::Sampler,
-        assets: &mut [assets::Asset],
+        assets: &[TraditionalAsset],
     ) -> Self {
         let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
             vk::CommandBufferLevel::PRIMARY,
@@ -91,7 +91,6 @@ impl SceneColorPass {
         for command_buffer in &command_buffers {
             record(
                 &ctx.device,
-                &ctx.mesh_shader_device,
                 *command_buffer,
                 &ctx.bindless_descriptor_set,
                 (render_target.handle, render_target.view),
@@ -134,7 +133,6 @@ impl SceneColorPass {
 
 fn record(
     device: &ash::Device,
-    mesh_shader_device: &ash::ext::mesh_shader::Device,
     command_buffer: vk::CommandBuffer,
     descriptor_set: &bindless::DescriptorSet,
     color_image: (vk::Image, vk::ImageView),
@@ -149,7 +147,7 @@ fn record(
     dir_light_buffer_address: vk::DeviceAddress,
     dir_light_camera_buffer_address: vk::DeviceAddress,
     depth_sampler_index: u32,
-    assets: &mut [assets::Asset],
+    assets: &[TraditionalAsset],
     timestamp_query: &vkutils::timestamp_query::TimestampQuery,
 ) {
     let begin_info = vk::CommandBufferBeginInfo {
@@ -183,9 +181,9 @@ fn record(
     descriptor_set.cmd_bind(command_buffer, vk::PipelineBindPoint::GRAPHICS);
 
     let mut push_constants = GPUPushConstants::default();
-    push_constants.camera_data_buffer_address = camera_buffer_address;
-    push_constants.dir_light_buffer_address = dir_light_buffer_address;
-    push_constants.dir_light_camera_buffer_address = dir_light_camera_buffer_address;
+    push_constants.camera = camera_buffer_address;
+    push_constants.dir_light = dir_light_buffer_address;
+    push_constants.dir_light_camera = dir_light_camera_buffer_address;
     push_constants.depth_sampler_index = depth_sampler_index;
 
     skybox.record(command_buffer, &mut push_constants);
@@ -198,7 +196,6 @@ fn record(
         asset.draw_scene(
             asset.default_scene.unwrap_or(0),
             device,
-            mesh_shader_device,
             command_buffer,
             pipeline_layout,
             &mut push_constants,

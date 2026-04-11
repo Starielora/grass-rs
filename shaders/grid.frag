@@ -13,16 +13,16 @@ layout(location = 1) in float grid_size;
 
 void main()
 {
-    CameraData camera_data = push_constants.camera_data;
-    vec3 dir = world_pos - camera_data.position.xyz;
+    CameraDataBuf camera = push_constants.camera;
+    vec3 dir = world_pos - camera.position.xyz;
 
     float distance_to_camera = length(dir.xz);
 
     float x_size = 1.;
     float z_size = x_size;
     float thickness = 0.01;
-    float x_step = abs(sin(x_size * world_pos.x*PI));
-    float z_step = abs(sin(z_size * world_pos.z*PI));
+    float x_step = abs(sin(x_size * world_pos.x * PI));
+    float z_step = abs(sin(z_size * world_pos.z * PI));
 
     float linecount = 2.0 * x_size;
     float blendregion = 2.8;
@@ -32,12 +32,12 @@ void main()
     float valueY = 1.0 - smoothstep(dF.t * thickness, dF.t * (thickness + blendregion), z_step);
     vec3 vertical = vec3(valueX);
     vec3 horizontal = vec3(valueY);
-    float bloom = smoothstep(0.0, 1., distance_to_camera/100.);
+    float bloom = smoothstep(0.0, 1., distance_to_camera / 100.);
 
     vec3 color = max(vertical + bloom, horizontal + bloom);
-    color *= vec3(0.25,0.25,0.25);
+    color *= vec3(0.25, 0.25, 0.25);
 
-    const float alpha = (1. - pow(distance_to_camera/grid_size, 3.0)) * length(color);
+    const float alpha = (1. - pow(distance_to_camera / grid_size, 3.0)) * length(color);
     out_color = vec4(color, alpha);
 
     #ifdef AXIS
@@ -49,8 +49,8 @@ void main()
     // poor man's AA
     // good enough for now...
     // TODO make axis fade away in distance and maybe research how to make it better overall
-    const float line_width = mix(0.04, 0.32, distance_to_camera/grid_size);
-    const float aa_width = mix(0.002, 0.32, distance_to_camera/grid_size);
+    const float line_width = mix(0.04, 0.32, distance_to_camera / grid_size);
+    const float aa_width = mix(0.002, 0.32, distance_to_camera / grid_size);
     vec4 red_line = vec4(red, smoothstep(line_width, line_width - aa_width, length_yz));
     vec4 blue_line = vec4(blue, smoothstep(line_width, line_width - aa_width, length_xy));
     if (length_yz < line_width)

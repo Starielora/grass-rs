@@ -5,7 +5,7 @@ mod scene_render;
 mod target_render_picker;
 
 use crate::{
-    assets::{self, gltf_asset, Asset, DrawMode},
+    assets::{self, gltf_asset, MeshletAsset, TraditionalAsset},
     camera::GPUCameraData,
     dir_light::{self, GPUDirLight},
     grid, gui,
@@ -36,9 +36,9 @@ pub struct Renderer {
     pub camera_data_buffer: vkutils::buffer::Buffer,
 
     pub gui_scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
-    _skybox: std::vec::Vec<assets::Asset>,
-    _assets: std::vec::Vec<assets::Asset>,
-    _meshle_assets: std::vec::Vec<assets::Asset>,
+    _skybox_asset: TraditionalAsset,
+    _traditional_assets: std::vec::Vec<TraditionalAsset>,
+    _meshlet_assets: std::vec::Vec<MeshletAsset>,
     passes: Passes,
     submits: Submits,
 
@@ -63,7 +63,7 @@ impl Renderer {
 
         let t1 = std::time::Instant::now();
         let cube_asset_data = gltf_asset::GltfAssetData::new("assets/cube.gltf");
-        let cube_asset = Asset::new2(&ctx, DrawMode::Traditional, &cube_asset_data);
+        let cube_asset = TraditionalAsset::from_gltf(&ctx, &cube_asset_data);
 
         let asset_path = std::str::from_utf8(
             // b"/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
@@ -74,13 +74,12 @@ impl Renderer {
         .unwrap();
 
         let asset_data = gltf_asset::GltfAssetData::new(asset_path);
-        let meshlet_asset = Asset::new2(&ctx, DrawMode::Meshlet, &asset_data);
-        let traditional_asset = Asset::new2(&ctx, DrawMode::Traditional, &asset_data);
+        let meshlet_asset = MeshletAsset::from_gltf(&ctx, &asset_data);
+        let traditional_asset = TraditionalAsset::from_gltf(&ctx, &asset_data);
         println!("Load time: {:?}", t1.elapsed());
 
-        let mut assets = vec![];
-        // assets.push(bistro_asset);
-        assets.push(traditional_asset);
+        let mut traditional_assets = vec![];
+        traditional_assets.push(traditional_asset);
 
         let mut meshlet_assets = vec![];
         meshlet_assets.push(meshlet_asset);
@@ -101,7 +100,7 @@ impl Renderer {
         let shadow_map_pass = pass::shadow_map::ShadowMapPass::new(
             ctx,
             dir_light.camera_buffer.device_address.unwrap(),
-            &mut assets,
+            traditional_assets.as_slice(),
         );
 
         let shadow_map_display_pass = pass::depth_map_display::DepthMapDisplayPass::new(
@@ -127,12 +126,12 @@ impl Renderer {
         // TODO this is pepega
         let (skybox_vertex_buffer_handle, skybox_index_buffer_handle, skybox_indices_count) =
             match &cube_asset.meshes[0].primitives {
-                assets::mesh::Primitives::Meshlets(_meshlets) => todo!(),
                 assets::mesh::Primitives::FixedVertexFunctionCombined(primitives) => (
                     primitives.vb.handle,
                     primitives.ib.handle,
                     primitives.primitive_index_count[0] as usize,
                 ),
+                assets::mesh::Primitives::Meshlets(_) => unreachable!(),
             };
 
         let skybox = skybox::Skybox::new(
@@ -162,7 +161,7 @@ impl Renderer {
                 shadow_map_pass.output_depth_image.view,
             ),
             common_sampler.handle,
-            &mut assets,
+            traditional_assets.as_slice(),
         );
 
         let scene_render = scene_render::ColorSceneRender::new(
@@ -209,7 +208,7 @@ impl Renderer {
 
         let meshlet_pass = pass::meshlet::MeshletPass::new(
             ctx,
-            meshlet_assets.as_mut_slice(),
+            meshlet_assets.as_slice(),
             camera_data_buffer.device_address.unwrap(),
         );
         let meshlet_render = meshlet_render::MeshletRender::new(
@@ -220,9 +219,9 @@ impl Renderer {
 
         Self {
             camera_data_buffer,
-            _skybox: vec![cube_asset],
-            _assets: assets,
-            _meshle_assets: meshlet_assets,
+            _skybox_asset: cube_asset,
+            _traditional_assets: traditional_assets,
+            _meshlet_assets: meshlet_assets,
             passes: Passes {
                 _shadow_map: shadow_map_pass,
                 scene: scene_pass,
