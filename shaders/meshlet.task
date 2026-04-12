@@ -3,7 +3,7 @@
 #extension GL_KHR_shader_subgroup_ballot: require
 #extension GL_ARB_shader_draw_parameters: require
 
-#include "descriptor_set.glsl"
+#include "descriptor_set_meshlet.glsl"
 #include "meshlet_common.glsl"
 
 taskPayloadSharedEXT MeshletSharedData shared_data;

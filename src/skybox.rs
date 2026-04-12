@@ -1,6 +1,6 @@
 use crate::gui_scene_node::GuiSceneNode;
 use crate::vkutils;
-use crate::vkutils::push_constants::GPUPushConstants;
+use crate::vkutils::push_constants::GPUPushConstantsTraditional;
 use crate::vkutils::vk_destroy::VkDestroy;
 use ash::vk;
 use std::io::prelude::*;
@@ -381,7 +381,7 @@ impl Skybox {
         cube_index_buffer: vk::Buffer,
         indices_count: usize,
     ) -> Self {
-        let pipeline_layout = ctx.bindless_descriptor_set.pipeline_layout;
+        let pipeline_layout = ctx.bindless_descriptor_set.traditional_pipeline_layout;
         let pipeline = create_graphics_pipeline(
             &ctx.device,
             &ctx.swapchain.extent,
@@ -488,7 +488,11 @@ impl Skybox {
         }
     }
 
-    pub fn record(&self, command_buffer: vk::CommandBuffer, push_constants: &mut GPUPushConstants) {
+    pub fn record(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        push_constants: &mut GPUPushConstantsTraditional,
+    ) {
         unsafe {
             let sets = [self.descriptor_set];
             let dynamic_offsets = [];
@@ -512,14 +516,11 @@ impl Skybox {
             self.device.cmd_push_constants(
                 command_buffer,
                 self.pipeline_layout,
-                vk::ShaderStageFlags::VERTEX
-                    | vk::ShaderStageFlags::FRAGMENT
-                    | vk::ShaderStageFlags::TASK_EXT
-                    | vk::ShaderStageFlags::MESH_EXT,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
                 0,
                 std::slice::from_raw_parts(
-                    (push_constants as *const GPUPushConstants) as *const u8,
-                    std::mem::size_of::<GPUPushConstants>(),
+                    (push_constants as *const GPUPushConstantsTraditional) as *const u8,
+                    std::mem::size_of::<GPUPushConstantsTraditional>(),
                 ),
             );
 

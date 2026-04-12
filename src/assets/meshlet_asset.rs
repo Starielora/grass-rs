@@ -3,7 +3,7 @@ use super::mesh::{Mesh, Primitives};
 use super::meshlet::{build_meshlets2, Meshlet};
 use super::scene_nodes::{build_node_transformation_data, SceneNodesBuffers};
 use crate::vkutils;
-use crate::vkutils::push_constants::GPUPushConstants;
+use crate::vkutils::push_constants::GPUPushConstantsMeshlet;
 use crate::vkutils::vk_destroy::VkDestroy;
 use ash::vk;
 
@@ -128,7 +128,7 @@ impl MeshletAsset {
         mesh_shader_device: &ash::ext::mesh_shader::Device,
         command_buffer: vk::CommandBuffer,
         pipeline_layout: vk::PipelineLayout,
-        push_constants: &mut GPUPushConstants,
+        push_constants: &mut GPUPushConstantsMeshlet,
     ) {
         push_constants.meshlet_draws = self.instance_buffers[scene_index].device_address.unwrap();
         let (buf, draws_count) = &self.indirect_buffers[scene_index];
@@ -136,14 +136,11 @@ impl MeshletAsset {
             device.cmd_push_constants(
                 command_buffer,
                 pipeline_layout,
-                vk::ShaderStageFlags::VERTEX
-                    | vk::ShaderStageFlags::FRAGMENT
-                    | vk::ShaderStageFlags::TASK_EXT
-                    | vk::ShaderStageFlags::MESH_EXT,
+                vk::ShaderStageFlags::TASK_EXT | vk::ShaderStageFlags::MESH_EXT,
                 0,
                 std::slice::from_raw_parts(
-                    (push_constants as *const GPUPushConstants) as *const u8,
-                    std::mem::size_of::<GPUPushConstants>(),
+                    (push_constants as *const GPUPushConstantsMeshlet) as *const u8,
+                    std::mem::size_of::<GPUPushConstantsMeshlet>(),
                 ),
             );
             mesh_shader_device.cmd_draw_mesh_tasks_indirect(

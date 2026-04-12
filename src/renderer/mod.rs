@@ -145,7 +145,7 @@ impl Renderer {
             &ctx.swapchain.extent,
             ctx.swapchain.surface_format.format,
             ctx.depth_format,
-            ctx.bindless_descriptor_set.pipeline_layout,
+            ctx.bindless_descriptor_set.traditional_pipeline_layout,
         )
         .expect("Failed to create Grid");
 

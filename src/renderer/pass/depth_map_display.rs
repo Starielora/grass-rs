@@ -1,6 +1,6 @@
 use ash::vk;
 
-use crate::vkutils::{self, push_constants::GPUPushConstants, vk_destroy::VkDestroy};
+use crate::vkutils::{self, push_constants::GPUPushConstantsTraditional, vk_destroy::VkDestroy};
 
 pub struct DepthMapDisplayPass {
     pub command_buffers: Vec<vk::CommandBuffer>,
@@ -30,7 +30,7 @@ impl DepthMapDisplayPass {
         );
 
         let extent = ctx.swapchain.extent;
-        let pipeline_layout = ctx.bindless_descriptor_set.pipeline_layout;
+        let pipeline_layout = ctx.bindless_descriptor_set.traditional_pipeline_layout;
         let pipeline = create_pipeline(
             &ctx.device,
             &extent,
@@ -67,13 +67,13 @@ impl DepthMapDisplayPass {
             }
 
             ctx.bindless_descriptor_set
-                .cmd_bind(*command_buffer, vk::PipelineBindPoint::GRAPHICS);
+                .cmd_bind(*command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline_layout);
 
             record(
                 &ctx.device,
                 *command_buffer,
                 pipeline,
-                ctx.bindless_descriptor_set.pipeline_layout,
+                pipeline_layout,
                 // TODO double buffering
                 src_depth_map,
                 (
@@ -163,21 +163,18 @@ fn record(
         .layer_count(1)
         .color_attachments(&color_attachments);
 
-    let mut push_constants = GPUPushConstants::default();
+    let mut push_constants = GPUPushConstantsTraditional::default();
     push_constants.depth_sampler_index = sampler_id;
 
     unsafe {
         device.cmd_push_constants(
             command_buffer,
             pipeline_layout,
-            vk::ShaderStageFlags::VERTEX
-                | vk::ShaderStageFlags::FRAGMENT
-                | vk::ShaderStageFlags::TASK_EXT
-                | vk::ShaderStageFlags::MESH_EXT,
+            vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
             0,
             std::slice::from_raw_parts(
-                (&push_constants as *const GPUPushConstants) as *const u8,
-                std::mem::size_of::<GPUPushConstants>(),
+                (&push_constants as *const GPUPushConstantsTraditional) as *const u8,
+                std::mem::size_of::<GPUPushConstantsTraditional>(),
             ),
         );
         device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline);

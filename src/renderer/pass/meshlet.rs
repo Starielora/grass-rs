@@ -1,5 +1,5 @@
 use crate::assets::MeshletAsset;
-use crate::vkutils::push_constants::GPUPushConstants;
+use crate::vkutils::push_constants::GPUPushConstantsMeshlet;
 use crate::vkutils::{self, vk_destroy::VkDestroy};
 use ash::vk;
 
@@ -26,7 +26,7 @@ impl MeshletPass {
         );
 
         let extent = ctx.swapchain.extent;
-        let pipeline_layout = ctx.bindless_descriptor_set.pipeline_layout;
+        let pipeline_layout = ctx.bindless_descriptor_set.meshlet_pipeline_layout;
         let format = ctx.swapchain.surface_format.format;
 
         let pipeline = create_pipeline(
@@ -160,7 +160,7 @@ fn record(
         device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline);
     }
 
-    let mut push_constants = GPUPushConstants::default();
+    let mut push_constants = GPUPushConstantsMeshlet::default();
     push_constants.camera = camera_buffer_address;
 
     for asset in assets {

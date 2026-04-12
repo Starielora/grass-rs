@@ -2,7 +2,7 @@
 #extension GL_EXT_mesh_shader : require
 #extension GL_ARB_shader_draw_parameters: require
 
-#include "descriptor_set.glsl"
+#include "descriptor_set_meshlet.glsl"
 #include "meshlet_common.glsl"
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;

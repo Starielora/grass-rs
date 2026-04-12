@@ -15,7 +15,8 @@ pub mod bindless {
         pool: vk::DescriptorPool,
         pub layout: vk::DescriptorSetLayout,
         pub handle: vk::DescriptorSet,
-        pub pipeline_layout: vk::PipelineLayout,
+        pub traditional_pipeline_layout: vk::PipelineLayout,
+        pub meshlet_pipeline_layout: vk::PipelineLayout,
         device: ash::Device,
     }
 
@@ -25,13 +26,17 @@ pub mod bindless {
             let descriptor_set_layout = create_descriptor_set_layout(&device);
             let descriptor_set =
                 allocate_descriptor_set(descriptor_pool, descriptor_set_layout, &device);
-            let pipeline_layout = create_pipeline_layout(&device, descriptor_set_layout);
+            let traditional_pipeline_layout =
+                create_traditional_pipeline_layout(&device, descriptor_set_layout);
+            let meshlet_pipeline_layout =
+                create_meshlet_pipeline_layout(&device, descriptor_set_layout);
 
             Self {
                 pool: descriptor_pool,
                 layout: descriptor_set_layout,
                 handle: descriptor_set,
-                pipeline_layout,
+                traditional_pipeline_layout,
+                meshlet_pipeline_layout,
                 device,
             }
         }
@@ -67,12 +72,13 @@ pub mod bindless {
             &self,
             command_buffer: vk::CommandBuffer,
             bind_point: vk::PipelineBindPoint,
+            pipeline_layout: vk::PipelineLayout,
         ) {
             unsafe {
                 self.device.cmd_bind_descriptor_sets(
                     command_buffer,
                     bind_point,
-                    self.pipeline_layout,
+                    pipeline_layout,
                     0,
                     &[self.handle],
                     &[],
@@ -85,7 +91,9 @@ pub mod bindless {
         fn vk_destroy(&self) {
             unsafe {
                 self.device
-                    .destroy_pipeline_layout(self.pipeline_layout, None);
+                    .destroy_pipeline_layout(self.traditional_pipeline_layout, None);
+                self.device
+                    .destroy_pipeline_layout(self.meshlet_pipeline_layout, None);
                 self.device.destroy_descriptor_set_layout(self.layout, None);
                 self.device.destroy_descriptor_pool(self.pool, None);
             }
@@ -173,19 +181,35 @@ pub mod bindless {
         descriptor_set[0]
     }
 
-    fn create_pipeline_layout(
+    fn create_traditional_pipeline_layout(
         device: &ash::Device,
         set_layout: vk::DescriptorSetLayout,
     ) -> vk::PipelineLayout {
         let set_layouts = [set_layout];
-        let push_constants_range = push_constants::get_range();
+        let push_constants_range = push_constants::get_range_traditional();
         let create_info = vk::PipelineLayoutCreateInfo::default()
             .set_layouts(&set_layouts)
             .push_constant_ranges(&push_constants_range);
         unsafe {
             device
                 .create_pipeline_layout(&create_info, None)
-                .expect("Failed to create pipeline layout")
+                .expect("Failed to create traditional pipeline layout")
+        }
+    }
+
+    fn create_meshlet_pipeline_layout(
+        device: &ash::Device,
+        set_layout: vk::DescriptorSetLayout,
+    ) -> vk::PipelineLayout {
+        let set_layouts = [set_layout];
+        let push_constants_range = push_constants::get_range_meshlet();
+        let create_info = vk::PipelineLayoutCreateInfo::default()
+            .set_layouts(&set_layouts)
+            .push_constant_ranges(&push_constants_range);
+        unsafe {
+            device
+                .create_pipeline_layout(&create_info, None)
+                .expect("Failed to create meshlet pipeline layout")
         }
     }
 }

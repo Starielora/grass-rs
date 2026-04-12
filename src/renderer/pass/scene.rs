@@ -4,7 +4,8 @@ use ash::vk;
 use crate::{
     grid, skybox,
     vkutils::{
-        self, descriptor_set::bindless, push_constants::GPUPushConstants, vk_destroy::VkDestroy,
+        self, descriptor_set::bindless, push_constants::GPUPushConstantsTraditional,
+        vk_destroy::VkDestroy,
     },
 };
 
@@ -47,7 +48,7 @@ impl SceneColorPass {
             ctx.swapchain.images.len().try_into().unwrap(),
         );
         let extent = ctx.swapchain.extent;
-        let pipeline_layout = ctx.bindless_descriptor_set.pipeline_layout;
+        let pipeline_layout = ctx.bindless_descriptor_set.traditional_pipeline_layout;
         let format = ctx.swapchain.surface_format.format;
         let pipeline = create_pipeline(
             &ctx.device,
@@ -178,9 +179,9 @@ fn record(
         extent,
     );
 
-    descriptor_set.cmd_bind(command_buffer, vk::PipelineBindPoint::GRAPHICS);
+    descriptor_set.cmd_bind(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline_layout);
 
-    let mut push_constants = GPUPushConstants::default();
+    let mut push_constants = GPUPushConstantsTraditional::default();
     push_constants.camera = camera_buffer_address;
     push_constants.dir_light = dir_light_buffer_address;
     push_constants.dir_light_camera = dir_light_camera_buffer_address;

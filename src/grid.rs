@@ -2,7 +2,7 @@ use std::ffi::CStr;
 
 use ash::vk;
 
-use crate::vkutils::push_constants::GPUPushConstants;
+use crate::vkutils::push_constants::GPUPushConstantsTraditional;
 
 pub struct Grid {
     pipeline: vk::Pipeline,
@@ -156,7 +156,11 @@ impl Grid {
         })
     }
 
-    pub fn record(&self, command_buffer: vk::CommandBuffer, push_constants: &mut GPUPushConstants) {
+    pub fn record(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        push_constants: &mut GPUPushConstantsTraditional,
+    ) {
         unsafe {
             self.device.cmd_bind_pipeline(
                 command_buffer,
@@ -167,14 +171,11 @@ impl Grid {
             self.device.cmd_push_constants(
                 command_buffer,
                 self.pipeline_layout,
-                vk::ShaderStageFlags::VERTEX
-                    | vk::ShaderStageFlags::FRAGMENT
-                    | vk::ShaderStageFlags::TASK_EXT
-                    | vk::ShaderStageFlags::MESH_EXT,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
                 0,
                 std::slice::from_raw_parts(
-                    (push_constants as *const GPUPushConstants) as *const u8,
-                    std::mem::size_of::<GPUPushConstants>(),
+                    (push_constants as *const GPUPushConstantsTraditional) as *const u8,
+                    std::mem::size_of::<GPUPushConstantsTraditional>(),
                 ),
             );
 

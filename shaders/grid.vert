@@ -1,7 +1,7 @@
 #version 460 core
 
 #extension GL_GOOGLE_include_directive : enable
-#include "descriptor_set.glsl"
+#include "descriptor_set_traditional.glsl"
 
 const vec3 pos[4] = vec3[4](
         vec3(-1.0, 0.0, 1.0),

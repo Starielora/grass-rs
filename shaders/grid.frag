@@ -1,7 +1,7 @@
 #version 460 core
 
 #extension GL_GOOGLE_include_directive : enable
-#include "descriptor_set.glsl"
+#include "descriptor_set_traditional.glsl"
 
 layout(location = 0) out vec4 out_color;
 layout(location = 0) in vec3 world_pos;

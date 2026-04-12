@@ -1,6 +1,6 @@
 use crate::assets::TraditionalAsset;
 use crate::vkutils::descriptor_set::bindless;
-use crate::vkutils::push_constants::GPUPushConstants;
+use crate::vkutils::push_constants::GPUPushConstantsTraditional;
 use crate::vkutils::vk_destroy::VkDestroy;
 use crate::vkutils;
 use ash::vk;
@@ -46,7 +46,7 @@ impl ShadowMapPass {
         );
 
         let extent = ctx.swapchain.extent;
-        let pipeline_layout = ctx.bindless_descriptor_set.pipeline_layout;
+        let pipeline_layout = ctx.bindless_descriptor_set.traditional_pipeline_layout;
         let pipeline = create_pipeline(&ctx.device, &extent, pipeline_layout, ctx.depth_format);
 
         let timestamp_query = vkutils::timestamp_query::TimestampQuery::new(&ctx, 2);
@@ -100,7 +100,7 @@ fn record(
 ) {
     let (camera_pov_depth_image, camera_pov_depth_image_view) = light_pov_depth_image;
 
-    let mut push_constants = GPUPushConstants::default();
+    let mut push_constants = GPUPushConstantsTraditional::default();
     push_constants.camera = light_camera_data_buffer_address;
     push_constants.dir_light_camera = light_camera_data_buffer_address;
 
@@ -114,7 +114,7 @@ fn record(
     timestamp_query.reset(command_buffer);
     timestamp_query.cmd_write(0, vk::PipelineStageFlags::TOP_OF_PIPE, command_buffer);
 
-    descriptor_set.cmd_bind(command_buffer, vk::PipelineBindPoint::GRAPHICS);
+    descriptor_set.cmd_bind(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline_layout);
 
     vkutils::image_barrier(
         &device,

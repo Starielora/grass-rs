@@ -1,7 +1,7 @@
 #version 460 core
 
 #extension GL_GOOGLE_include_directive : enable
-#include "descriptor_set.glsl"
+#include "descriptor_set_traditional.glsl"
 
 vec2 positions[3] = vec2[](
         vec2(0.0, 0.5),

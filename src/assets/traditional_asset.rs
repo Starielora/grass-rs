@@ -3,7 +3,7 @@ use super::mesh::{Mesh, Primitives};
 use super::primitive::FVFCombinedPrimitives;
 use super::scene_nodes::{build_node_transformation_data, SceneNodesBuffers};
 use crate::vkutils;
-use crate::vkutils::push_constants::GPUPushConstants;
+use crate::vkutils::push_constants::GPUPushConstantsTraditional;
 use crate::vkutils::vk_destroy::VkDestroy;
 use ash::vk;
 
@@ -127,7 +127,7 @@ impl TraditionalAsset {
         device: &ash::Device,
         command_buffer: vk::CommandBuffer,
         pipeline_layout: vk::PipelineLayout,
-        push_constants: &mut GPUPushConstants,
+        push_constants: &mut GPUPushConstantsTraditional,
     ) {
         for mesh in &self.meshes {
             if let Primitives::FixedVertexFunctionCombined(primitives) = &mesh.primitives {
@@ -142,14 +142,11 @@ impl TraditionalAsset {
                     device.cmd_push_constants(
                         command_buffer,
                         pipeline_layout,
-                        vk::ShaderStageFlags::VERTEX
-                            | vk::ShaderStageFlags::FRAGMENT
-                            | vk::ShaderStageFlags::TASK_EXT
-                            | vk::ShaderStageFlags::MESH_EXT,
+                        vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
                         0,
                         std::slice::from_raw_parts(
-                            (push_constants as *const GPUPushConstants) as *const u8,
-                            std::mem::size_of::<GPUPushConstants>(),
+                            (push_constants as *const GPUPushConstantsTraditional) as *const u8,
+                            std::mem::size_of::<GPUPushConstantsTraditional>(),
                         ),
                     );
 
