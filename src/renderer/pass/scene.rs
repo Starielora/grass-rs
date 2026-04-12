@@ -2,7 +2,7 @@ use crate::assets::TraditionalAsset;
 use ash::vk;
 
 use crate::{
-    grid, skybox,
+    overlay_drawable::OverlayDrawable,
     vkutils::{
         self, descriptor_set::bindless, push_constants::GPUPushConstantsTraditional,
         vk_destroy::VkDestroy,
@@ -34,8 +34,8 @@ impl std::ops::Drop for SceneColorPass {
 impl SceneColorPass {
     pub fn new(
         ctx: &mut vkutils::context::VulkanContext,
-        skybox: &skybox::Skybox,
-        grid: &grid::Grid,
+        pre_overlays: &[&dyn OverlayDrawable],
+        post_overlays: &[&dyn OverlayDrawable],
         camera_data_buffer_address: vk::DeviceAddress,
         dir_light_data_buffer_address: vk::DeviceAddress,
         dir_light_camera_buffer_address: vk::DeviceAddress,
@@ -98,8 +98,8 @@ impl SceneColorPass {
                 (depth_image.handle, depth_image.view),
                 (shadow_map.0, shadow_map.1),
                 extent,
-                &skybox,
-                &grid,
+                pre_overlays,
+                post_overlays,
                 pipeline,
                 pipeline_layout,
                 camera_data_buffer_address,
@@ -140,8 +140,8 @@ fn record(
     depth_image: (vk::Image, vk::ImageView),
     shadow_map_image: (vk::Image, vk::ImageView),
     extent: vk::Extent2D,
-    skybox: &crate::skybox::Skybox,
-    grid: &crate::grid::Grid,
+    pre_overlays: &[&dyn OverlayDrawable],
+    post_overlays: &[&dyn OverlayDrawable],
     pipeline: vk::Pipeline,
     pipeline_layout: vk::PipelineLayout,
     camera_buffer_address: vk::DeviceAddress,
@@ -187,7 +187,11 @@ fn record(
     push_constants.dir_light_camera = dir_light_camera_buffer_address;
     push_constants.depth_sampler_index = depth_sampler_index;
 
-    skybox.record(command_buffer, &mut push_constants);
+    for overlay in pre_overlays {
+        if overlay.enabled() {
+            overlay.record(command_buffer, &mut push_constants);
+        }
+    }
 
     unsafe {
         device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline);
@@ -203,7 +207,11 @@ fn record(
         );
     }
 
-    grid.record(command_buffer, &mut push_constants);
+    for overlay in post_overlays {
+        if overlay.enabled() {
+            overlay.record(command_buffer, &mut push_constants);
+        }
+    }
 
     timestamp_query.cmd_write(1, vk::PipelineStageFlags::BOTTOM_OF_PIPE, command_buffer);
 

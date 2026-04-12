@@ -1,4 +1,5 @@
 use crate::gui_scene_node::GuiSceneNode;
+use crate::overlay_drawable::OverlayDrawable;
 use crate::vkutils;
 use crate::vkutils::push_constants::GPUPushConstantsTraditional;
 use crate::vkutils::vk_destroy::VkDestroy;
@@ -488,7 +489,26 @@ impl Skybox {
         }
     }
 
-    pub fn record(
+    fn refresh_per_frame_buffer(&self) {
+        self.buffer.update_contents(&[self.current_resource_id]);
+    }
+}
+
+impl std::ops::Drop for Skybox {
+    fn drop(&mut self) {
+        self.buffer.vk_destroy();
+        for image in &self.images {
+            image.vk_destroy();
+        }
+        unsafe {
+            self.device.destroy_sampler(self.sampler, None);
+            self.device.destroy_pipeline(self.pipeline, None);
+        }
+    }
+}
+
+impl OverlayDrawable for Skybox {
+    fn record(
         &self,
         command_buffer: vk::CommandBuffer,
         push_constants: &mut GPUPushConstantsTraditional,
@@ -536,23 +556,6 @@ impl Skybox {
             );
             self.device
                 .cmd_draw_indexed(command_buffer, self.indices_count as u32, 1, 0, 0, 0);
-        }
-    }
-
-    fn refresh_per_frame_buffer(&self) {
-        self.buffer.update_contents(&[self.current_resource_id]);
-    }
-}
-
-impl std::ops::Drop for Skybox {
-    fn drop(&mut self) {
-        self.buffer.vk_destroy();
-        for image in &self.images {
-            image.vk_destroy();
-        }
-        unsafe {
-            self.device.destroy_sampler(self.sampler, None);
-            self.device.destroy_pipeline(self.pipeline, None);
         }
     }
 }

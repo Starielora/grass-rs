@@ -10,6 +10,7 @@ use crate::{
     dir_light::{self, GPUDirLight},
     grid, gui,
     gui_scene_node::GuiSceneNode,
+    overlay_drawable::OverlayDrawable,
     skybox,
     vkutils::{self, vk_destroy::VkDestroy},
 };
@@ -66,9 +67,9 @@ impl Renderer {
         let cube_asset = TraditionalAsset::from_gltf(&ctx, &cube_asset_data);
 
         let asset_path = std::str::from_utf8(
-            // b"/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
+            b"/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
             // b"/home/starielora/dev/repos/glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf",
-            b"/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
+            // b"/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
             // b"/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
         )
         .unwrap();
@@ -151,8 +152,8 @@ impl Renderer {
 
         let scene_pass = pass::scene::SceneColorPass::new(
             ctx,
-            &skybox,
-            &grid,
+            &[&skybox as &dyn OverlayDrawable],
+            &[&grid as &dyn OverlayDrawable],
             camera_data_buffer.device_address.unwrap(),
             dir_light.buffer_device_address,
             dir_light.camera_buffer.device_address.unwrap(),
@@ -201,8 +202,8 @@ impl Renderer {
             ctx,
             meshlet_assets.as_slice(),
             camera_data_buffer.device_address.unwrap(),
-            &skybox,
-            &grid,
+            &[&skybox as &dyn OverlayDrawable],
+            &[&grid as &dyn OverlayDrawable],
         );
 
         let mut gui_scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>> =

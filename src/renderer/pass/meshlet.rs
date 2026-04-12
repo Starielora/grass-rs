@@ -1,4 +1,5 @@
 use crate::assets::MeshletAsset;
+use crate::overlay_drawable::OverlayDrawable;
 use crate::vkutils::push_constants::{GPUPushConstantsMeshlet, GPUPushConstantsTraditional};
 use crate::vkutils::{self, vk_destroy::VkDestroy};
 use ash::vk;
@@ -19,8 +20,8 @@ impl MeshletPass {
         ctx: &mut vkutils::context::VulkanContext,
         assets: &[MeshletAsset],
         camera_data: vk::DeviceAddress,
-        skybox: &crate::skybox::Skybox,
-        grid: &crate::grid::Grid,
+        pre_overlays: &[&dyn OverlayDrawable],
+        post_overlays: &[&dyn OverlayDrawable],
     ) -> Self {
         let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
             vk::CommandBufferLevel::PRIMARY,
@@ -75,8 +76,8 @@ impl MeshletPass {
                 pipeline_layout,
                 ctx.bindless_descriptor_set.handle,
                 &timestamp_query,
-                skybox,
-                grid,
+                pre_overlays,
+                post_overlays,
             );
         }
 
@@ -124,8 +125,8 @@ fn record(
     pipeline_layout: vk::PipelineLayout,
     descriptor_set: vk::DescriptorSet,
     timestamp_query: &vkutils::timestamp_query::TimestampQuery,
-    skybox: &crate::skybox::Skybox,
-    grid: &crate::grid::Grid,
+    pre_overlays: &[&dyn OverlayDrawable],
+    post_overlays: &[&dyn OverlayDrawable],
 ) {
     let begin_info = vk::CommandBufferBeginInfo {
         ..Default::default()
@@ -152,7 +153,12 @@ fn record(
     // uses traditional_pipeline_layout internally (compatible at set 0)
     let mut trad_push_constants = GPUPushConstantsTraditional::default();
     trad_push_constants.camera = camera_buffer_address;
-    skybox.record(command_buffer, &mut trad_push_constants);
+
+    for overlay in pre_overlays {
+        if overlay.enabled() {
+            overlay.record(command_buffer, &mut trad_push_constants);
+        }
+    }
 
     // Re-bind descriptor set with meshlet layout before meshlet draws
     let sets = [descriptor_set];
@@ -185,8 +191,11 @@ fn record(
         );
     }
 
-    // uses traditional_pipeline_layout internally (compatible at set 0)
-    grid.record(command_buffer, &mut trad_push_constants);
+    for overlay in post_overlays {
+        if overlay.enabled() {
+            overlay.record(command_buffer, &mut trad_push_constants);
+        }
+    }
 
     timestamp_query.cmd_write(1, vk::PipelineStageFlags::BOTTOM_OF_PIPE, command_buffer);
 

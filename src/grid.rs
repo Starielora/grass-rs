@@ -2,6 +2,7 @@ use std::ffi::CStr;
 
 use ash::vk;
 
+use crate::overlay_drawable::OverlayDrawable;
 use crate::vkutils::push_constants::GPUPushConstantsTraditional;
 
 pub struct Grid {
@@ -156,7 +157,10 @@ impl Grid {
         })
     }
 
-    pub fn record(
+}
+
+impl OverlayDrawable for Grid {
+    fn record(
         &self,
         command_buffer: vk::CommandBuffer,
         push_constants: &mut GPUPushConstantsTraditional,
