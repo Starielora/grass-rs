@@ -1,5 +1,5 @@
 use crate::assets::MeshletAsset;
-use crate::vkutils::push_constants::GPUPushConstantsMeshlet;
+use crate::vkutils::push_constants::{GPUPushConstantsMeshlet, GPUPushConstantsTraditional};
 use crate::vkutils::{self, vk_destroy::VkDestroy};
 use ash::vk;
 
@@ -19,6 +19,8 @@ impl MeshletPass {
         ctx: &mut vkutils::context::VulkanContext,
         assets: &[MeshletAsset],
         camera_data: vk::DeviceAddress,
+        skybox: &crate::skybox::Skybox,
+        grid: &crate::grid::Grid,
     ) -> Self {
         let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
             vk::CommandBufferLevel::PRIMARY,
@@ -73,6 +75,8 @@ impl MeshletPass {
                 pipeline_layout,
                 ctx.bindless_descriptor_set.handle,
                 &timestamp_query,
+                skybox,
+                grid,
             );
         }
 
@@ -120,6 +124,8 @@ fn record(
     pipeline_layout: vk::PipelineLayout,
     descriptor_set: vk::DescriptorSet,
     timestamp_query: &vkutils::timestamp_query::TimestampQuery,
+    skybox: &crate::skybox::Skybox,
+    grid: &crate::grid::Grid,
 ) {
     let begin_info = vk::CommandBufferBeginInfo {
         ..Default::default()
@@ -133,19 +139,6 @@ fn record(
     timestamp_query.reset(command_buffer);
     timestamp_query.cmd_write(0, vk::PipelineStageFlags::TOP_OF_PIPE, command_buffer);
 
-    let sets = [descriptor_set];
-    let dynamic_offsets = [];
-
-    unsafe {
-        device.cmd_bind_descriptor_sets(
-            command_buffer,
-            vk::PipelineBindPoint::GRAPHICS,
-            pipeline_layout,
-            0,
-            &sets,
-            &dynamic_offsets,
-        );
-    }
     record_image_barriers(&device, command_buffer, color_image.0, depth_image.0);
 
     begin_rendering(
@@ -155,6 +148,24 @@ fn record(
         depth_image.1,
         extent,
     );
+
+    // uses traditional_pipeline_layout internally (compatible at set 0)
+    let mut trad_push_constants = GPUPushConstantsTraditional::default();
+    trad_push_constants.camera = camera_buffer_address;
+    skybox.record(command_buffer, &mut trad_push_constants);
+
+    // Re-bind descriptor set with meshlet layout before meshlet draws
+    let sets = [descriptor_set];
+    unsafe {
+        device.cmd_bind_descriptor_sets(
+            command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            pipeline_layout,
+            0,
+            &sets,
+            &[],
+        );
+    }
 
     unsafe {
         device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline);
@@ -173,6 +184,9 @@ fn record(
             &mut push_constants,
         );
     }
+
+    // uses traditional_pipeline_layout internally (compatible at set 0)
+    grid.record(command_buffer, &mut trad_push_constants);
 
     timestamp_query.cmd_write(1, vk::PipelineStageFlags::BOTTOM_OF_PIPE, command_buffer);
 

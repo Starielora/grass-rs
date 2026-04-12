@@ -197,6 +197,14 @@ impl Renderer {
             },
         ));
 
+        let meshlet_pass = pass::meshlet::MeshletPass::new(
+            ctx,
+            meshlet_assets.as_slice(),
+            camera_data_buffer.device_address.unwrap(),
+            &skybox,
+            &grid,
+        );
+
         let mut gui_scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>> =
             vec![];
 
@@ -205,12 +213,6 @@ impl Renderer {
             gui_scene_nodes.push(std::rc::Rc::new(std::cell::RefCell::new(dir_light)));
             gui_scene_nodes.push(std::rc::Rc::new(std::cell::RefCell::new(skybox)));
         }
-
-        let meshlet_pass = pass::meshlet::MeshletPass::new(
-            ctx,
-            meshlet_assets.as_slice(),
-            camera_data_buffer.device_address.unwrap(),
-        );
         let meshlet_render = meshlet_render::MeshletRender::new(
             ctx,
             meshlet_pass.command_buffers.clone(),
