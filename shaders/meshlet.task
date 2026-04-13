@@ -31,7 +31,7 @@ void main() {
         vec3 bounds_center_world = (model_matrix * vec4(bounds.center, 1.0)).xyz;
         vec3 cone_axis_world = normalize(transpose(inverse(mat3(model_matrix))) * bounds.cone_axis);
         float radius_world = bounds.radius * length(model_matrix[0].xyz);
-        accept = !clusterCull(bounds_center_world, radius_world, cone_axis_world, bounds.cone_cutoff, push_constants.camera.position.xyz);
+        accept = !clusterCull(bounds_center_world, radius_world, cone_axis_world, bounds.cone_cutoff, push_constants.cull_camera.position.xyz);
     }
 
     uvec4 ballot = subgroupBallot(accept);

@@ -20,6 +20,7 @@ impl MeshletPass {
         ctx: &mut vkutils::context::VulkanContext,
         assets: &[MeshletAsset],
         camera_data: vk::DeviceAddress,
+        cull_camera_data: vk::DeviceAddress,
         pre_overlays: &[&dyn OverlayDrawable],
         post_overlays: &[&dyn OverlayDrawable],
     ) -> Self {
@@ -73,6 +74,7 @@ impl MeshletPass {
                 pipeline,
                 assets,
                 camera_data,
+                cull_camera_data,
                 pipeline_layout,
                 ctx.bindless_descriptor_set.handle,
                 &timestamp_query,
@@ -122,6 +124,7 @@ fn record(
     pipeline: vk::Pipeline,
     assets: &[MeshletAsset],
     camera_buffer_address: vk::DeviceAddress,
+    cull_camera_buffer_address: vk::DeviceAddress,
     pipeline_layout: vk::PipelineLayout,
     descriptor_set: vk::DescriptorSet,
     timestamp_query: &vkutils::timestamp_query::TimestampQuery,
@@ -179,6 +182,7 @@ fn record(
 
     let mut push_constants = GPUPushConstantsMeshlet::default();
     push_constants.camera = camera_buffer_address;
+    push_constants.cull_camera = cull_camera_buffer_address;
 
     for asset in assets {
         asset.draw_scene(

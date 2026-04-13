@@ -35,6 +35,7 @@ struct Submits {
 
 pub struct Renderer {
     pub camera_data_buffer: vkutils::buffer::Buffer,
+    pub cull_camera_data_buffer: vkutils::buffer::Buffer,
 
     pub gui_scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
     _skybox_asset: TraditionalAsset,
@@ -51,6 +52,7 @@ pub struct Renderer {
 impl std::ops::Drop for Renderer {
     fn drop(&mut self) {
         self.camera_data_buffer.vk_destroy();
+        self.cull_camera_data_buffer.vk_destroy();
         self.common_sampler.vk_destroy();
     }
 }
@@ -61,16 +63,20 @@ impl Renderer {
             size_of::<GPUCameraData>(),
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
+        let cull_camera_data_buffer = ctx.create_bar_buffer(
+            size_of::<GPUCameraData>(),
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+        );
 
         let t1 = std::time::Instant::now();
         let cube_asset_data = gltf_asset::GltfAssetData::new("assets/cube.gltf");
         let cube_asset = TraditionalAsset::from_gltf(&ctx, &cube_asset_data);
 
         let asset_path = std::str::from_utf8(
-            b"/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
+            // b"/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
             // b"/home/starielora/dev/repos/glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf",
             // b"/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
-            // b"/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
+            b"/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
         )
         .unwrap();
 
@@ -202,6 +208,7 @@ impl Renderer {
             ctx,
             meshlet_assets.as_slice(),
             camera_data_buffer.device_address.unwrap(),
+            cull_camera_data_buffer.device_address.unwrap(),
             &[&skybox as &dyn OverlayDrawable],
             &[&grid as &dyn OverlayDrawable],
         );
@@ -222,6 +229,7 @@ impl Renderer {
 
         Self {
             camera_data_buffer,
+            cull_camera_data_buffer,
             _skybox_asset: cube_asset,
             _traditional_assets: traditional_assets,
             _meshlet_assets: meshlet_assets,

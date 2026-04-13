@@ -63,6 +63,7 @@ layout(buffer_reference) readonly buffer MeshletDrawBuf {
 
 layout(push_constant) uniform constants
 {
-    CameraDataBuf camera;
+    CameraDataBuf camera;      // view camera: vertex transform
+    CameraDataBuf cull_camera; // cull camera: cone/frustum culling
     MeshletDrawBuf meshlet_draws;
 } push_constants;

@@ -12,12 +12,15 @@ use crate::gui_scene_node::GuiSceneNode;
 use crate::renderer;
 use crate::vkutils;
 
-const NUM_CAMERAS: usize = 3;
+const NUM_CAMERAS: usize = 2;
 
 pub struct App {
     cameras: [Option<camera::Camera>; NUM_CAMERAS],
     current_view_camera_index: usize,
     current_control_camera_index: usize,
+    current_cull_camera_index: usize,
+    camera_model_visible: [bool; NUM_CAMERAS],
+    camera_frustum_visible: [bool; NUM_CAMERAS],
     gui: Option<gui::Gui>,
     renderer: Option<renderer::Renderer>,
     vkctx: Option<vkutils::context::VulkanContext>,
@@ -35,6 +38,9 @@ impl App {
             gui: Option::None,
             current_view_camera_index: 0,
             current_control_camera_index: 0,
+            current_cull_camera_index: 0,
+            camera_model_visible: [false; NUM_CAMERAS],
+            camera_frustum_visible: [false; NUM_CAMERAS],
             cameras: [const { Option::None }; NUM_CAMERAS],
             renderer: Option::None,
             vkctx: Option::None,
@@ -83,6 +89,16 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
+        {
+            self.cameras
+                .iter_mut()
+                .nth(self.current_control_camera_index)
+                .unwrap()
+                .as_mut()
+                .unwrap()
+                .update_pos();
+        }
+
         let (camera_pos, camera_projview) = {
             let camera = self
                 .cameras
@@ -91,7 +107,17 @@ impl ApplicationHandler for App {
                 .unwrap()
                 .as_mut()
                 .unwrap();
-            camera.update_pos();
+            (camera.pos(), camera.get_projection_view())
+        };
+
+        let (cull_camera_pos, cull_camera_projview) = {
+            let camera = self
+                .cameras
+                .iter_mut()
+                .nth(self.current_cull_camera_index)
+                .unwrap()
+                .as_mut()
+                .unwrap();
             (camera.pos(), camera.get_projection_view())
         };
 
@@ -112,6 +138,12 @@ impl ApplicationHandler for App {
                 .update_contents(&[camera::GPUCameraData {
                     pos: camera_pos,
                     projview: camera_projview,
+                }]);
+            renderer
+                .cull_camera_data_buffer
+                .update_contents(&[camera::GPUCameraData {
+                    pos: cull_camera_pos,
+                    projview: cull_camera_projview,
                 }]);
 
             if self.frame_number == 0 {
@@ -187,7 +219,7 @@ impl ApplicationHandler for App {
         let camera = self
             .cameras
             .iter_mut()
-            .nth(self.current_view_camera_index)
+            .nth(self.current_control_camera_index)
             .unwrap()
             .as_mut()
             .unwrap();
@@ -211,7 +243,7 @@ impl ApplicationHandler for App {
         let camera = self
             .cameras
             .iter_mut()
-            .nth(self.current_view_camera_index)
+            .nth(self.current_control_camera_index)
             .unwrap()
             .as_mut()
             .unwrap();
@@ -287,30 +319,61 @@ impl ApplicationHandler for App {
 
 impl GuiSceneNode for App {
     fn update(self: &mut Self, ui: &imgui::Ui) {
-        let mut camid = 0;
-        for _camera in &self.cameras {
-            ui.radio_button(
-                format!("View {}", camid),
-                &mut self.current_view_camera_index,
-                camid,
-            );
-            ui.same_line();
-            ui.radio_button(
-                format!("Control {}", camid),
-                &mut self.current_control_camera_index,
-                camid,
-            );
-            ui.same_line();
-            let mut render_camera_model = false; // in the future will control whether camera model (box) is rendered
-            let mut render_camera_furstum = false; // in the future will control whether camera frustum is rendered
-            ui.checkbox(format!("Model {}", camid), &mut render_camera_model);
-            ui.checkbox(format!("Frustum {}", camid), &mut render_camera_furstum);
-            camid += 1;
+        let camera_label = |i: usize| format!("Cam {}", i);
+
+        // Per-camera selection and visibility table
+        if let Some(_table) = ui.begin_table("##camera_vis", 6) {
+            ui.table_setup_column("Cam");
+            ui.table_setup_column("View");
+            ui.table_setup_column("Ctrl");
+            ui.table_setup_column("Cull");
+            ui.table_setup_column("Mdl");
+            ui.table_setup_column("Frst");
+            ui.table_headers_row();
+            for i in 0..NUM_CAMERAS {
+                ui.table_next_row();
+                ui.table_next_column();
+                ui.text(camera_label(i));
+                ui.table_next_column();
+                ui.radio_button(
+                    format!("##view{}", i),
+                    &mut self.current_view_camera_index,
+                    i,
+                );
+                ui.table_next_column();
+                ui.radio_button(
+                    format!("##ctrl{}", i),
+                    &mut self.current_control_camera_index,
+                    i,
+                );
+                ui.table_next_column();
+                ui.radio_button(
+                    format!("##cull{}", i),
+                    &mut self.current_cull_camera_index,
+                    i,
+                );
+                if ui.is_item_hovered() {
+                    ui.tooltip_text("\"Player\"/Frozen");
+                }
+                ui.table_next_column();
+                ui.checkbox(format!("##model{}", i), &mut self.camera_model_visible[i]);
+                if ui.is_item_hovered() {
+                    ui.tooltip_text("Render camera model");
+                }
+                ui.table_next_column();
+                ui.checkbox(
+                    format!("##frustum{}", i),
+                    &mut self.camera_frustum_visible[i],
+                );
+                if ui.is_item_hovered() {
+                    ui.tooltip_text("Render camera frustum");
+                }
+            }
         }
 
         self.cameras
             .iter_mut()
-            .nth(self.current_view_camera_index)
+            .nth(self.current_control_camera_index)
             .unwrap()
             .as_mut()
             .unwrap()

@@ -16,7 +16,8 @@ pub struct GPUPushConstantsTraditional {
 #[derive(Clone, Default)]
 #[repr(C)]
 pub struct GPUPushConstantsMeshlet {
-    pub camera: vk::DeviceAddress,        // CameraDataBuf
+    pub camera: vk::DeviceAddress,      // CameraDataBuf (view: vertex transform)
+    pub cull_camera: vk::DeviceAddress, // CameraDataBuf (cull: cone/frustum culling)
     pub meshlet_draws: vk::DeviceAddress, // MeshletDrawBuf
 }
 
