@@ -7,11 +7,17 @@ use winit::keyboard::PhysicalKey;
 use crate::camera;
 use crate::fps_window;
 use crate::gui;
+use crate::gui_scene_node::GuiCameraNode;
+use crate::gui_scene_node::GuiSceneNode;
 use crate::renderer;
 use crate::vkutils;
 
+const NUM_CAMERAS: usize = 3;
+
 pub struct App {
-    camera: Option<camera::Camera>,
+    cameras: [Option<camera::Camera>; NUM_CAMERAS],
+    current_view_camera_index: usize,
+    current_control_camera_index: usize,
     gui: Option<gui::Gui>,
     renderer: Option<renderer::Renderer>,
     vkctx: Option<vkutils::context::VulkanContext>,
@@ -27,7 +33,9 @@ impl App {
     pub fn new() -> App {
         Self {
             gui: Option::None,
-            camera: Option::None,
+            current_view_camera_index: 0,
+            current_control_camera_index: 0,
+            cameras: [const { Option::None }; NUM_CAMERAS],
             renderer: Option::None,
             vkctx: Option::None,
             window: Option::None,
@@ -54,19 +62,20 @@ impl ApplicationHandler for App {
         let _ = window.set_cursor_grab(winit::window::CursorGrabMode::Confined);
         let mut vkctx = vkutils::context::VulkanContext::new(&window);
         let renderer = renderer::Renderer::new(&mut vkctx);
-        let mut camera = camera::Camera::new(
-            vkctx.swapchain.extent.width as f32,
-            vkctx.swapchain.extent.height as f32,
-        );
-        camera.look_around(0.0, 0.0);
-
+        for camera in &mut self.cameras {
+            camera
+                .insert(camera::Camera::new(
+                    vkctx.swapchain.extent.width as f32,
+                    vkctx.swapchain.extent.height as f32,
+                ))
+                .look_around(0.0, 0.0);
+        }
         // TODO I don't quite like this dependency gui->renderer->gui
         // i.e. first gui gets nodes from renderer, and then renderer uses gui to render imgui,
         // but atm I don't have any better idea
         let gui = gui::Gui::new(window.clone(), &vkctx, renderer.gui_scene_nodes.clone());
 
         self.vkctx = Some(vkctx);
-        self.camera = Some(camera);
         self.renderer = Some(renderer);
         self.gui = Some(gui);
         self.window = Some(window);
@@ -74,46 +83,57 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
-        let camera = self.camera.as_mut().unwrap();
-        let vkctx = self.vkctx.as_mut().unwrap();
-        let device = vkctx.device.clone();
-        let renderer = self.renderer.as_mut().unwrap();
-        let mut gui = self.gui.as_mut().unwrap();
+        let (camera_pos, camera_projview) = {
+            let camera = self
+                .cameras
+                .iter_mut()
+                .nth(self.current_view_camera_index)
+                .unwrap()
+                .as_mut()
+                .unwrap();
+            camera.update_pos();
+            (camera.pos(), camera.get_projection_view())
+        };
 
-        camera.update_pos();
-
-        let (image_index, acquire_semaphore) =
-            vkctx.swapchain.acquire_next_image(!0, vk::Fence::null());
-
-        renderer
-            .camera_data_buffer
-            .update_contents(&[camera::GPUCameraData {
-                pos: camera.pos(),
-                projview: camera.get_projection_view(),
-            }]);
+        let (image_index, acquire_semaphore) = {
+            let vkctx = self.vkctx.as_mut().unwrap();
+            vkctx.swapchain.acquire_next_image(!0, vk::Fence::null())
+        };
 
         let (
             shadow_map_render_duration,
             scene_render_duration,
             meshlet_render_duration,
             ui_render_duration,
-        ) = if self.frame_number == 0 {
-            (
-                std::time::Duration::from_secs(0),
-                std::time::Duration::from_secs(0),
-                std::time::Duration::from_secs(0),
-                std::time::Duration::from_secs(0),
-            )
-        } else {
-            renderer.get_pass_durations()
+        ) = {
+            let renderer = self.renderer.as_mut().unwrap();
+            renderer
+                .camera_data_buffer
+                .update_contents(&[camera::GPUCameraData {
+                    pos: camera_pos,
+                    projview: camera_projview,
+                }]);
+
+            if self.frame_number == 0 {
+                (
+                    std::time::Duration::from_secs(0),
+                    std::time::Duration::from_secs(0),
+                    std::time::Duration::from_secs(0),
+                    std::time::Duration::from_secs(0),
+                )
+            } else {
+                renderer.get_pass_durations()
+            }
         };
 
         let current_timestamp = std::time::Instant::now();
         let cpu_duration = current_timestamp - self.previous_frame_timestamp;
         self.previous_frame_timestamp = current_timestamp;
 
+        // Take gui so self has no live borrows - is that a smell?
+        let mut gui = self.gui.take().unwrap();
         gui.prepare_frame(
-            camera,
+            self,
             fps_window::FrameDurations {
                 cpu: cpu_duration,
                 gpu: shadow_map_render_duration + scene_render_duration,
@@ -123,7 +143,12 @@ impl ApplicationHandler for App {
                 ui: ui_render_duration,
             },
         );
-        renderer.record_imgui_pass(image_index, &vkctx, &mut gui);
+        self.gui = Some(gui);
+
+        let renderer = self.renderer.as_mut().unwrap();
+        let gui = self.gui.as_mut().unwrap();
+        let vkctx = self.vkctx.as_mut().unwrap();
+        renderer.record_imgui_pass(image_index, &vkctx, gui);
 
         let queue = vkctx.graphics_present_queue;
         let render_finished_semaphore =
@@ -133,7 +158,7 @@ impl ApplicationHandler for App {
             .swapchain
             .present(image_index, &[render_finished_semaphore], queue);
 
-        unsafe { device.device_wait_idle() }.expect("Failed to wait");
+        unsafe { vkctx.device.device_wait_idle() }.expect("Failed to wait");
 
         self.frame_number += 1;
     }
@@ -159,7 +184,13 @@ impl ApplicationHandler for App {
         _device_id: winit::event::DeviceId,
         event: winit::event::DeviceEvent,
     ) {
-        let camera = self.camera.as_mut().unwrap();
+        let camera = self
+            .cameras
+            .iter_mut()
+            .nth(self.current_view_camera_index)
+            .unwrap()
+            .as_mut()
+            .unwrap();
 
         match event {
             winit::event::DeviceEvent::MouseMotion { delta } => {
@@ -177,7 +208,13 @@ impl ApplicationHandler for App {
         window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
-        let camera = self.camera.as_mut().unwrap();
+        let camera = self
+            .cameras
+            .iter_mut()
+            .nth(self.current_view_camera_index)
+            .unwrap()
+            .as_mut()
+            .unwrap();
         let window = self.window.as_ref().unwrap();
         let gui = self.gui.as_mut().unwrap();
 
@@ -245,5 +282,38 @@ impl ApplicationHandler for App {
             }
             _ => (),
         }
+    }
+}
+
+impl GuiSceneNode for App {
+    fn update(self: &mut Self, ui: &imgui::Ui) {
+        let mut camid = 0;
+        for _camera in &self.cameras {
+            ui.radio_button(
+                format!("View {}", camid),
+                &mut self.current_view_camera_index,
+                camid,
+            );
+            ui.same_line();
+            ui.radio_button(
+                format!("Control {}", camid),
+                &mut self.current_control_camera_index,
+                camid,
+            );
+            ui.same_line();
+            let mut render_camera_model = false; // in the future will control whether camera model (box) is rendered
+            let mut render_camera_furstum = false; // in the future will control whether camera frustum is rendered
+            ui.checkbox(format!("Model {}", camid), &mut render_camera_model);
+            ui.checkbox(format!("Frustum {}", camid), &mut render_camera_furstum);
+            camid += 1;
+        }
+
+        self.cameras
+            .iter_mut()
+            .nth(self.current_view_camera_index)
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .update(ui);
     }
 }

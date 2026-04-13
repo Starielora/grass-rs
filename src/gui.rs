@@ -81,7 +81,8 @@ impl Gui {
 
     pub fn prepare_frame(
         self: &mut Self,
-        camera: &mut Camera,
+        // camera: &mut Camera,
+        app: &mut crate::App,
         durations: fps_window::FrameDurations,
     ) {
         let ui = self.imguictx.frame();
@@ -91,11 +92,11 @@ impl Gui {
             .position([0.0, 0.0], imgui::Condition::FirstUseEver)
             .build(|| {});
 
-        ui.window("Camera")
+        ui.window("Cameras")
             .size([300.0, 300.0], imgui::Condition::FirstUseEver)
             .position([0.0, 200.0], imgui::Condition::FirstUseEver)
             .build(|| {
-                camera.update(ui);
+                app.update(ui);
             });
 
         ui.window("FPS")
