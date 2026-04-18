@@ -1,8 +1,8 @@
 use crate::assets::TraditionalAsset;
+use crate::vkutils;
 use crate::vkutils::descriptor_set::bindless;
 use crate::vkutils::push_constants::GPUPushConstantsTraditional;
 use crate::vkutils::vk_destroy::VkDestroy;
-use crate::vkutils;
 use ash::vk;
 
 pub struct ShadowMapPass {
@@ -12,6 +12,9 @@ pub struct ShadowMapPass {
     timestamp_query: vkutils::timestamp_query::TimestampQuery,
 
     pipeline: vk::Pipeline,
+    pipeline_layout: vk::PipelineLayout,
+    extent: vk::Extent2D,
+    light_camera_data_buffer_address: vk::DeviceAddress,
     device: ash::Device,
 }
 
@@ -28,7 +31,6 @@ impl ShadowMapPass {
     pub fn new(
         ctx: &mut vkutils::context::VulkanContext,
         light_pov_camera_buffer_device_address: vk::DeviceAddress,
-        assets: &[TraditionalAsset],
     ) -> Self {
         let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
             vk::CommandBufferLevel::PRIMARY,
@@ -51,28 +53,42 @@ impl ShadowMapPass {
 
         let timestamp_query = vkutils::timestamp_query::TimestampQuery::new(&ctx, 2);
 
-        for command_buffer in &command_buffers {
-            record(
-                &ctx.device,
-                *command_buffer,
-                &ctx.bindless_descriptor_set,
-                pipeline,
-                pipeline_layout,
-                extent,
-                (depth_image.handle, depth_image.view),
-                light_pov_camera_buffer_device_address,
-                assets,
-                &timestamp_query,
-            );
-        }
-
         Self {
             command_buffers,
             output_depth_image: depth_image,
             pipeline,
+            pipeline_layout,
+            extent,
+            light_camera_data_buffer_address: light_pov_camera_buffer_device_address,
             timestamp_query,
             device: ctx.device.clone(),
         }
+    }
+
+    pub fn record(
+        &self,
+        image_index: usize,
+        descriptor_set: &bindless::DescriptorSet,
+        assets: &[TraditionalAsset],
+    ) {
+        let command_buffer = self.command_buffers[image_index];
+        unsafe {
+            self.device
+                .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
+                .expect("Failed to reset shadow map command buffer");
+        }
+        record(
+            &self.device,
+            command_buffer,
+            descriptor_set,
+            self.pipeline,
+            self.pipeline_layout,
+            self.extent,
+            (self.output_depth_image.handle, self.output_depth_image.view),
+            self.light_camera_data_buffer_address,
+            assets,
+            &self.timestamp_query,
+        );
     }
 
     pub fn get_pass_total_time(&mut self, refresh: bool) -> std::time::Duration {
@@ -114,7 +130,11 @@ fn record(
     timestamp_query.reset(command_buffer);
     timestamp_query.cmd_write(0, vk::PipelineStageFlags::TOP_OF_PIPE, command_buffer);
 
-    descriptor_set.cmd_bind(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline_layout);
+    descriptor_set.cmd_bind(
+        command_buffer,
+        vk::PipelineBindPoint::GRAPHICS,
+        pipeline_layout,
+    );
 
     vkutils::image_barrier(
         &device,

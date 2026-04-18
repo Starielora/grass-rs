@@ -32,7 +32,7 @@ fn get_azimuth(v: &glm::Vec3) -> f32 {
 
 fn get_inclination(v: &glm::Vec3) -> f32 {
     if v.y > 0.0 {
-        return v.xz().magnitude() / v.y;
+        return v.xz().magnitude().atan2(v.y);
     } else if v.y < 0.0 {
         return v.xz().magnitude() / v.y + glm::pi::<f32>();
     } else if approx_equal(v.y, 0.0) && v.xz().magnitude() != 0.0 {
@@ -56,7 +56,7 @@ impl FPS {
 
 impl Movement for FPS {
     fn position(&self) -> glm::Vec4 {
-        glm::make_vec4(&[self.pos.x, self.pos.y, self.pos.z, 0.0])
+        glm::make_vec4(&[self.pos.x, self.pos.y, self.pos.z, 1.0])
     }
 
     fn compute_matrix(&self) -> glm::Mat4 {

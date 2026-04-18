@@ -32,6 +32,7 @@ pub struct Camera {
 pub struct GPUCameraData {
     pub pos: glm::Vec4,
     pub projview: glm::Mat4,
+    pub view: glm::Mat4,
 }
 
 impl Camera {
@@ -97,6 +98,10 @@ impl Camera {
 
     pub fn get_projection_view(&self) -> glm::Mat4 {
         self.projection_matrix * self.view_matrix
+    }
+
+    pub fn get_view(&self) -> glm::Mat4 {
+        self.view_matrix
     }
 
     pub fn pos(&self) -> glm::Vec4 {

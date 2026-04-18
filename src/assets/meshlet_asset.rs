@@ -121,6 +121,12 @@ impl MeshletAsset {
         }
     }
 
+    pub fn scene_draw_info(&self, scene_index: usize) -> (vk::DeviceAddress, vk::Buffer, u32) {
+        let meshlet_draws = self.instance_buffers[scene_index].device_address.unwrap();
+        let (buf, count) = &self.indirect_buffers[scene_index];
+        (meshlet_draws, buf.handle, *count as u32)
+    }
+
     pub fn draw_scene(
         &self,
         scene_index: usize,

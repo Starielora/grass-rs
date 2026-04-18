@@ -17,5 +17,5 @@ void main()
 
     vertex.xyz *= 200;
 
-    gl_Position = push_constants.camera.projview * (vertex + push_constants.camera.position);
+    gl_Position = push_constants.view_camera.projview * (vertex + push_constants.view_camera.position);
 }

@@ -13,7 +13,7 @@ layout(location = 1) in float grid_size;
 
 void main()
 {
-    CameraDataBuf camera = push_constants.camera;
+    CameraDataBuf camera = push_constants.view_camera;
     vec3 dir = world_pos - camera.position.xyz;
 
     float distance_to_camera = length(dir.xz);

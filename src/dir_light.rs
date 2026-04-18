@@ -124,7 +124,11 @@ fn update_gpu_buffers(
 
     let projview = projection_matrix * view_matrix;
 
-    let camera_gpu_data = GPUCameraData { pos, projview };
+    let camera_gpu_data = GPUCameraData {
+        pos,
+        projview,
+        view: view_matrix,
+    };
 
     camera_buffer.update_contents(&[camera_gpu_data]);
 }

@@ -156,7 +156,6 @@ impl Grid {
             pipeline_layout,
         })
     }
-
 }
 
 impl OverlayDrawable for Grid {

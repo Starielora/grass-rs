@@ -24,14 +24,22 @@ layout(buffer_reference) readonly buffer TraditionalOffsetBuf {
     uint offset[];
 };
 
+layout(buffer_reference, std430) readonly buffer FrustumColorBuf {
+    vec4 planes_color;
+    vec4 edges_color;
+};
+
 layout(push_constant) uniform constants
 {
     TransformBuf mesh_transform; // currently unused at runtime
-    CameraDataBuf camera;
+    CameraDataBuf view_camera;
+    CameraDataBuf ctrl_camera;
+    CameraDataBuf cull_camera;
     CameraDataBuf dir_light_camera;
     DirLightBuf dir_light;
     SkyboxBuf skybox;
     TraditionalInstanceBuf instances;
     TraditionalOffsetBuf instance_offsets;
     uint depth_sampler_index;
+    FrustumColorBuf frustum_colors;
 } push_constants;

@@ -8,9 +8,9 @@ use crate::{
     assets::{self, gltf_asset, MeshletAsset, TraditionalAsset},
     camera::GPUCameraData,
     dir_light::{self, GPUDirLight},
-    grid, gui,
+    frustum, grid, gui,
     gui_scene_node::GuiSceneNode,
-    overlay_drawable::OverlayDrawable,
+    meshlet_bounding_sphere::MeshletBoundingSpheres,
     skybox,
     vkutils::{self, vk_destroy::VkDestroy},
 };
@@ -35,16 +35,20 @@ struct Submits {
 
 pub struct Renderer {
     pub camera_data_buffer: vkutils::buffer::Buffer,
+    pub control_camera_data_buffer: vkutils::buffer::Buffer,
     pub cull_camera_data_buffer: vkutils::buffer::Buffer,
 
     pub gui_scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>>,
     _skybox_asset: TraditionalAsset,
-    _traditional_assets: std::vec::Vec<TraditionalAsset>,
-    _meshlet_assets: std::vec::Vec<MeshletAsset>,
+    traditional_assets: std::vec::Vec<TraditionalAsset>,
+    meshlet_assets: std::vec::Vec<MeshletAsset>,
     passes: Passes,
     submits: Submits,
 
-    _grid: grid::Grid,
+    skybox: std::rc::Rc<std::cell::RefCell<skybox::Skybox>>,
+    grid: grid::Grid,
+    pub frustum: frustum::Frustum, // TODO for now it is stored like this, until I figure out what I want to do with it. It feels wrong being disconnected from camera class, but also right, because camera currently is a mathematical entity only, while this is pure vulkan rendering.
+    meshlet_spheres: std::rc::Rc<std::cell::RefCell<MeshletBoundingSpheres>>,
     picker: std::rc::Rc<std::cell::RefCell<target_render_picker::TargetRenderPicker>>,
     common_sampler: vkutils::sampler::Sampler,
 }
@@ -52,6 +56,7 @@ pub struct Renderer {
 impl std::ops::Drop for Renderer {
     fn drop(&mut self) {
         self.camera_data_buffer.vk_destroy();
+        self.control_camera_data_buffer.vk_destroy();
         self.cull_camera_data_buffer.vk_destroy();
         self.common_sampler.vk_destroy();
     }
@@ -67,16 +72,21 @@ impl Renderer {
             size_of::<GPUCameraData>(),
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
+        let control_camera_data_buffer = ctx.create_bar_buffer(
+            size_of::<GPUCameraData>(),
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+        );
 
         let t1 = std::time::Instant::now();
         let cube_asset_data = gltf_asset::GltfAssetData::new("assets/cube.gltf");
         let cube_asset = TraditionalAsset::from_gltf(&ctx, &cube_asset_data);
 
         let asset_path = std::str::from_utf8(
-            // b"/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
+            b"/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
             // b"/home/starielora/dev/repos/glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf",
             // b"/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
-            b"/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
+            // b"/home/starielora/dev/repos/Vulkan-Assets/models/vulkanscenemodels.gltf",
+            // b"/home/starielora/dev/repos/grass-rs/assets/testboxes.gltf",
         )
         .unwrap();
 
@@ -85,10 +95,10 @@ impl Renderer {
         let traditional_asset = TraditionalAsset::from_gltf(&ctx, &asset_data);
         println!("Load time: {:?}", t1.elapsed());
 
-        let mut traditional_assets = vec![];
+        let mut traditional_assets: std::vec::Vec<TraditionalAsset> = vec![];
         traditional_assets.push(traditional_asset);
 
-        let mut meshlet_assets = vec![];
+        let mut meshlet_assets: std::vec::Vec<MeshletAsset> = vec![];
         meshlet_assets.push(meshlet_asset);
 
         let dir_light = dir_light::DirLight::new(
@@ -107,7 +117,6 @@ impl Renderer {
         let shadow_map_pass = pass::shadow_map::ShadowMapPass::new(
             ctx,
             dir_light.camera_buffer.device_address.unwrap(),
-            traditional_assets.as_slice(),
         );
 
         let shadow_map_display_pass = pass::depth_map_display::DepthMapDisplayPass::new(
@@ -141,12 +150,12 @@ impl Renderer {
                 assets::mesh::Primitives::Meshlets(_) => unreachable!(),
             };
 
-        let skybox = skybox::Skybox::new(
+        let skybox = std::rc::Rc::new(std::cell::RefCell::new(skybox::Skybox::new(
             &ctx,
             skybox_vertex_buffer_handle,
             skybox_index_buffer_handle,
             skybox_indices_count,
-        );
+        )));
         let grid = grid::Grid::new(
             &ctx.device,
             &ctx.swapchain.extent,
@@ -156,10 +165,10 @@ impl Renderer {
         )
         .expect("Failed to create Grid");
 
+        let frustum = frustum::Frustum::new(&ctx);
+
         let scene_pass = pass::scene::SceneColorPass::new(
             ctx,
-            &[&skybox as &dyn OverlayDrawable],
-            &[&grid as &dyn OverlayDrawable],
             camera_data_buffer.device_address.unwrap(),
             dir_light.buffer_device_address,
             dir_light.camera_buffer.device_address.unwrap(),
@@ -168,7 +177,6 @@ impl Renderer {
                 shadow_map_pass.output_depth_image.view,
             ),
             common_sampler.handle,
-            traditional_assets.as_slice(),
         );
 
         let scene_render = scene_render::ColorSceneRender::new(
@@ -206,20 +214,23 @@ impl Renderer {
 
         let meshlet_pass = pass::meshlet::MeshletPass::new(
             ctx,
-            meshlet_assets.as_slice(),
             camera_data_buffer.device_address.unwrap(),
+            control_camera_data_buffer.device_address.unwrap(),
             cull_camera_data_buffer.device_address.unwrap(),
-            &[&skybox as &dyn OverlayDrawable],
-            &[&grid as &dyn OverlayDrawable],
         );
 
         let mut gui_scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>> =
             vec![];
 
+        let meshlet_spheres = std::rc::Rc::new(std::cell::RefCell::new(
+            MeshletBoundingSpheres::new(ctx, &meshlet_assets),
+        ));
+
         {
             gui_scene_nodes.push(picker.clone());
             gui_scene_nodes.push(std::rc::Rc::new(std::cell::RefCell::new(dir_light)));
-            gui_scene_nodes.push(std::rc::Rc::new(std::cell::RefCell::new(skybox)));
+            gui_scene_nodes.push(skybox.clone());
+            gui_scene_nodes.push(meshlet_spheres.clone());
         }
         let meshlet_render = meshlet_render::MeshletRender::new(
             ctx,
@@ -229,10 +240,11 @@ impl Renderer {
 
         Self {
             camera_data_buffer,
+            control_camera_data_buffer,
             cull_camera_data_buffer,
             _skybox_asset: cube_asset,
-            _traditional_assets: traditional_assets,
-            _meshlet_assets: meshlet_assets,
+            traditional_assets,
+            meshlet_assets,
             passes: Passes {
                 _shadow_map: shadow_map_pass,
                 scene: scene_pass,
@@ -247,33 +259,72 @@ impl Renderer {
                 scene_depth_render,
                 meshlet_render,
             },
-            _grid: grid,
+            skybox,
+            grid,
+            frustum,
+            meshlet_spheres,
             picker,
             gui_scene_nodes,
             common_sampler,
         }
     }
 
-    pub fn record_imgui_pass(
+    pub fn record_passes(
         &self,
         image_index: u32,
         ctx: &vkutils::context::VulkanContext,
         gui: &mut gui::Gui,
     ) {
+        let idx = image_index as usize;
+        let skybox = self.skybox.borrow();
+        let skybox_overlay = &*skybox as &dyn crate::overlay_drawable::OverlayDrawable;
+        let frustum_overlay = &self.frustum as &dyn crate::overlay_drawable::OverlayDrawable;
+        let grid_overlay = &self.grid as &dyn crate::overlay_drawable::OverlayDrawable;
+
+        let meshlet_spheres = self.meshlet_spheres.borrow();
+        let meshlet_spheres_overlay =
+            &*meshlet_spheres as &dyn crate::overlay_drawable::OverlayDrawable;
+
         let src_image = match self.picker.borrow().target_render {
             TargetRender::Scene => {
+                self.passes._shadow_map.record(
+                    idx,
+                    &ctx.bindless_descriptor_set,
+                    &self.traditional_assets,
+                );
+                self.passes.scene.record(
+                    idx,
+                    &ctx.bindless_descriptor_set,
+                    &[skybox_overlay],
+                    &[grid_overlay],
+                    &self.traditional_assets,
+                );
                 let img = &self.passes.scene.render_target;
                 (img.handle, img.view)
             }
             TargetRender::ShadowMap => {
+                self.passes
+                    .shadow_map_display
+                    .record(idx, &ctx.bindless_descriptor_set);
                 let img = &self.passes.shadow_map_display.render_target;
                 (img.handle, img.view)
             }
             TargetRender::SceneDepth => {
+                self.passes
+                    .scene_depth_map_display
+                    .record(idx, &ctx.bindless_descriptor_set);
                 let img = &self.passes.scene_depth_map_display.render_target;
                 (img.handle, img.view)
             }
             TargetRender::Meshlet => {
+                self.passes.meshlet.record(
+                    idx,
+                    ctx.bindless_descriptor_set.handle,
+                    &[skybox_overlay],
+                    &[frustum_overlay, meshlet_spheres_overlay, grid_overlay],
+                    &self.meshlet_assets,
+                );
+
                 let img = &self.passes.meshlet.render_target;
                 (img.handle, img.view)
             }
@@ -286,7 +337,7 @@ impl Renderer {
 
         self.passes
             .ui
-            .record(image_index, &ctx, src_image, swapchain_image, gui)
+            .record(image_index, ctx, src_image, swapchain_image, gui);
     }
 
     pub fn submit(

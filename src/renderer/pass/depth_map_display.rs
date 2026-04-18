@@ -6,6 +6,10 @@ pub struct DepthMapDisplayPass {
     pub command_buffers: Vec<vk::CommandBuffer>,
     pub render_target: vkutils::image::Image,
     pipeline: vk::Pipeline,
+    pipeline_layout: vk::PipelineLayout,
+    extent: vk::Extent2D,
+    src_depth_map: (vk::Image, vk::ImageView, vk::ImageLayout),
+    resource_id: u32,
     device: ash::Device,
 }
 
@@ -58,44 +62,56 @@ impl DepthMapDisplayPass {
             resource_id,
         );
 
-        for command_buffer in &command_buffers {
-            unsafe {
-                let begin_info = vk::CommandBufferBeginInfo::default();
-                ctx.device
-                    .begin_command_buffer(*command_buffer, &begin_info)
-                    .expect("Failed to begin command buffer");
-            }
-
-            ctx.bindless_descriptor_set
-                .cmd_bind(*command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline_layout);
-
-            record(
-                &ctx.device,
-                *command_buffer,
-                pipeline,
-                pipeline_layout,
-                // TODO double buffering
-                src_depth_map,
-                (
-                    depth_display_render_target.handle,
-                    depth_display_render_target.view,
-                ),
-                ctx.swapchain.extent,
-                resource_id,
-            );
-
-            unsafe {
-                ctx.device
-                    .end_command_buffer(*command_buffer)
-                    .expect("Failed to end command buffer");
-            }
-        }
-
         Self {
             command_buffers,
             render_target: depth_display_render_target,
             pipeline,
+            pipeline_layout,
+            extent: ctx.swapchain.extent,
+            src_depth_map,
+            resource_id,
             device: ctx.device.clone(),
+        }
+    }
+
+    pub fn record(
+        &self,
+        image_index: usize,
+        descriptor_set: &crate::vkutils::descriptor_set::bindless::DescriptorSet,
+    ) {
+        let command_buffer = self.command_buffers[image_index];
+        unsafe {
+            self.device
+                .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
+                .expect("Failed to reset depth map display command buffer");
+
+            let begin_info = vk::CommandBufferBeginInfo::default();
+            self.device
+                .begin_command_buffer(command_buffer, &begin_info)
+                .expect("Failed to begin command buffer");
+        }
+
+        descriptor_set.cmd_bind(
+            command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.pipeline_layout,
+        );
+
+        record(
+            &self.device,
+            command_buffer,
+            self.pipeline,
+            self.pipeline_layout,
+            self.src_depth_map,
+            (self.render_target.handle, self.render_target.view),
+            self.extent,
+            self.resource_id,
+        );
+
+        unsafe {
+            self.device
+                .end_command_buffer(command_buffer)
+                .expect("Failed to end command buffer");
         }
     }
 }

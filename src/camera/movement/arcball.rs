@@ -35,7 +35,7 @@ impl Arcball {
 
 impl Movement for Arcball {
     fn position(&self) -> glm::Vec4 {
-        glm::make_vec4(&[self.pos.x, self.pos.y, self.pos.z, 0.0])
+        glm::make_vec4(&[self.pos.x, self.pos.y, self.pos.z, 1.0])
     }
 
     fn compute_matrix(&self) -> glm::Mat4 {

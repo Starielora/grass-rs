@@ -23,7 +23,7 @@ void main() {
     vec3 light_ambient = vec3(0.2, 0.2, 0.2);
     vec3 light_diffuse = vec3(1.0, 1.0, 1.0);
     vec3 light_specular = vec3(1.0, 1.0, 1.0);
-    vec3 viewPos = push_constants.camera.position.xyz;
+    vec3 viewPos = push_constants.view_camera.position.xyz;
     float shininess = 64;
     vec3 cube_color = vec3(1.0, 1.0, 1.0);
     vec3 light_color = vec3(1.0, 1.0, 1.0);

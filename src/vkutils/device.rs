@@ -23,6 +23,7 @@ pub fn create(
     ];
 
     let vk_physical_device_features = vk::PhysicalDeviceFeatures::default()
+        .wide_lines(true)
         .multi_draw_indirect(true)
         .robust_buffer_access(true);
 

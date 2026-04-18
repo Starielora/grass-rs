@@ -18,6 +18,13 @@ pub struct SceneColorPass {
     timestamp_query: vkutils::timestamp_query::TimestampQuery,
 
     pipeline: vk::Pipeline,
+    pipeline_layout: vk::PipelineLayout,
+    extent: vk::Extent2D,
+    camera_data_buffer_address: vk::DeviceAddress,
+    dir_light_data_buffer_address: vk::DeviceAddress,
+    dir_light_camera_buffer_address: vk::DeviceAddress,
+    shadow_map_image: (vk::Image, vk::ImageView),
+    depth_sampler_index: u32,
     device: ash::Device,
 }
 
@@ -34,14 +41,11 @@ impl std::ops::Drop for SceneColorPass {
 impl SceneColorPass {
     pub fn new(
         ctx: &mut vkutils::context::VulkanContext,
-        pre_overlays: &[&dyn OverlayDrawable],
-        post_overlays: &[&dyn OverlayDrawable],
         camera_data_buffer_address: vk::DeviceAddress,
         dir_light_data_buffer_address: vk::DeviceAddress,
         dir_light_camera_buffer_address: vk::DeviceAddress,
         shadow_map: (vk::Image, vk::ImageView),
         sampler: vk::Sampler,
-        assets: &[TraditionalAsset],
     ) -> Self {
         let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
             vk::CommandBufferLevel::PRIMARY,
@@ -89,36 +93,56 @@ impl SceneColorPass {
 
         let timestamp_query = vkutils::timestamp_query::TimestampQuery::new(&ctx, 2);
 
-        for command_buffer in &command_buffers {
-            record(
-                &ctx.device,
-                *command_buffer,
-                &ctx.bindless_descriptor_set,
-                (render_target.handle, render_target.view),
-                (depth_image.handle, depth_image.view),
-                (shadow_map.0, shadow_map.1),
-                extent,
-                pre_overlays,
-                post_overlays,
-                pipeline,
-                pipeline_layout,
-                camera_data_buffer_address,
-                dir_light_data_buffer_address,
-                dir_light_camera_buffer_address,
-                resource_id,
-                assets,
-                &timestamp_query,
-            );
-        }
-
         Self {
             command_buffers,
             render_target,
             depth_image,
             pipeline,
+            pipeline_layout,
+            extent,
+            camera_data_buffer_address,
+            dir_light_data_buffer_address,
+            dir_light_camera_buffer_address,
+            shadow_map_image: shadow_map,
+            depth_sampler_index: resource_id,
             timestamp_query,
             device: ctx.device.clone(),
         }
+    }
+
+    pub fn record(
+        &self,
+        image_index: usize,
+        descriptor_set: &bindless::DescriptorSet,
+        pre_overlays: &[&dyn OverlayDrawable],
+        post_overlays: &[&dyn OverlayDrawable],
+        assets: &[TraditionalAsset],
+    ) {
+        let command_buffer = self.command_buffers[image_index];
+        unsafe {
+            self.device
+                .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
+                .expect("Failed to reset scene command buffer");
+        }
+        record(
+            &self.device,
+            command_buffer,
+            descriptor_set,
+            (self.render_target.handle, self.render_target.view),
+            (self.depth_image.handle, self.depth_image.view),
+            self.shadow_map_image,
+            self.extent,
+            pre_overlays,
+            post_overlays,
+            self.pipeline,
+            self.pipeline_layout,
+            self.camera_data_buffer_address,
+            self.dir_light_data_buffer_address,
+            self.dir_light_camera_buffer_address,
+            self.depth_sampler_index,
+            assets,
+            &self.timestamp_query,
+        );
     }
 
     pub fn get_pass_total_time(&mut self, refresh: bool) -> std::time::Duration {
@@ -179,7 +203,11 @@ fn record(
         extent,
     );
 
-    descriptor_set.cmd_bind(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline_layout);
+    descriptor_set.cmd_bind(
+        command_buffer,
+        vk::PipelineBindPoint::GRAPHICS,
+        pipeline_layout,
+    );
 
     let mut push_constants = GPUPushConstantsTraditional::default();
     push_constants.camera = camera_buffer_address;

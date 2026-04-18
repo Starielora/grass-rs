@@ -12,17 +12,21 @@ pub struct MeshletPass {
     timestamp_query: vkutils::timestamp_query::TimestampQuery,
 
     pipeline: vk::Pipeline,
+    pipeline_layout: vk::PipelineLayout,
+    extent: vk::Extent2D,
+    camera_data_buffer_address: vk::DeviceAddress,
+    ctrl_camera_data_buffer_address: vk::DeviceAddress,
+    cull_camera_data_buffer_address: vk::DeviceAddress,
     device: ash::Device,
+    mesh_shader_device: ash::ext::mesh_shader::Device,
 }
 
 impl MeshletPass {
     pub fn new(
         ctx: &mut vkutils::context::VulkanContext,
-        assets: &[MeshletAsset],
         camera_data: vk::DeviceAddress,
+        ctrl_camera_data: vk::DeviceAddress,
         cull_camera_data: vk::DeviceAddress,
-        pre_overlays: &[&dyn OverlayDrawable],
-        post_overlays: &[&dyn OverlayDrawable],
     ) -> Self {
         let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
             vk::CommandBufferLevel::PRIMARY,
@@ -63,34 +67,54 @@ impl MeshletPass {
 
         let timestamp_query = vkutils::timestamp_query::TimestampQuery::new(&ctx, 2);
 
-        for command_buffer in &command_buffers {
-            record(
-                &ctx.device,
-                &ctx.mesh_shader_device,
-                *command_buffer,
-                (render_target.handle, render_target.view),
-                (depth_image.handle, depth_image.view),
-                extent,
-                pipeline,
-                assets,
-                camera_data,
-                cull_camera_data,
-                pipeline_layout,
-                ctx.bindless_descriptor_set.handle,
-                &timestamp_query,
-                pre_overlays,
-                post_overlays,
-            );
-        }
-
         Self {
             command_buffers,
             render_target,
             depth_image,
             pipeline,
+            pipeline_layout,
+            extent,
+            camera_data_buffer_address: camera_data,
+            ctrl_camera_data_buffer_address: ctrl_camera_data,
+            cull_camera_data_buffer_address: cull_camera_data,
             timestamp_query,
             device: ctx.device.clone(),
+            mesh_shader_device: ctx.mesh_shader_device.clone(),
         }
+    }
+
+    pub fn record(
+        &self,
+        image_index: usize,
+        descriptor_set: vk::DescriptorSet,
+        pre_overlays: &[&dyn OverlayDrawable],
+        post_overlays: &[&dyn OverlayDrawable],
+        assets: &[MeshletAsset],
+    ) {
+        let command_buffer = self.command_buffers[image_index];
+        unsafe {
+            self.device
+                .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
+                .expect("Failed to reset meshlet command buffer");
+        }
+        record(
+            &self.device,
+            &self.mesh_shader_device,
+            command_buffer,
+            (self.render_target.handle, self.render_target.view),
+            (self.depth_image.handle, self.depth_image.view),
+            self.extent,
+            self.pipeline,
+            assets,
+            self.camera_data_buffer_address,
+            self.ctrl_camera_data_buffer_address,
+            self.cull_camera_data_buffer_address,
+            self.pipeline_layout,
+            descriptor_set,
+            &self.timestamp_query,
+            pre_overlays,
+            post_overlays,
+        );
     }
 
     pub fn get_pass_total_time(&mut self, refresh: bool) -> std::time::Duration {
@@ -124,6 +148,7 @@ fn record(
     pipeline: vk::Pipeline,
     assets: &[MeshletAsset],
     camera_buffer_address: vk::DeviceAddress,
+    ctrl_camera_buffer_address: vk::DeviceAddress,
     cull_camera_buffer_address: vk::DeviceAddress,
     pipeline_layout: vk::PipelineLayout,
     descriptor_set: vk::DescriptorSet,
@@ -156,6 +181,8 @@ fn record(
     // uses traditional_pipeline_layout internally (compatible at set 0)
     let mut trad_push_constants = GPUPushConstantsTraditional::default();
     trad_push_constants.camera = camera_buffer_address;
+    trad_push_constants.ctrl_camera = ctrl_camera_buffer_address;
+    trad_push_constants.cull_camera = cull_camera_buffer_address;
 
     for overlay in pre_overlays {
         if overlay.enabled() {

@@ -25,5 +25,5 @@ void main()
     frag_normal = mat3(transpose(inverse(model_matrix))) * normal;
     // frag_normal = normal;
 
-    gl_Position = push_constants.camera.projview * vec4(frag_pos, 1.0);
+    gl_Position = push_constants.view_camera.projview * vec4(frag_pos, 1.0);
 }

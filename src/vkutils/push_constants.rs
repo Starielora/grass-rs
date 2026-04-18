@@ -5,18 +5,21 @@ use ash::vk;
 pub struct GPUPushConstantsTraditional {
     pub mesh_transform: vk::DeviceAddress, // TransformBuf (currently unused at runtime)
     pub camera: vk::DeviceAddress,         // CameraDataBuf
+    pub ctrl_camera: vk::DeviceAddress,    // CameraDataBuf
+    pub cull_camera: vk::DeviceAddress,    // CameraDataBuf
     pub dir_light_camera: vk::DeviceAddress, // CameraDataBuf
     pub dir_light: vk::DeviceAddress,      // DirLightBuf
     pub skybox: vk::DeviceAddress,         // SkyboxBuf
     pub instances: vk::DeviceAddress,      // TraditionalInstanceBuf
     pub instance_offsets: vk::DeviceAddress, // TraditionalOffsetBuf
     pub depth_sampler_index: u32,
+    pub frustum_colors: vk::DeviceAddress, // FrustumColorBuf
 }
 
 #[derive(Clone, Default)]
 #[repr(C)]
 pub struct GPUPushConstantsMeshlet {
-    pub camera: vk::DeviceAddress,      // CameraDataBuf (view: vertex transform)
+    pub camera: vk::DeviceAddress, // CameraDataBuf (view: vertex transform)
     pub cull_camera: vk::DeviceAddress, // CameraDataBuf (cull: cone/frustum culling)
     pub meshlet_draws: vk::DeviceAddress, // MeshletDrawBuf
 }

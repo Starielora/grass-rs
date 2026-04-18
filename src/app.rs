@@ -19,8 +19,9 @@ pub struct App {
     current_view_camera_index: usize,
     current_control_camera_index: usize,
     current_cull_camera_index: usize,
-    camera_model_visible: [bool; NUM_CAMERAS],
-    camera_frustum_visible: [bool; NUM_CAMERAS],
+    cull_camera_frustum_visible: bool,
+    frustum_planes_color: [f32; 4],
+    frustum_edges_color: [f32; 4],
     gui: Option<gui::Gui>,
     renderer: Option<renderer::Renderer>,
     vkctx: Option<vkutils::context::VulkanContext>,
@@ -39,8 +40,9 @@ impl App {
             current_view_camera_index: 0,
             current_control_camera_index: 0,
             current_cull_camera_index: 0,
-            camera_model_visible: [false; NUM_CAMERAS],
-            camera_frustum_visible: [false; NUM_CAMERAS],
+            cull_camera_frustum_visible: true,
+            frustum_planes_color: [1.0, 1.0, 1.0, 0.25],
+            frustum_edges_color: [1.0, 1.0, 0.0, 1.0],
             cameras: [const { Option::None }; NUM_CAMERAS],
             renderer: Option::None,
             vkctx: Option::None,
@@ -99,7 +101,7 @@ impl ApplicationHandler for App {
                 .update_pos();
         }
 
-        let (camera_pos, camera_projview) = {
+        let (camera_pos, camera_projview, camera_view) = {
             let camera = self
                 .cameras
                 .iter_mut()
@@ -107,10 +109,29 @@ impl ApplicationHandler for App {
                 .unwrap()
                 .as_mut()
                 .unwrap();
-            (camera.pos(), camera.get_projection_view())
+            (
+                camera.pos(),
+                camera.get_projection_view(),
+                camera.get_view(),
+            )
         };
 
-        let (cull_camera_pos, cull_camera_projview) = {
+        let (ctrl_camera_pos, ctrl_camera_projview, ctrl_camera_view) = {
+            let camera = self
+                .cameras
+                .iter_mut()
+                .nth(self.current_control_camera_index)
+                .unwrap()
+                .as_mut()
+                .unwrap();
+            (
+                camera.pos(),
+                camera.get_projection_view(),
+                camera.get_view(),
+            )
+        };
+
+        let (cull_camera_pos, cull_camera_projview, cull_camera_view) = {
             let camera = self
                 .cameras
                 .iter_mut()
@@ -118,7 +139,11 @@ impl ApplicationHandler for App {
                 .unwrap()
                 .as_mut()
                 .unwrap();
-            (camera.pos(), camera.get_projection_view())
+            (
+                camera.pos(),
+                camera.get_projection_view(),
+                camera.get_view(),
+            )
         };
 
         let (image_index, acquire_semaphore) = {
@@ -138,12 +163,21 @@ impl ApplicationHandler for App {
                 .update_contents(&[camera::GPUCameraData {
                     pos: camera_pos,
                     projview: camera_projview,
+                    view: camera_view,
+                }]);
+            renderer
+                .control_camera_data_buffer
+                .update_contents(&[camera::GPUCameraData {
+                    pos: ctrl_camera_pos,
+                    projview: ctrl_camera_projview,
+                    view: ctrl_camera_view,
                 }]);
             renderer
                 .cull_camera_data_buffer
                 .update_contents(&[camera::GPUCameraData {
                     pos: cull_camera_pos,
                     projview: cull_camera_projview,
+                    view: cull_camera_view,
                 }]);
 
             if self.frame_number == 0 {
@@ -180,7 +214,10 @@ impl ApplicationHandler for App {
         let renderer = self.renderer.as_mut().unwrap();
         let gui = self.gui.as_mut().unwrap();
         let vkctx = self.vkctx.as_mut().unwrap();
-        renderer.record_imgui_pass(image_index, &vkctx, gui);
+        renderer.frustum.enabled = self.cull_camera_frustum_visible;
+        renderer.frustum.planes_color = self.frustum_planes_color;
+        renderer.frustum.edges_color = self.frustum_edges_color;
+        renderer.record_passes(image_index, &vkctx, gui);
 
         let queue = vkctx.graphics_present_queue;
         let render_finished_semaphore =
@@ -322,13 +359,11 @@ impl GuiSceneNode for App {
         let camera_label = |i: usize| format!("Cam {}", i);
 
         // Per-camera selection and visibility table
-        if let Some(_table) = ui.begin_table("##camera_vis", 6) {
+        if let Some(_table) = ui.begin_table("##camera_vis", 5) {
             ui.table_setup_column("Cam");
             ui.table_setup_column("View");
             ui.table_setup_column("Ctrl");
             ui.table_setup_column("Cull");
-            ui.table_setup_column("Mdl");
-            ui.table_setup_column("Frst");
             ui.table_headers_row();
             for i in 0..NUM_CAMERAS {
                 ui.table_next_row();
@@ -355,21 +390,22 @@ impl GuiSceneNode for App {
                 if ui.is_item_hovered() {
                     ui.tooltip_text("\"Player\"/Frozen");
                 }
-                ui.table_next_column();
-                ui.checkbox(format!("##model{}", i), &mut self.camera_model_visible[i]);
-                if ui.is_item_hovered() {
-                    ui.tooltip_text("Render camera model");
-                }
-                ui.table_next_column();
-                ui.checkbox(
-                    format!("##frustum{}", i),
-                    &mut self.camera_frustum_visible[i],
-                );
-                if ui.is_item_hovered() {
-                    ui.tooltip_text("Render camera frustum");
-                }
             }
         }
+
+        ui.checkbox("Frustum", &mut self.cull_camera_frustum_visible);
+        if ui.is_item_hovered() {
+            ui.tooltip_text("Render camera frustum");
+        }
+
+        ui.same_line();
+        ui.color_edit4_config("Planes", &mut self.frustum_planes_color)
+            .inputs(false)
+            .build();
+        ui.same_line();
+        ui.color_edit4_config("Edges", &mut self.frustum_edges_color)
+            .inputs(false)
+            .build();
 
         self.cameras
             .iter_mut()

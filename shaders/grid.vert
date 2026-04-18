@@ -19,7 +19,7 @@ layout(location = 1) out float grid_size;
 
 void main()
 {
-    CameraDataBuf camera = push_constants.camera;
+    CameraDataBuf camera = push_constants.view_camera;
 
     grid_size = 100.0;
     int idx = indices[gl_VertexIndex];

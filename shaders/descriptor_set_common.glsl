@@ -8,6 +8,7 @@ layout(set = 0, binding = 1) uniform sampler2D depth_textures[];
 layout(buffer_reference) readonly buffer CameraDataBuf {
     vec4 position;
     mat4 projview;
+    mat4 view;
 };
 
 layout(buffer_reference) readonly buffer TransformBuf {

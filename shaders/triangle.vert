@@ -19,7 +19,7 @@ layout(location = 0) out vec3 fragColor;
 
 void main()
 {
-    CameraDataBuf camera = push_constants.camera;
+    CameraDataBuf camera = push_constants.view_camera;
     gl_Position = camera.projview * vec4(positions[gl_VertexIndex], 0.0, 1.0);
     fragColor = colors[gl_VertexIndex];
 }

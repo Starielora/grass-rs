@@ -5,10 +5,11 @@
 
 #include "descriptor_set_meshlet.glsl"
 #include "meshlet_common.glsl"
+#include "frustum_cull.glsl"
 
 taskPayloadSharedEXT MeshletSharedData shared_data;
 
-bool clusterCull(vec3 center, float radius, vec3 cone_axis, float cone_cutoff, vec3 camera_position) {
+bool cluster_cull(vec3 center, float radius, vec3 cone_axis, float cone_cutoff, vec3 camera_position) {
     if (cone_cutoff >= 1.0) return false; // meshopt signals -1.0 is uncullable; use >= 1.0 as safe upper guard too
     if (cone_cutoff < -0.999) return false; // can't cone-cull this meshlet
     return dot(center - camera_position, cone_axis) > cone_cutoff * length(center - camera_position) + radius;
@@ -31,7 +32,11 @@ void main() {
         vec3 bounds_center_world = (model_matrix * vec4(bounds.center, 1.0)).xyz;
         vec3 cone_axis_world = normalize(transpose(inverse(mat3(model_matrix))) * bounds.cone_axis);
         float radius_world = bounds.radius * length(model_matrix[0].xyz);
-        accept = !clusterCull(bounds_center_world, radius_world, cone_axis_world, bounds.cone_cutoff, push_constants.cull_camera.position.xyz);
+
+        accept = !cluster_cull(bounds_center_world, radius_world, cone_axis_world, bounds.cone_cutoff, push_constants.cull_camera.position.xyz);
+        if (accept) {
+            accept = accept && !frustum_cull(bounds_center_world, radius_world);
+        }
     }
 
     uvec4 ballot = subgroupBallot(accept);
