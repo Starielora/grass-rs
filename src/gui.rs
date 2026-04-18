@@ -1,5 +1,4 @@
-use crate::camera::Camera;
-use crate::gui_scene_node::{GuiCameraNode, GuiSceneNode};
+use crate::gui_scene_node::GuiSceneNode;
 use crate::{fps_window, vkutils};
 use ash::vk;
 
