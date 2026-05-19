@@ -25,7 +25,7 @@ taskPayloadSharedEXT MeshletSharedData shared_data;
 
 void main()
 {
-    MeshletDraw draw_data = push_constants.meshlet_draws.draws[shared_data.instance_index];
+    MeshletDraw draw_data = push_constants.meshlet_draws.draws[shared_data.draw_index];
     uint mi = shared_data.meshlet_index[gl_WorkGroupID.x];
     uint ti = gl_LocalInvocationID.x;
 
@@ -44,10 +44,12 @@ void main()
         gl_PrimitiveTriangleIndicesEXT[i] = uvec3(ia, ib, ic);
     }
 
+    mat4 instance_transform = push_constants.meshlet_draws.draws[shared_data.draw_index].instances.transforms[shared_data.instance_index];
+
     for (uint i = ti; i < vertex_count; i += 64) {
         uint vi = draw_data.vertex_indices.meshlet_vertices[vertex_offset + i];
         Vertex v = draw_data.vertices.vertices[vi];
-        vec4 position = push_constants.camera.projview * draw_data.transform.model_matrix * vec4(v.vx, v.vy, v.vz, 1.0);
+        vec4 position = push_constants.camera.projview * instance_transform * draw_data.transform.model_matrix * vec4(v.vx, v.vy, v.vz, 1.0);
         vec3 normal = vec3(v.nx, v.ny, v.nz);
 
         gl_MeshVerticesEXT[i].gl_Position = position;

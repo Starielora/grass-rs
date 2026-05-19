@@ -25,10 +25,13 @@ void main() {
 
     bool valid = meshlet_index < draw_data.meshlets_count;
     bool accept = false;
+    uint instance_index = gl_WorkGroupID.z;
+    uint draw_index = gl_DrawIDARB;
 
     if (valid) {
         MeshletBounds bounds = draw_data.bounds.bounds[meshlet_index];
-        mat4 model_matrix = draw_data.transform.model_matrix;
+        mat4 instance_transform = push_constants.meshlet_draws.draws[draw_index].instances.transforms[instance_index];
+        mat4 model_matrix = instance_transform * draw_data.transform.model_matrix;
         vec3 bounds_center_world = (model_matrix * vec4(bounds.center, 1.0)).xyz;
         vec3 cone_axis_world = normalize(transpose(inverse(mat3(model_matrix))) * bounds.cone_axis);
         float radius_world = bounds.radius * length(model_matrix[0].xyz);
@@ -45,7 +48,8 @@ void main() {
     if (accept) {
         uint index = subgroupBallotExclusiveBitCount(ballot);
         shared_data.meshlet_index[index] = meshlet_index;
-        shared_data.instance_index = gl_DrawIDARB;
+        shared_data.draw_index = draw_index;
+        shared_data.instance_index = instance_index;
     }
 
     EmitMeshTasksEXT(count, 1, 1);

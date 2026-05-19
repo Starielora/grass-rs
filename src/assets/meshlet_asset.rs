@@ -6,6 +6,7 @@ use crate::vkutils;
 use crate::vkutils::push_constants::GPUPushConstantsMeshlet;
 use crate::vkutils::vk_destroy::VkDestroy;
 use ash::vk;
+use rand::RngExt;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -17,6 +18,8 @@ struct MeshletDraw {
     pub tri_indices: vk::DeviceAddress, // TriangleIndexBuf
     pub bounds: vk::DeviceAddress,    // MeshletBoundsBuf
     pub meshlets_count: u32,
+    pub instances_bufs: vk::DeviceAddress,
+    pub instances_bufs_count: u32,
 }
 
 pub struct MeshletAsset {
@@ -25,6 +28,7 @@ pub struct MeshletAsset {
     _node_transform_data: Vec<SceneNodesBuffers>,
     instance_buffers: Vec<vkutils::buffer::Buffer>,
     indirect_buffers: Vec<(vkutils::buffer::Buffer, usize)>,
+    instance_transform_buffers: Vec<vkutils::buffer::Buffer>,
 }
 
 impl MeshletAsset {
@@ -95,21 +99,29 @@ impl MeshletAsset {
         let mut node_transform_data = vec![];
         let mut instance_buffers = vec![];
         let mut indirect_buffers = vec![];
+        let mut instance_transform_buffers = vec![];
 
         for scene in &scenes {
             let transform_data = build_node_transformation_data(ctx, &mut meshes, &nodes, &scene);
 
+            let (scene_instances_transforms_buffers, instances_count) = build_instances_buffer(ctx);
             let instances_buffer = build_instance_data(
                 ctx,
                 &transform_data.node_transform_buffer_address,
                 &meshes,
                 &nodes,
+                (
+                    scene_instances_transforms_buffers.device_address.unwrap(),
+                    instances_count as u32,
+                ),
             );
-            let draw_buffer = build_buffer_for_indirect_draw(ctx, &meshes, &nodes);
+            let draw_buffer =
+                build_buffer_for_indirect_draw(ctx, &meshes, &nodes, instances_count as u32);
 
             instance_buffers.push(instances_buffer);
             indirect_buffers.push(draw_buffer);
             node_transform_data.push(transform_data);
+            instance_transform_buffers.push(scene_instances_transforms_buffers);
         }
 
         Self {
@@ -118,6 +130,7 @@ impl MeshletAsset {
             _node_transform_data: node_transform_data,
             instance_buffers,
             indirect_buffers,
+            instance_transform_buffers,
         }
     }
 
@@ -168,6 +181,9 @@ impl std::ops::Drop for MeshletAsset {
         for (buf, _) in &self.indirect_buffers {
             buf.vk_destroy();
         }
+        for buf in &self.instance_transform_buffers {
+            buf.vk_destroy();
+        }
     }
 }
 
@@ -176,8 +192,10 @@ fn build_instance_data(
     node_transform_buffer_address: &std::collections::HashMap<usize, vk::DeviceAddress>,
     meshes: &Vec<Mesh>,
     nodes: &Vec<Node>,
+    instances: (vk::DeviceAddress, u32), // instances buf + count
 ) -> vkutils::buffer::Buffer {
     let mut meshlet_draws = vec![];
+    let (instances_buf, instances_count) = instances;
 
     for (node_index, node) in nodes.iter().enumerate() {
         if let Some(mesh_index) = node.mesh_index {
@@ -193,6 +211,8 @@ fn build_instance_data(
                         tri_indices: meshlet.triangle_buffer.device_address.unwrap(),
                         bounds: meshlet.meshlet_bounds_buffer.device_address.unwrap(),
                         meshlets_count: meshlet.bounds_count,
+                        instances_bufs: instances_buf,
+                        instances_bufs_count: instances_count,
                     };
                     meshlet_draws.push(draw);
                 }
@@ -210,6 +230,7 @@ fn build_buffer_for_indirect_draw(
     ctx: &vkutils::context::VulkanContext,
     meshes: &Vec<Mesh>,
     nodes: &Vec<Node>,
+    instances_count: u32,
 ) -> (vkutils::buffer::Buffer, usize) {
     let mut draws = vec![];
     for node in nodes {
@@ -220,7 +241,7 @@ fn build_buffer_for_indirect_draw(
                     draws.push(vk::DrawMeshTasksIndirectCommandEXT {
                         group_count_x: meshlet.meshlets_count / 64,
                         group_count_y: 1,
-                        group_count_z: 1,
+                        group_count_z: instances_count,
                     });
                 }
             }
@@ -229,4 +250,38 @@ fn build_buffer_for_indirect_draw(
 
     let buffer = ctx.upload_buffer(&draws, vk::BufferUsageFlags::INDIRECT_BUFFER);
     (buffer, draws.len())
+}
+
+fn build_instances_buffer(
+    ctx: &vkutils::context::VulkanContext,
+) -> (vkutils::buffer::Buffer, usize) {
+    let mut rng = rand::rng();
+    let mut mats = vec![];
+
+    for _i in 0..200 {
+        let tx: f32 = rng.random_range(-10.0f32..10.0f32);
+        let ty: f32 = rng.random_range(-10.0f32..10.0f32);
+        let tz: f32 = rng.random_range(-10.0f32..10.0f32);
+
+        let az: f32 = rng.random_range(0.0f32..360.0f32).to_radians();
+        let el: f32 = rng.random_range(-90.0f32..90.0f32).to_radians();
+
+        let mut mat = glm::Mat4::identity();
+
+        mat = glm::translate(&mat, &glm::make_vec3(&[tx, ty, tz]));
+        mat = glm::rotate(&mat, az, &glm::make_vec3(&[0.0, -1.0, 0.0]));
+        mat = glm::rotate(&mat, el, &glm::make_vec3(&[0.0, 0.0, 1.0]));
+
+        mats.push(mat);
+    }
+
+    let mats_count = mats.len();
+
+    let buf = ctx.create_bar_buffer(
+        std::mem::size_of::<glm::Mat4>() * mats_count,
+        vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+    );
+    buf.update_contents(mats.as_slice());
+
+    (buf, mats_count)
 }

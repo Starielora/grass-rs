@@ -21,7 +21,7 @@ taskPayloadSharedEXT MeshletSharedData shared_data;
 #include "frustum_cull.glsl"
 
 void main() {
-    MeshletDraw draw_data = push_constants.meshlet_draws.draws[shared_data.instance_index];
+    MeshletDraw draw_data = push_constants.meshlet_draws.draws[shared_data.draw_index];
     uint mi = shared_data.meshlet_index[gl_WorkGroupID.x];
     MeshletBounds bounds = draw_data.bounds.bounds[mi];
 

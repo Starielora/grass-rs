@@ -46,6 +46,11 @@ layout(buffer_reference) readonly buffer MeshletBuf {
     Meshlet meshlets[];
 };
 
+// Indexed with task shader local_size.z
+layout(buffer_reference) readonly buffer InstancesBuf {
+    mat4 transforms[];
+};
+
 // One entry per indirect draw call in the meshlet path.
 struct MeshletDraw {
     TransformBuf transform; // per-instance model matrix
@@ -55,6 +60,8 @@ struct MeshletDraw {
     TriangleIndexBuf tri_indices;
     MeshletBoundsBuf bounds;
     uint meshlets_count;
+    InstancesBuf instances;
+    uint instances_count;
 };
 
 layout(buffer_reference) readonly buffer MeshletDrawBuf {
@@ -63,7 +70,7 @@ layout(buffer_reference) readonly buffer MeshletDrawBuf {
 
 layout(push_constant) uniform constants
 {
-    CameraDataBuf camera;      // view camera: vertex transform
+    CameraDataBuf camera; // view camera: vertex transform
     CameraDataBuf cull_camera; // cull camera: cone/frustum culling
     MeshletDrawBuf meshlet_draws;
 } push_constants;
