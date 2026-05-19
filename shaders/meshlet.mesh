@@ -9,6 +9,9 @@ layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 layout(triangles, max_vertices = 64, max_primitives = 124) out;
 
 layout(location = 0) out vec4 color[];
+layout(location = 1) out vec3 frag_pos[];
+layout(location = 2) out vec3 frag_normal[];
+layout(location = 3) out vec4 frag_pos_light_space[];
 
 uint hash(uint a)
 {
@@ -49,7 +52,8 @@ void main()
     for (uint i = ti; i < vertex_count; i += 64) {
         uint vi = draw_data.vertex_indices.meshlet_vertices[vertex_offset + i];
         Vertex v = draw_data.vertices.vertices[vi];
-        vec4 position = push_constants.camera.projview * instance_transform * draw_data.transform.model_matrix * vec4(v.vx, v.vy, v.vz, 1.0);
+        mat4 model_matrix = instance_transform * draw_data.transform.model_matrix;
+        vec4 position = push_constants.camera.projview * model_matrix * vec4(v.vx, v.vy, v.vz, 1.0);
         vec3 normal = vec3(v.nx, v.ny, v.nz);
 
         gl_MeshVerticesEXT[i].gl_Position = position;
@@ -58,5 +62,12 @@ void main()
         vec3 mcolor = vec3(float(mhash & 255), float((mhash >> 8) & 255), float((mhash >> 16) & 255)) / 255.0;
         color[i] = vec4(mcolor, 1.0);
         // color[i] = vec4(normal.x, -normal.z, normal.y, 1.0);
+
+        // phong lighting stuff
+        vec4 vertex = vec4(v.vx, v.vy, v.vz, 1.0);
+        vec3 _frag_pos = vec3(model_matrix * vertex);
+        frag_pos[i] = _frag_pos;
+        frag_pos_light_space[i] = push_constants.dir_light_camera.projview * vec4(_frag_pos, 1.0);
+        frag_normal[i] = mat3(transpose(inverse(model_matrix))) * normal;
     }
 }

@@ -73,4 +73,6 @@ layout(push_constant) uniform constants
     CameraDataBuf camera; // view camera: vertex transform
     CameraDataBuf cull_camera; // cull camera: cone/frustum culling
     MeshletDrawBuf meshlet_draws;
+    CameraDataBuf dir_light_camera;
+    DirLightBuf dir_light;
 } push_constants;

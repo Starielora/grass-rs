@@ -14,3 +14,12 @@ layout(buffer_reference) readonly buffer CameraDataBuf {
 layout(buffer_reference) readonly buffer TransformBuf {
     mat4 model_matrix;
 };
+
+struct DirLight {
+    vec4 dir;
+    vec4 color;
+};
+
+layout(buffer_reference) readonly buffer DirLightBuf {
+    DirLight data;
+};

@@ -17,6 +17,8 @@ pub struct MeshletPass {
     camera_data_buffer_address: vk::DeviceAddress,
     ctrl_camera_data_buffer_address: vk::DeviceAddress,
     cull_camera_data_buffer_address: vk::DeviceAddress,
+    dir_light_data_buffer_address: vk::DeviceAddress,
+    dir_light_camera_buffer_address: vk::DeviceAddress,
     device: ash::Device,
     mesh_shader_device: ash::ext::mesh_shader::Device,
 }
@@ -27,6 +29,8 @@ impl MeshletPass {
         camera_data: vk::DeviceAddress,
         ctrl_camera_data: vk::DeviceAddress,
         cull_camera_data: vk::DeviceAddress,
+        dir_light_data_buffer_address: vk::DeviceAddress,
+        dir_light_camera_buffer_address: vk::DeviceAddress,
     ) -> Self {
         let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
             vk::CommandBufferLevel::PRIMARY,
@@ -77,6 +81,8 @@ impl MeshletPass {
             camera_data_buffer_address: camera_data,
             ctrl_camera_data_buffer_address: ctrl_camera_data,
             cull_camera_data_buffer_address: cull_camera_data,
+            dir_light_data_buffer_address,
+            dir_light_camera_buffer_address,
             timestamp_query,
             device: ctx.device.clone(),
             mesh_shader_device: ctx.mesh_shader_device.clone(),
@@ -114,6 +120,8 @@ impl MeshletPass {
             &self.timestamp_query,
             pre_overlays,
             post_overlays,
+            self.dir_light_data_buffer_address,
+            self.dir_light_camera_buffer_address,
         );
     }
 
@@ -155,6 +163,8 @@ fn record(
     timestamp_query: &vkutils::timestamp_query::TimestampQuery,
     pre_overlays: &[&dyn OverlayDrawable],
     post_overlays: &[&dyn OverlayDrawable],
+    dir_light_buffer_address: vk::DeviceAddress,
+    dir_light_camera_buffer_address: vk::DeviceAddress,
 ) {
     let begin_info = vk::CommandBufferBeginInfo {
         ..Default::default()
@@ -210,6 +220,8 @@ fn record(
     let mut push_constants = GPUPushConstantsMeshlet::default();
     push_constants.camera = camera_buffer_address;
     push_constants.cull_camera = cull_camera_buffer_address;
+    push_constants.dir_light = dir_light_buffer_address;
+    push_constants.dir_light_camera = dir_light_camera_buffer_address;
 
     for asset in assets {
         asset.draw_scene(

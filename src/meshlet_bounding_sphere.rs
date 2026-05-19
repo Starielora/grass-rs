@@ -74,6 +74,8 @@ impl OverlayDrawable for MeshletBoundingSpheres {
             camera: push_constants.camera,
             cull_camera: push_constants.cull_camera,
             meshlet_draws: 0,
+            dir_light: 0,
+            dir_light_camera: 0,
         };
 
         for (meshlet_draws_addr, indirect_buf, draws_count) in &self.draw_infos {

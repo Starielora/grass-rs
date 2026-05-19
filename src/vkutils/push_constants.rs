@@ -22,6 +22,16 @@ pub struct GPUPushConstantsMeshlet {
     pub camera: vk::DeviceAddress, // CameraDataBuf (view: vertex transform)
     pub cull_camera: vk::DeviceAddress, // CameraDataBuf (cull: cone/frustum culling)
     pub meshlet_draws: vk::DeviceAddress, // MeshletDrawBuf
+    pub dir_light_camera: vk::DeviceAddress, // CameraDataBuf
+    pub dir_light: vk::DeviceAddress, // DirLightBuf
+}
+
+impl GPUPushConstantsMeshlet {
+    pub fn get_shader_stage_flags() -> vk::ShaderStageFlags {
+        vk::ShaderStageFlags::TASK_EXT
+            | vk::ShaderStageFlags::MESH_EXT
+            | vk::ShaderStageFlags::FRAGMENT
+    }
 }
 
 // TODO why I cannot define this as static or const array is beyond me. It says I cannot use
@@ -36,7 +46,7 @@ pub fn get_range_traditional() -> [vk::PushConstantRange; 1] {
 
 pub fn get_range_meshlet() -> [vk::PushConstantRange; 1] {
     [vk::PushConstantRange {
-        stage_flags: vk::ShaderStageFlags::TASK_EXT | vk::ShaderStageFlags::MESH_EXT,
+        stage_flags: GPUPushConstantsMeshlet::get_shader_stage_flags(),
         offset: 0,
         size: std::mem::size_of::<GPUPushConstantsMeshlet>() as u32,
     }]

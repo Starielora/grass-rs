@@ -1,15 +1,6 @@
 #extension GL_GOOGLE_include_directive : enable
 #include "descriptor_set_common.glsl"
 
-struct DirLight {
-    vec4 dir;
-    vec4 color;
-};
-
-layout(buffer_reference) readonly buffer DirLightBuf {
-    DirLight data;
-};
-
 layout(buffer_reference) readonly buffer SkyboxBuf {
     uint current_texture_id;
 };

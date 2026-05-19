@@ -155,7 +155,7 @@ impl MeshletAsset {
             device.cmd_push_constants(
                 command_buffer,
                 pipeline_layout,
-                vk::ShaderStageFlags::TASK_EXT | vk::ShaderStageFlags::MESH_EXT,
+                GPUPushConstantsMeshlet::get_shader_stage_flags(),
                 0,
                 std::slice::from_raw_parts(
                     (push_constants as *const GPUPushConstantsMeshlet) as *const u8,

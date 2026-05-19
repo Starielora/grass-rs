@@ -217,6 +217,8 @@ impl Renderer {
             camera_data_buffer.device_address.unwrap(),
             control_camera_data_buffer.device_address.unwrap(),
             cull_camera_data_buffer.device_address.unwrap(),
+            dir_light.buffer_device_address,
+            dir_light.camera_buffer.device_address.unwrap(),
         );
 
         let mut gui_scene_nodes: std::vec::Vec<std::rc::Rc<std::cell::RefCell<dyn GuiSceneNode>>> =
