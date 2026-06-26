@@ -1,0 +1,280 @@
+use crate::vkutils::{self, vk_destroy::VkDestroy};
+use ash::vk;
+
+pub struct Renderer2 {
+    vk: ash::Device,
+    command_buffers: std::vec::Vec<vk::CommandBuffer>,
+    extent: vk::Extent2D,
+
+    render_target: vkutils::image::Image,
+    depth_image: vkutils::image::Image,
+
+    render_finished_semaphore: vk::Semaphore,
+}
+
+impl std::ops::Drop for Renderer2 {
+    fn drop(&mut self) {
+        let vk = &self.vk;
+        unsafe {
+            self.render_target.vk_destroy();
+            self.depth_image.vk_destroy();
+            vk.destroy_semaphore(self.render_finished_semaphore, None);
+        }
+    }
+}
+
+impl Renderer2 {
+    pub fn new(ctx: &mut vkutils::context::VulkanContext) -> Renderer2 {
+        let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
+            vk::CommandBufferLevel::PRIMARY,
+            ctx.swapchain.images.len().try_into().unwrap(),
+        );
+
+        let format = ctx.swapchain.surface_format.format;
+        let extent = ctx.swapchain.extent;
+
+        let render_target = ctx.create_image(
+            format,
+            extent,
+            1,
+            vk::SampleCountFlags::TYPE_8,
+            vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC,
+            vk::ImageAspectFlags::COLOR,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        );
+
+        let depth_image = ctx.create_image(
+            ctx.depth_format,
+            extent,
+            1,
+            vk::SampleCountFlags::TYPE_8,
+            vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+            vk::ImageAspectFlags::DEPTH,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        );
+
+        let render_finished_semaphore = ctx.create_semaphore_vk();
+
+        Self {
+            vk: ctx.device.clone(),
+            command_buffers,
+            extent,
+            render_target,
+            depth_image,
+            render_finished_semaphore,
+        }
+    }
+
+    pub fn draw(&self, vkctx: &mut vkutils::context::VulkanContext) {
+        println!("Draw!");
+
+        let (image_index, acquire_semaphore) =
+            { vkctx.swapchain.acquire_next_image(!0, vk::Fence::null()) };
+
+        let image_index: usize = image_index.try_into().unwrap();
+
+        let queue = vkctx.graphics_present_queue;
+        let command_buffer = self.command_buffers[image_index];
+        let vk = &self.vk;
+
+        unsafe {
+            vk.reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
+                .expect("Failed to reset command buffer");
+
+            let begin_info = vk::CommandBufferBeginInfo {
+                ..Default::default()
+            };
+            vk.begin_command_buffer(command_buffer, &begin_info)
+                .expect("Failed to begin command buffer");
+
+            let color_clear_value = vk::ClearValue {
+                color: vk::ClearColorValue {
+                    float32: [153.0 / 255.0, 204.0 / 255.0, 255.0 / 255.0, 1.0],
+                },
+            };
+
+            let depth_clear_value = vk::ClearValue {
+                depth_stencil: vk::ClearDepthStencilValue {
+                    depth: 0.0,
+                    stencil: 0,
+                },
+            };
+
+            let extent = self.extent;
+            let (color_image, color_image_view) =
+                (self.render_target.handle, self.render_target.view);
+            let (depth_image, depth_image_view) = (self.depth_image.handle, self.depth_image.view);
+
+            let color_subresource_range = vkutils::color_subresource_range();
+
+            {
+                vkutils::image_barrier(
+                    vk,
+                    command_buffer,
+                    color_image,
+                    (
+                        vk::ImageLayout::UNDEFINED,
+                        vk::AccessFlags::NONE,
+                        vk::PipelineStageFlags::TOP_OF_PIPE,
+                    ),
+                    (
+                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                        vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                    ),
+                    color_subresource_range,
+                );
+                vkutils::image_barrier(
+                    vk,
+                    command_buffer,
+                    depth_image,
+                    (
+                        vk::ImageLayout::UNDEFINED,
+                        vk::AccessFlags::NONE,
+                        vk::PipelineStageFlags::TOP_OF_PIPE,
+                    ),
+                    (
+                        vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL,
+                        vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                        vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
+                    ),
+                    vkutils::depth_subresource_range(),
+                );
+            }
+
+            {
+                let color_attachments = [vk::RenderingAttachmentInfo::default()
+                    .image_view(color_image_view)
+                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .load_op(vk::AttachmentLoadOp::CLEAR)
+                    .store_op(vk::AttachmentStoreOp::STORE)
+                    .clear_value(color_clear_value)];
+
+                let depth_attachment = vk::RenderingAttachmentInfo::default()
+                    .image_view(depth_image_view)
+                    .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
+                    .load_op(vk::AttachmentLoadOp::CLEAR)
+                    .store_op(vk::AttachmentStoreOp::STORE)
+                    .clear_value(depth_clear_value);
+
+                let rendering_info = vk::RenderingInfo::default()
+                    .render_area(vk::Rect2D {
+                        extent,
+                        offset: vk::Offset2D { x: 0, y: 0 },
+                    })
+                    .layer_count(1)
+                    .color_attachments(&color_attachments)
+                    .depth_attachment(&depth_attachment);
+
+                vk.cmd_begin_rendering(command_buffer, &rendering_info);
+            }
+
+            vk.cmd_end_rendering(command_buffer);
+
+            {
+                let present_image = vkctx.swapchain.images[image_index];
+
+                vkutils::image_barrier(
+                    vk,
+                    command_buffer,
+                    color_image,
+                    (
+                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                        vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                    ),
+                    (
+                        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                        vk::AccessFlags::TRANSFER_READ,
+                        vk::PipelineStageFlags::TRANSFER,
+                    ),
+                    color_subresource_range,
+                );
+                vkutils::image_barrier(
+                    vk,
+                    command_buffer,
+                    present_image,
+                    (
+                        vk::ImageLayout::UNDEFINED,
+                        vk::AccessFlags::NONE,
+                        vk::PipelineStageFlags::TOP_OF_PIPE,
+                    ),
+                    (
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        vk::AccessFlags::TRANSFER_WRITE,
+                        vk::PipelineStageFlags::TRANSFER,
+                    ),
+                    color_subresource_range,
+                );
+
+                // MSAA resolve
+                let subresource = vk::ImageSubresourceLayers::default()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .mip_level(0)
+                    .base_array_layer(0)
+                    .layer_count(1);
+
+                let resolve_region = vk::ImageResolve::default()
+                    .src_subresource(subresource)
+                    .dst_subresource(subresource)
+                    .extent(vk::Extent3D {
+                        width: self.extent.width,
+                        height: self.extent.height,
+                        depth: 1,
+                    });
+
+                vk.cmd_resolve_image(
+                    command_buffer,
+                    color_image,
+                    vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                    present_image,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    &[resolve_region],
+                );
+
+                // transition to presentable
+                vkutils::image_barrier(
+                    vk,
+                    command_buffer,
+                    present_image,
+                    (
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        vk::AccessFlags::TRANSFER_WRITE,
+                        vk::PipelineStageFlags::TRANSFER,
+                    ),
+                    (
+                        vk::ImageLayout::PRESENT_SRC_KHR,
+                        vk::AccessFlags::NONE,
+                        vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+                    ),
+                    color_subresource_range,
+                );
+            }
+
+            vk.end_command_buffer(command_buffer)
+                .expect("Failed to end command buffer");
+
+            let render_finished_semaphore = self.render_finished_semaphore;
+            let acquire_sem = [acquire_semaphore];
+            let signal_sem = [render_finished_semaphore];
+            let command_buffers = [command_buffer];
+
+            let submits = [vk::SubmitInfo::default()
+                .wait_semaphores(&acquire_sem)
+                .command_buffers(&command_buffers)
+                .signal_semaphores(&signal_sem)
+                .wait_dst_stage_mask(&[vk::PipelineStageFlags::BOTTOM_OF_PIPE])];
+
+            vk.queue_submit(queue, &submits, vk::Fence::null())
+                .expect("Failed to submit");
+
+            vkctx.swapchain.present(
+                image_index.try_into().unwrap(),
+                &[render_finished_semaphore],
+                queue,
+            );
+
+            vkctx.device.device_wait_idle().expect("Failed to wait");
+        }
+    }
+}

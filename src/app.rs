@@ -10,6 +10,7 @@ use crate::gui;
 use crate::gui_scene_node::GuiCameraNode;
 use crate::gui_scene_node::GuiSceneNode;
 use crate::renderer;
+use crate::unfuck_render_loop;
 use crate::vkutils;
 
 const NUM_CAMERAS: usize = 2;
@@ -24,6 +25,7 @@ pub struct App {
     frustum_edges_color: [f32; 4],
     gui: Option<gui::Gui>,
     renderer: Option<renderer::Renderer>,
+    renderer2: Option<unfuck_render_loop::Renderer2>,
     vkctx: Option<vkutils::context::VulkanContext>,
     window: Option<std::rc::Rc<winit::window::Window>>,
     last_frame: std::time::Instant,
@@ -45,6 +47,7 @@ impl App {
             frustum_edges_color: [1.0, 1.0, 0.0, 1.0],
             cameras: [const { Option::None }; NUM_CAMERAS],
             renderer: Option::None,
+            renderer2: Option::None,
             vkctx: Option::None,
             window: Option::None,
             last_frame: std::time::Instant::now(),
@@ -70,6 +73,7 @@ impl ApplicationHandler for App {
         let _ = window.set_cursor_grab(winit::window::CursorGrabMode::Confined);
         let mut vkctx = vkutils::context::VulkanContext::new(&window);
         let renderer = renderer::Renderer::new(&mut vkctx);
+        let renderer2 = unfuck_render_loop::Renderer2::new(&mut vkctx);
         for camera in &mut self.cameras {
             camera
                 .insert(camera::Camera::new(
@@ -85,6 +89,7 @@ impl ApplicationHandler for App {
 
         self.vkctx = Some(vkctx);
         self.renderer = Some(renderer);
+        self.renderer2 = Some(renderer2);
         self.gui = Some(gui);
         self.window = Some(window);
         self.last_frame = std::time::Instant::now();
@@ -146,88 +151,95 @@ impl ApplicationHandler for App {
             )
         };
 
-        let (image_index, acquire_semaphore) = {
-            let vkctx = self.vkctx.as_mut().unwrap();
-            vkctx.swapchain.acquire_next_image(!0, vk::Fence::null())
-        };
+        let use_old_render_logic = !true;
 
-        let (
-            shadow_map_render_duration,
-            scene_render_duration,
-            meshlet_render_duration,
-            ui_render_duration,
-        ) = {
+        if use_old_render_logic {
+            let (image_index, acquire_semaphore) = {
+                let vkctx = self.vkctx.as_mut().unwrap();
+                vkctx.swapchain.acquire_next_image(!0, vk::Fence::null())
+            };
+
+            let (
+                shadow_map_render_duration,
+                scene_render_duration,
+                meshlet_render_duration,
+                ui_render_duration,
+            ) = {
+                let renderer = self.renderer.as_mut().unwrap();
+                renderer
+                    .camera_data_buffer
+                    .update_contents(&[camera::GPUCameraData {
+                        pos: camera_pos,
+                        projview: camera_projview,
+                        view: camera_view,
+                    }]);
+                renderer
+                    .control_camera_data_buffer
+                    .update_contents(&[camera::GPUCameraData {
+                        pos: ctrl_camera_pos,
+                        projview: ctrl_camera_projview,
+                        view: ctrl_camera_view,
+                    }]);
+                renderer
+                    .cull_camera_data_buffer
+                    .update_contents(&[camera::GPUCameraData {
+                        pos: cull_camera_pos,
+                        projview: cull_camera_projview,
+                        view: cull_camera_view,
+                    }]);
+
+                if self.frame_number == 0 {
+                    (
+                        std::time::Duration::from_secs(0),
+                        std::time::Duration::from_secs(0),
+                        std::time::Duration::from_secs(0),
+                        std::time::Duration::from_secs(0),
+                    )
+                } else {
+                    renderer.get_pass_durations()
+                }
+            };
+
+            let current_timestamp = std::time::Instant::now();
+            let cpu_duration = current_timestamp - self.previous_frame_timestamp;
+            self.previous_frame_timestamp = current_timestamp;
+
+            // Take gui so self has no live borrows - is that a smell?
+            let mut gui = self.gui.take().unwrap();
+            gui.prepare_frame(
+                self,
+                fps_window::FrameDurations {
+                    cpu: cpu_duration,
+                    gpu: shadow_map_render_duration + scene_render_duration,
+                    shadow_map: shadow_map_render_duration,
+                    color_pass: scene_render_duration,
+                    meshlet_pass: meshlet_render_duration,
+                    ui: ui_render_duration,
+                },
+            );
+            self.gui = Some(gui);
+
             let renderer = self.renderer.as_mut().unwrap();
-            renderer
-                .camera_data_buffer
-                .update_contents(&[camera::GPUCameraData {
-                    pos: camera_pos,
-                    projview: camera_projview,
-                    view: camera_view,
-                }]);
-            renderer
-                .control_camera_data_buffer
-                .update_contents(&[camera::GPUCameraData {
-                    pos: ctrl_camera_pos,
-                    projview: ctrl_camera_projview,
-                    view: ctrl_camera_view,
-                }]);
-            renderer
-                .cull_camera_data_buffer
-                .update_contents(&[camera::GPUCameraData {
-                    pos: cull_camera_pos,
-                    projview: cull_camera_projview,
-                    view: cull_camera_view,
-                }]);
+            let gui = self.gui.as_mut().unwrap();
+            let vkctx = self.vkctx.as_mut().unwrap();
+            renderer.frustum.enabled = self.cull_camera_frustum_visible;
+            renderer.frustum.planes_color = self.frustum_planes_color;
+            renderer.frustum.edges_color = self.frustum_edges_color;
+            renderer.record_passes(image_index, &vkctx, gui);
 
-            if self.frame_number == 0 {
-                (
-                    std::time::Duration::from_secs(0),
-                    std::time::Duration::from_secs(0),
-                    std::time::Duration::from_secs(0),
-                    std::time::Duration::from_secs(0),
-                )
-            } else {
-                renderer.get_pass_durations()
-            }
-        };
+            let queue = vkctx.graphics_present_queue;
+            let render_finished_semaphore =
+                renderer.submit(&vkctx.device, queue, image_index, acquire_semaphore);
+            vkctx
+                .swapchain
+                .present(image_index, &[render_finished_semaphore], queue);
 
-        let current_timestamp = std::time::Instant::now();
-        let cpu_duration = current_timestamp - self.previous_frame_timestamp;
-        self.previous_frame_timestamp = current_timestamp;
-
-        // Take gui so self has no live borrows - is that a smell?
-        let mut gui = self.gui.take().unwrap();
-        gui.prepare_frame(
-            self,
-            fps_window::FrameDurations {
-                cpu: cpu_duration,
-                gpu: shadow_map_render_duration + scene_render_duration,
-                shadow_map: shadow_map_render_duration,
-                color_pass: scene_render_duration,
-                meshlet_pass: meshlet_render_duration,
-                ui: ui_render_duration,
-            },
-        );
-        self.gui = Some(gui);
-
-        let renderer = self.renderer.as_mut().unwrap();
-        let gui = self.gui.as_mut().unwrap();
-        let vkctx = self.vkctx.as_mut().unwrap();
-        renderer.frustum.enabled = self.cull_camera_frustum_visible;
-        renderer.frustum.planes_color = self.frustum_planes_color;
-        renderer.frustum.edges_color = self.frustum_edges_color;
-        renderer.record_passes(image_index, &vkctx, gui);
-
-        let queue = vkctx.graphics_present_queue;
-        let render_finished_semaphore =
-            renderer.submit(&vkctx.device, queue, image_index, acquire_semaphore);
-
-        vkctx
-            .swapchain
-            .present(image_index, &[render_finished_semaphore], queue);
-
-        unsafe { vkctx.device.device_wait_idle() }.expect("Failed to wait");
+            unsafe { vkctx.device.device_wait_idle() }.expect("Failed to wait");
+        } else {
+            let vkctx = self.vkctx.as_mut().unwrap();
+            let renderer = self.renderer2.as_mut().unwrap();
+            renderer.draw(vkctx);
+        }
 
         self.frame_number += 1;
     }

@@ -14,6 +14,7 @@ mod meshlet_bounding_sphere;
 mod overlay_drawable;
 mod renderer;
 mod skybox;
+mod unfuck_render_loop;
 mod vkutils;
 
 extern crate nalgebra_glm as glm;
