@@ -1,5 +1,8 @@
+use crate::camera::GPUCameraData;
+use crate::grid2::Grid2;
 use crate::vkutils::{self, vk_destroy::VkDestroy};
 use ash::vk;
+use glm;
 
 pub struct Renderer2 {
     vk: ash::Device,
@@ -8,6 +11,9 @@ pub struct Renderer2 {
 
     render_target: vkutils::image::Image,
     depth_image: vkutils::image::Image,
+
+    view_camera_data_buffer: vkutils::buffer::Buffer,
+    grid: Grid2,
 
     render_finished_semaphore: vk::Semaphore,
 }
@@ -18,6 +24,7 @@ impl std::ops::Drop for Renderer2 {
         unsafe {
             self.render_target.vk_destroy();
             self.depth_image.vk_destroy();
+            self.view_camera_data_buffer.vk_destroy();
             vk.destroy_semaphore(self.render_finished_semaphore, None);
         }
     }
@@ -55,19 +62,37 @@ impl Renderer2 {
 
         let render_finished_semaphore = ctx.create_semaphore_vk();
 
+        let view_camera_data_buffer = ctx.create_bar_buffer(
+            size_of::<GPUCameraData>(),
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+        );
+
+        let grid = Grid2::new(&ctx, view_camera_data_buffer.device_address.unwrap())
+            .expect("Failed to instantiate Grid object");
+
         Self {
             vk: ctx.device.clone(),
             command_buffers,
             extent,
             render_target,
             depth_image,
+            view_camera_data_buffer,
+            grid,
             render_finished_semaphore,
         }
     }
 
-    pub fn draw(&self, vkctx: &mut vkutils::context::VulkanContext) {
-        println!("Draw!");
+    // TODO make type safe - don't rely on tuple indices - easy to mix
+    pub fn update_gpu_camera_data(&self, view_camera_data: (glm::Vec4, glm::Mat4, glm::Mat4)) {
+        self.view_camera_data_buffer
+            .update_contents(&[GPUCameraData {
+                pos: view_camera_data.0,
+                projview: view_camera_data.1,
+                view: view_camera_data.2,
+            }]);
+    }
 
+    pub fn draw(&self, vkctx: &mut vkutils::context::VulkanContext) {
         let (image_index, acquire_semaphore) =
             { vkctx.swapchain.acquire_next_image(!0, vk::Fence::null()) };
 
@@ -168,6 +193,8 @@ impl Renderer2 {
 
                 vk.cmd_begin_rendering(command_buffer, &rendering_info);
             }
+
+            self.grid.record(command_buffer);
 
             vk.cmd_end_rendering(command_buffer);
 

@@ -151,7 +151,13 @@ impl ApplicationHandler for App {
             )
         };
 
-        let use_old_render_logic = !true;
+        let use_old_render_logic = if cfg!(feature = "old_renderer") {
+            true
+        } else if cfg!(feature = "new_renderer") {
+            false
+        } else {
+            panic!("Unknown renderer")
+        };
 
         if use_old_render_logic {
             let (image_index, acquire_semaphore) = {
@@ -238,6 +244,7 @@ impl ApplicationHandler for App {
         } else {
             let vkctx = self.vkctx.as_mut().unwrap();
             let renderer = self.renderer2.as_mut().unwrap();
+            renderer.update_gpu_camera_data((camera_pos, camera_projview, camera_view));
             renderer.draw(vkctx);
         }
 

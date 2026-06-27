@@ -40,6 +40,16 @@ fn main() {
                     .to_str()
                     .expect("Could not convert file_name OsString to string slice")
                     .starts_with("frustum_cull")
+                && !f
+                    .file_name()
+                    .to_str()
+                    .expect("Could not convert file_name OsString to string slice")
+                    .starts_with("grid2_common")
+                && !f
+                    .file_name()
+                    .to_str()
+                    .expect("Could not convert file_name OsString to string slice")
+                    .starts_with("camera_data")
         })
         .map(|file| file.as_ref().unwrap().path())
         .collect::<Vec<_>>();

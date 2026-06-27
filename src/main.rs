@@ -8,6 +8,7 @@ mod dir_light;
 mod fps_window;
 mod frustum;
 mod grid;
+mod grid2;
 mod gui;
 mod gui_scene_node;
 mod meshlet_bounding_sphere;
