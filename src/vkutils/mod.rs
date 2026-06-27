@@ -13,6 +13,7 @@ pub mod physical_device;
 pub mod push_constants;
 pub mod sampler;
 pub mod semaphore;
+pub mod shaders;
 pub mod swapchain;
 pub mod timestamp_query;
 pub mod vk_destroy;

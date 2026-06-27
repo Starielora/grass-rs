@@ -1,8 +1,7 @@
-use std::ffi::CStr;
-
 use ash::vk;
 
 use crate::vkutils;
+use crate::vkutils::shaders;
 
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
@@ -38,31 +37,23 @@ impl Grid2 {
 
         let pipeline_layout = create_pipeline_layout(vkctx.bindless_descriptor_set.layout, device);
 
-        let shader_main = CStr::from_bytes_with_nul(b"main\0")?;
+        let vs = &shaders::GRID_VERT;
+        let fs = &shaders::GRID_FRAG;
 
-        let mut vs_spv_file = std::fs::File::open("target/debug/grid2.vert.spv")?;
-        let vs_spv = ash::util::read_spv(&mut vs_spv_file)?;
-        let vs_shader_module_create_info = vk::ShaderModuleCreateInfo::default().code(&vs_spv);
-        let vs_module =
-            unsafe { device.create_shader_module(&vs_shader_module_create_info, None) }?;
-
-        let mut fs_spv_file = std::fs::File::open("target/debug/grid2.frag.spv")?;
-        let fs_spv = ash::util::read_spv(&mut fs_spv_file)?;
-        let fs_shader_module_create_info = vk::ShaderModuleCreateInfo::default().code(&fs_spv);
-        let fs_module =
-            unsafe { device.create_shader_module(&fs_shader_module_create_info, None) }?;
+        let vs_module = shaders::create_shader_module(device, vs.spv)?;
+        let fs_module = shaders::create_shader_module(device, fs.spv)?;
 
         let shader_stages = [
             vk::PipelineShaderStageCreateInfo {
                 stage: vk::ShaderStageFlags::VERTEX,
                 module: vs_module,
-                p_name: shader_main.as_ptr(),
+                p_name: vs.entry_point_name(),
                 ..Default::default()
             },
             vk::PipelineShaderStageCreateInfo {
                 stage: vk::ShaderStageFlags::FRAGMENT,
                 module: fs_module,
-                p_name: shader_main.as_ptr(),
+                p_name: fs.entry_point_name(),
                 ..Default::default()
             },
         ];
