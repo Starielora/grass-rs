@@ -118,6 +118,24 @@ impl Camera {
             }
         }
     }
+
+    pub fn set_aspect(&mut self, width: f32, height: f32) {
+        // refresh caches (used when switching projection type)
+        self.perspective_projection_props.aspect = width / height;
+        self.orthographic_projection_props = projection::orthtographic::Properties::new(
+            width,
+            height,
+            self.orthographic_projection_props.scale[0],
+        );
+        // update active projection in place (preserves its other edited fields)
+        match &mut self.current_projection {
+            projection::Projection::Perspective(p) => p.aspect = width / height,
+            projection::Projection::Orthographic(o) => {
+                *o = projection::orthtographic::Properties::new(width, height, o.scale[0]);
+            }
+        }
+        self.projection_matrix = self.current_projection.compute_matrix();
+    }
 }
 
 fn arcball_from_fps(

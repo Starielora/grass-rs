@@ -7,7 +7,6 @@ use glm;
 pub struct Renderer2 {
     vk: ash::Device,
     command_buffers: std::vec::Vec<vk::CommandBuffer>,
-    extent: vk::Extent2D,
 
     render_target: vkutils::image::Image,
     depth_image: vkutils::image::Image,
@@ -30,6 +29,11 @@ impl std::ops::Drop for Renderer2 {
     }
 }
 
+pub enum FrameOutcome {
+    Presented,
+    RebuildSwapchain,
+}
+
 impl Renderer2 {
     pub fn new(ctx: &mut vkutils::context::VulkanContext) -> Renderer2 {
         let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
@@ -37,28 +41,8 @@ impl Renderer2 {
             ctx.swapchain.images.len().try_into().unwrap(),
         );
 
-        let format = ctx.swapchain.surface_format.format;
-        let extent = ctx.swapchain.extent;
-
-        let render_target = ctx.create_image(
-            format,
-            extent,
-            1,
-            vk::SampleCountFlags::TYPE_8,
-            vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC,
-            vk::ImageAspectFlags::COLOR,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-        );
-
-        let depth_image = ctx.create_image(
-            ctx.depth_format,
-            extent,
-            1,
-            vk::SampleCountFlags::TYPE_8,
-            vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
-            vk::ImageAspectFlags::DEPTH,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-        );
+        let render_target = get_render_target_image(&ctx);
+        let depth_image = get_depth_image(&ctx);
 
         let render_finished_semaphore = ctx.create_semaphore_vk();
 
@@ -67,13 +51,18 @@ impl Renderer2 {
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
 
-        let grid = Grid2::new(&ctx, view_camera_data_buffer.device_address.unwrap())
-            .expect("Failed to instantiate Grid object");
+        let grid = Grid2::new(
+            &ctx.device,
+            ctx.swapchain.surface_format.format,
+            ctx.depth_format,
+            ctx.bindless_descriptor_set.layout,
+            view_camera_data_buffer.device_address.unwrap(),
+        )
+        .expect("Failed to instantiate Grid object");
 
         Self {
             vk: ctx.device.clone(),
             command_buffers,
-            extent,
             render_target,
             depth_image,
             view_camera_data_buffer,
@@ -92,9 +81,26 @@ impl Renderer2 {
             }]);
     }
 
-    pub fn draw(&self, vkctx: &mut vkutils::context::VulkanContext) {
-        let (image_index, acquire_semaphore) =
-            { vkctx.swapchain.acquire_next_image(!0, vk::Fence::null()) };
+    pub fn resize(&mut self, ctx: &vkutils::context::VulkanContext) {
+        let render_target = get_render_target_image(&ctx);
+        let depth_image = get_depth_image(&ctx);
+
+        self.render_target.vk_destroy();
+        self.depth_image.vk_destroy();
+
+        self.render_target = render_target;
+        self.depth_image = depth_image;
+    }
+
+    pub fn draw(&self, vkctx: &mut vkutils::context::VulkanContext) -> FrameOutcome {
+        let (acquire_result, acquire_semaphore) =
+            vkctx.swapchain.acquire_next_image(!0, vk::Fence::null());
+
+        let (image_index, is_swapchain_suboptimal) = match acquire_result {
+            Ok(v) => v,
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => return FrameOutcome::RebuildSwapchain,
+            Err(e) => panic!("{e:?}"),
+        };
 
         let image_index: usize = image_index.try_into().unwrap();
 
@@ -125,7 +131,6 @@ impl Renderer2 {
                 },
             };
 
-            let extent = self.extent;
             let (color_image, color_image_view) =
                 (self.render_target.handle, self.render_target.view);
             let (depth_image, depth_image_view) = (self.depth_image.handle, self.depth_image.view);
@@ -184,7 +189,7 @@ impl Renderer2 {
 
                 let rendering_info = vk::RenderingInfo::default()
                     .render_area(vk::Rect2D {
-                        extent,
+                        extent: vkctx.swapchain.extent,
                         offset: vk::Offset2D { x: 0, y: 0 },
                     })
                     .layer_count(1)
@@ -194,7 +199,7 @@ impl Renderer2 {
                 vk.cmd_begin_rendering(command_buffer, &rendering_info);
             }
 
-            self.grid.record(command_buffer);
+            self.grid.record(command_buffer, vkctx.swapchain.extent);
 
             vk.cmd_end_rendering(command_buffer);
 
@@ -245,8 +250,8 @@ impl Renderer2 {
                     .src_subresource(subresource)
                     .dst_subresource(subresource)
                     .extent(vk::Extent3D {
-                        width: self.extent.width,
-                        height: self.extent.height,
+                        width: vkctx.swapchain.extent.width,
+                        height: vkctx.swapchain.extent.height,
                         depth: 1,
                     });
 
@@ -295,13 +300,54 @@ impl Renderer2 {
             vk.queue_submit(queue, &submits, vk::Fence::null())
                 .expect("Failed to submit");
 
-            vkctx.swapchain.present(
+            let present_result = vkctx.swapchain.present(
                 image_index.try_into().unwrap(),
                 &[render_finished_semaphore],
                 queue,
             );
 
             vkctx.device.device_wait_idle().expect("Failed to wait");
+
+            match present_result {
+                Ok(false) => {
+                    if is_swapchain_suboptimal {
+                        return FrameOutcome::RebuildSwapchain;
+                    } else {
+                        return FrameOutcome::Presented;
+                    }
+                }
+                Ok(true) => return FrameOutcome::RebuildSwapchain,
+                Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => return FrameOutcome::RebuildSwapchain,
+                Err(e) => panic!("{e:?}"), // TODO this may return surface lost, which should be easy to handle
+            }
         }
     }
+}
+
+fn get_render_target_image(ctx: &vkutils::context::VulkanContext) -> vkutils::image::Image {
+    let format = ctx.swapchain.surface_format.format;
+    let extent = ctx.swapchain.extent;
+
+    ctx.create_image(
+        format,
+        extent,
+        1,
+        vk::SampleCountFlags::TYPE_8,
+        vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC,
+        vk::ImageAspectFlags::COLOR,
+        vk::MemoryPropertyFlags::DEVICE_LOCAL,
+    )
+}
+
+fn get_depth_image(ctx: &vkutils::context::VulkanContext) -> vkutils::image::Image {
+    let extent = ctx.swapchain.extent;
+    ctx.create_image(
+        ctx.depth_format,
+        extent,
+        1,
+        vk::SampleCountFlags::TYPE_8,
+        vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+        vk::ImageAspectFlags::DEPTH,
+        vk::MemoryPropertyFlags::DEVICE_LOCAL,
+    )
 }

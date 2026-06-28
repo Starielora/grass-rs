@@ -33,6 +33,7 @@ pub struct App {
     cursor_visible: bool,
     previous_frame_timestamp: std::time::Instant,
     frame_number: usize,
+    rebuild_swapchain: bool,
 }
 
 impl App {
@@ -55,6 +56,7 @@ impl App {
             cursor_visible: false,
             previous_frame_timestamp: std::time::Instant::now(),
             frame_number: 0,
+            rebuild_swapchain: false,
         }
     }
 }
@@ -106,7 +108,7 @@ impl ApplicationHandler for App {
                 .update_pos();
         }
 
-        let (camera_pos, camera_projview, camera_view) = {
+        let (mut camera_pos, mut camera_projview, mut camera_view) = {
             let camera = self
                 .cameras
                 .iter_mut()
@@ -160,9 +162,14 @@ impl ApplicationHandler for App {
         };
 
         if use_old_render_logic {
-            let (image_index, acquire_semaphore) = {
+            let (result, acquire_semaphore) = {
                 let vkctx = self.vkctx.as_mut().unwrap();
                 vkctx.swapchain.acquire_next_image(!0, vk::Fence::null())
+            };
+
+            let image_index = match result {
+                Ok((image_index, _is_suboptimal)) => image_index,
+                Err(e) => panic!("{e:?}"),
             };
 
             let (
@@ -236,7 +243,7 @@ impl ApplicationHandler for App {
             let queue = vkctx.graphics_present_queue;
             let render_finished_semaphore =
                 renderer.submit(&vkctx.device, queue, image_index, acquire_semaphore);
-            vkctx
+            let _ = vkctx
                 .swapchain
                 .present(image_index, &[render_finished_semaphore], queue);
 
@@ -244,8 +251,43 @@ impl ApplicationHandler for App {
         } else {
             let vkctx = self.vkctx.as_mut().unwrap();
             let renderer = self.renderer2.as_mut().unwrap();
+            if self.rebuild_swapchain {
+                let size = self.window.as_ref().unwrap().inner_size();
+                if size.width == 0 || size.height == 0 {
+                    return; // stay minimized; flag remains set, retried next frame
+                }
+                vkctx.swapchain.rebuild(self.window.as_ref().unwrap());
+                let extent = vkctx.swapchain.extent;
+                for camera in self.cameras.iter_mut().flatten() {
+                    camera.set_aspect(extent.width as f32, extent.height as f32);
+                }
+
+                renderer.resize(&vkctx);
+                self.rebuild_swapchain = false;
+                (camera_pos, camera_projview, camera_view) = {
+                    let camera = self
+                        .cameras
+                        .iter_mut()
+                        .nth(self.current_view_camera_index)
+                        .unwrap()
+                        .as_mut()
+                        .unwrap();
+                    (
+                        camera.pos(),
+                        camera.get_projection_view(),
+                        camera.get_view(),
+                    )
+                };
+            }
             renderer.update_gpu_camera_data((camera_pos, camera_projview, camera_view));
-            renderer.draw(vkctx);
+            let frame_outcome = renderer.draw(vkctx);
+
+            match frame_outcome {
+                unfuck_render_loop::FrameOutcome::Presented => {}
+                unfuck_render_loop::FrameOutcome::RebuildSwapchain => {
+                    self.rebuild_swapchain = true;
+                }
+            }
         }
 
         self.frame_number += 1;
@@ -367,6 +409,9 @@ impl ApplicationHandler for App {
             winit::event::WindowEvent::ModifiersChanged(state) => {
                 self.keyboard_modifiers_state = state;
                 println!("Modifiers changed to {:?}", state);
+            }
+            winit::event::WindowEvent::Resized(_) => {
+                self.rebuild_swapchain = true;
             }
             _ => (),
         }

@@ -3,7 +3,7 @@ pub mod perspective {
     // Vec1 instead of simply f32 for easier imgui integration, which requires array ref
     #[derive(Debug, Clone)]
     pub struct Properties {
-        pub(super) aspect: f32,
+        pub(in crate::camera) aspect: f32,
         pub(super) fov: glm::Vec1,
         pub(super) near: glm::Vec1,
         pub(super) far: glm::Vec1,
@@ -31,7 +31,7 @@ pub mod orthtographic {
         pub(super) top: f32,
         pub(super) near: f32,
         pub(super) far: f32,
-        pub(super) scale: [f32; 1],
+        pub(in crate::camera) scale: [f32; 1],
     }
 
     impl Properties {

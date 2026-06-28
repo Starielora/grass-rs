@@ -1,6 +1,5 @@
 use ash::vk;
 
-use crate::vkutils;
 use crate::vkutils::shaders;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -27,21 +26,19 @@ impl std::ops::Drop for Grid2 {
 
 impl Grid2 {
     pub fn new(
-        vkctx: &vkutils::context::VulkanContext,
+        vk: &ash::Device,
+        surface_format: vk::Format,
+        depth_format: vk::Format,
+        descriptor_set_layout: vk::DescriptorSetLayout,
         view_camera: vk::DeviceAddress,
     ) -> Result<Grid2, Box<dyn std::error::Error>> {
-        let device = &vkctx.device;
-        let window_extent = &vkctx.swapchain.extent;
-        let swapchain_format = vkctx.swapchain.surface_format.format;
-        let depth_format = vkctx.depth_format;
-
-        let pipeline_layout = create_pipeline_layout(vkctx.bindless_descriptor_set.layout, device);
+        let pipeline_layout = create_pipeline_layout(descriptor_set_layout, vk);
 
         let vs = &shaders::GRID_VERT;
         let fs = &shaders::GRID_FRAG;
 
-        let vs_module = shaders::create_shader_module(device, vs.spv)?;
-        let fs_module = shaders::create_shader_module(device, fs.spv)?;
+        let vs_module = shaders::create_shader_module(vk, vs.spv)?;
+        let fs_module = shaders::create_shader_module(vk, fs.spv)?;
 
         let shader_stages = [
             vk::PipelineShaderStageCreateInfo {
@@ -67,23 +64,12 @@ impl Grid2 {
             ..Default::default()
         };
 
-        let viewport = vk::Viewport {
-            width: window_extent.width as f32,
-            height: window_extent.height as f32,
-            max_depth: 1.0,
-            ..Default::default()
-        };
-
-        let scissors = vk::Rect2D {
-            extent: *window_extent,
-            ..Default::default()
-        };
-
-        let viewports = [viewport];
-        let scissors = [scissors];
         let viewport_state = vk::PipelineViewportStateCreateInfo::default()
-            .viewports(&viewports)
-            .scissors(&scissors);
+            .viewport_count(1)
+            .scissor_count(1);
+
+        let dynamic_state = vk::PipelineDynamicStateCreateInfo::default()
+            .dynamic_states(&[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR]);
 
         let rasterization_state = vk::PipelineRasterizationStateCreateInfo {
             polygon_mode: vk::PolygonMode::FILL,
@@ -131,7 +117,7 @@ impl Grid2 {
             .attachments(&attachments)
             .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
-        let color_formats = [swapchain_format];
+        let color_formats = [surface_format];
 
         let mut rendering_info = vk::PipelineRenderingCreateInfo::default()
             .color_attachment_formats(&color_formats)
@@ -143,6 +129,7 @@ impl Grid2 {
             .vertex_input_state(&vertex_input_state)
             .input_assembly_state(&input_assembly_state)
             .viewport_state(&viewport_state)
+            .dynamic_state(&dynamic_state)
             .rasterization_state(&rasterization_state)
             .multisample_state(&multisample_state)
             .depth_stencil_state(&depth_stencil_state)
@@ -150,19 +137,18 @@ impl Grid2 {
             .layout(pipeline_layout);
 
         let pipelines = unsafe {
-            device
-                .create_graphics_pipelines(vk::PipelineCache::null(), &[create_info], None)
+            vk.create_graphics_pipelines(vk::PipelineCache::null(), &[create_info], None)
                 .unwrap()
         };
 
         unsafe {
-            device.destroy_shader_module(vs_module, None);
-            device.destroy_shader_module(fs_module, None);
+            vk.destroy_shader_module(vs_module, None);
+            vk.destroy_shader_module(fs_module, None);
         }
 
         Ok(Self {
             pipeline: pipelines[0],
-            vk: device.clone(),
+            vk: vk.clone(),
             pipeline_layout,
             push_constants: PushConstants {
                 view_camera: view_camera,
@@ -179,9 +165,19 @@ impl Grid2 {
         }
     }
 
-    pub fn record(&self, command_buffer: vk::CommandBuffer) {
+    pub fn record(&self, command_buffer: vk::CommandBuffer, extent: vk::Extent2D) {
         unsafe {
             let vk = &self.vk;
+            let viewport = vk::Viewport {
+                width: extent.width as f32,
+                height: extent.height as f32,
+                max_depth: 1.0,
+                ..Default::default()
+            };
+            let scissors = vk::Rect2D {
+                extent: extent,
+                ..Default::default()
+            };
 
             vk.cmd_bind_pipeline(
                 command_buffer,
@@ -189,6 +185,8 @@ impl Grid2 {
                 self.pipeline,
             );
 
+            vk.cmd_set_viewport(command_buffer, 0, &[viewport]);
+            vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
             vk.cmd_push_constants(
                 command_buffer,
                 self.pipeline_layout,
