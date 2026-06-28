@@ -7,6 +7,8 @@ use std::{
 
 fn main() {
     println!("cargo:warning={}", "Building shaders.");
+    println!("cargo:rerun-if-changed=shaders");
+    println!("cargo:rerun-if-changed=build.rs");
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let target_dir = Path::new(&out_dir)
