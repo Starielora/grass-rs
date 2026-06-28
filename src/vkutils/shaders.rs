@@ -24,9 +24,9 @@ impl ShaderData {
 }
 
 macro_rules! shader_data {
-    ($path:literal, $entry:ident) => {
+    ($name:literal, $entry:ident) => {
         ShaderData {
-            spv: include_bytes!($path),
+            spv: include_bytes!(concat!(env!("OUT_DIR"), "/", $name)),
             entry_point_name: $entry,
         }
     };
@@ -34,5 +34,5 @@ macro_rules! shader_data {
 
 pub static MAIN: &[u8] = b"main\0";
 
-pub static GRID_VERT: ShaderData = shader_data!("../../target/debug/grid2.vert.spv", MAIN);
-pub static GRID_FRAG: ShaderData = shader_data!("../../target/debug/grid2.frag.spv", MAIN);
+pub static GRID_VERT: ShaderData = shader_data!("grid2.vert.spv", MAIN);
+pub static GRID_FRAG: ShaderData = shader_data!("grid2.frag.spv", MAIN);
