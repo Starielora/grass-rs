@@ -1,6 +1,8 @@
 use ash::vk;
 use winit::raw_window_handle::HasDisplayHandle;
 
+use crate::vkutils::load_cubemap_texture;
+
 use super::{
     buffer, command_pool, debug_utils, descriptor_set, device, device_queue, image, instance,
     physical_device, semaphore, swapchain, vk_destroy::VkDestroy,
@@ -231,6 +233,10 @@ impl VulkanContext {
         staging_buffer.vk_destroy();
 
         device_buffer
+    }
+
+    pub fn load_cubemap_texture(&self, files: [&[u8]; 6]) -> image::Image {
+        load_cubemap_texture::load(files, self)
     }
 }
 

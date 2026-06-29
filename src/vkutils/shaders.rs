@@ -23,7 +23,7 @@ impl ShaderData {
     }
 }
 
-macro_rules! shader_data {
+macro_rules! embed_shader_data {
     ($name:literal, $entry:ident) => {
         ShaderData {
             spv: include_bytes!(concat!(env!("OUT_DIR"), "/", $name)),
@@ -34,5 +34,8 @@ macro_rules! shader_data {
 
 pub static MAIN: &[u8] = b"main\0";
 
-pub static GRID_VERT: ShaderData = shader_data!("grid2.vert.spv", MAIN);
-pub static GRID_FRAG: ShaderData = shader_data!("grid2.frag.spv", MAIN);
+pub static GRID_VERT: ShaderData = embed_shader_data!("grid2.vert.spv", MAIN);
+pub static GRID_FRAG: ShaderData = embed_shader_data!("grid2.frag.spv", MAIN);
+
+pub static SKYBOX_VERT: ShaderData = embed_shader_data!("skybox2.vert.spv", MAIN);
+pub static SKYBOX_FRAG: ShaderData = embed_shader_data!("skybox2.frag.spv", MAIN);

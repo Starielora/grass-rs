@@ -15,6 +15,7 @@ mod meshlet_bounding_sphere;
 mod overlay_drawable;
 mod renderer;
 mod skybox;
+mod skybox2;
 mod unfuck_render_loop;
 mod vkutils;
 

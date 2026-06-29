@@ -9,8 +9,8 @@ struct PushConstants {
 }
 
 pub struct Grid2 {
-    pipeline: vk::Pipeline,
     vk: ash::Device,
+    pipeline: vk::Pipeline,
     pipeline_layout: vk::PipelineLayout,
     push_constants: PushConstants,
 }
@@ -32,7 +32,7 @@ impl Grid2 {
         descriptor_set_layout: vk::DescriptorSetLayout,
         view_camera: vk::DeviceAddress,
     ) -> Result<Grid2, Box<dyn std::error::Error>> {
-        let pipeline_layout = create_pipeline_layout(descriptor_set_layout, vk);
+        let pipeline_layout = create_pipeline_layout(vk, descriptor_set_layout);
 
         let vs = &shaders::GRID_VERT;
         let fs = &shaders::GRID_FRAG;
@@ -147,8 +147,8 @@ impl Grid2 {
         }
 
         Ok(Self {
-            pipeline: pipelines[0],
             vk: vk.clone(),
+            pipeline: pipelines[0],
             pipeline_layout,
             push_constants: PushConstants {
                 view_camera: view_camera,
@@ -190,7 +190,7 @@ impl Grid2 {
             vk.cmd_push_constants(
                 command_buffer,
                 self.pipeline_layout,
-                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                get_push_constans_stage_flags(),
                 0,
                 self.push_constants_data(),
             );
@@ -200,17 +200,21 @@ impl Grid2 {
     }
 }
 
+fn get_push_constans_stage_flags() -> vk::ShaderStageFlags {
+    vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT
+}
+
 fn get_push_constant_range() -> [vk::PushConstantRange; 1] {
     [vk::PushConstantRange {
-        stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+        stage_flags: get_push_constans_stage_flags(),
         offset: 0,
         size: std::mem::size_of::<PushConstants>() as u32,
     }]
 }
 
 fn create_pipeline_layout(
-    descriptor_set_layout: vk::DescriptorSetLayout,
     vk: &ash::Device,
+    descriptor_set_layout: vk::DescriptorSetLayout,
 ) -> vk::PipelineLayout {
     let set_layouts = [descriptor_set_layout];
     let push_constants_range = get_push_constant_range();

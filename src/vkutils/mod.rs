@@ -9,6 +9,7 @@ pub mod device_queue;
 pub mod fence;
 pub mod image;
 pub mod instance;
+mod load_cubemap_texture;
 pub mod physical_device;
 pub mod push_constants;
 pub mod sampler;
