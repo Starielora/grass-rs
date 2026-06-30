@@ -9,7 +9,7 @@ pub struct Skybox2 {
     descriptor_set: vk::DescriptorSet,
     push_constants: PushConstants,
     images: std::vec::Vec<vkutils::image::Image>,
-    sampler: vk::Sampler,
+    sampler: vkutils::sampler::Sampler,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -27,7 +27,7 @@ impl std::ops::Drop for Skybox2 {
             for image in &self.images {
                 image.vk_destroy();
             }
-            self.vk.destroy_sampler(self.sampler, None);
+            self.sampler.vk_destroy();
         }
     }
 }
@@ -48,53 +48,31 @@ impl Skybox2 {
         let texture1 = ctx.load_cubemap_texture(SKYBOX1_TEXTURES);
         let texture2 = ctx.load_cubemap_texture(SKYBOX2_TEXTURES);
 
-        let sampler_create_info = vk::SamplerCreateInfo::default()
-            .mag_filter(vk::Filter::LINEAR)
-            .min_filter(vk::Filter::LINEAR)
-            .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
-            .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-            .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-            .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-            .mip_lod_bias(0.0)
-            .compare_op(vk::CompareOp::NEVER)
-            .min_lod(0.0)
-            .max_lod(1.0) // TODO mip levels
-            .border_color(vk::BorderColor::INT_OPAQUE_WHITE)
-            .max_anisotropy(1.0);
-
-        let sampler = unsafe {
-            ctx.device
-                .create_sampler(&sampler_create_info, None)
-                .expect("Failed to create image sampler")
-        };
-
+        let sampler = ctx.create_sampler();
         let textures = vec![texture1, texture2];
 
         let mut descriptor_image_infos = std::vec::Vec::new();
         let mut descriptor_writes = std::vec::Vec::new();
-        let mut skybox_resource_id = 0;
 
         for image in &textures {
             let descriptor_image_info = [vk::DescriptorImageInfo::default()
-                .sampler(sampler)
+                .sampler(sampler.handle)
                 .image_view(image.view)
                 .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
 
             descriptor_image_infos.push(descriptor_image_info);
         }
 
-        for info in &descriptor_image_infos {
+        for (i, info) in descriptor_image_infos.iter().enumerate() {
             descriptor_writes.push(
                 vk::WriteDescriptorSet::default()
                     .dst_set(ctx.bindless_descriptor_set.handle)
                     .dst_binding(vkutils::descriptor_set::bindless::CUBE_SAMPLER_BINDING)
                     .descriptor_count(1)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .dst_array_element(skybox_resource_id)
+                    .dst_array_element(i as u32)
                     .image_info(info),
             );
-
-            skybox_resource_id += 1;
         }
 
         let descriptor_copies = [];
@@ -153,16 +131,10 @@ impl Skybox2 {
                 &dynamic_offsets,
             );
 
-            vk.cmd_bind_pipeline(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline,
-            );
-
             vk.cmd_push_constants(
                 command_buffer,
                 self.pipeline_layout,
-                get_push_constans_stage_flags(),
+                get_push_constants_stage_flags(),
                 0,
                 self.push_constants_data(),
             );
@@ -303,13 +275,13 @@ fn create_graphics_pipeline(
     Ok(pipelines[0])
 }
 
-fn get_push_constans_stage_flags() -> vk::ShaderStageFlags {
+fn get_push_constants_stage_flags() -> vk::ShaderStageFlags {
     vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT
 }
 
 fn get_push_constant_range() -> [vk::PushConstantRange; 1] {
     [vk::PushConstantRange {
-        stage_flags: get_push_constans_stage_flags(),
+        stage_flags: get_push_constants_stage_flags(),
         offset: 0,
         size: std::mem::size_of::<PushConstants>() as u32,
     }]

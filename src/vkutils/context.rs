@@ -1,7 +1,7 @@
 use ash::vk;
 use winit::raw_window_handle::HasDisplayHandle;
 
-use crate::vkutils::load_cubemap_texture;
+use crate::vkutils::{load_cubemap_texture, sampler};
 
 use super::{
     buffer, command_pool, debug_utils, descriptor_set, device, device_queue, image, instance,
@@ -194,6 +194,10 @@ impl VulkanContext {
 
     pub fn create_semaphore_vk(&self) -> vk::Semaphore {
         semaphore::new_vk(self.device.clone())
+    }
+
+    pub fn create_sampler(&self) -> sampler::Sampler {
+        sampler::Sampler::new(self.device.clone())
     }
 
     pub fn upload_buffer<T: std::marker::Copy>(
