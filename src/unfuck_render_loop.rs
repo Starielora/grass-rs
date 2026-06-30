@@ -1,4 +1,3 @@
-use crate::assets;
 use crate::camera::GPUCameraData;
 use crate::grid2::Grid2;
 use crate::skybox2::Skybox2;
