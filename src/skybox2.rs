@@ -1,6 +1,6 @@
 use ash::vk;
 
-use crate::vkutils::{self, shaders, vk_destroy::VkDestroy};
+use crate::vkutils::{self, embedded_textures, shaders, vk_destroy::VkDestroy};
 
 pub struct Skybox2 {
     vk: ash::Device,
@@ -45,8 +45,8 @@ impl Skybox2 {
         let pipeline_layout = create_pipeline_layout(vk, descriptor_set_layout);
         let pipeline = create_graphics_pipeline(vk, surface_format, depth_format, pipeline_layout)?;
 
-        let texture1 = ctx.load_cubemap_texture(SKYBOX1_TEXTURES);
-        let texture2 = ctx.load_cubemap_texture(SKYBOX2_TEXTURES);
+        let texture1 = ctx.load_cubemap_texture(embedded_textures::SKYBOX1);
+        let texture2 = ctx.load_cubemap_texture(embedded_textures::SKYBOX2);
 
         let sampler = ctx.create_sampler();
         let textures = vec![texture1, texture2];
@@ -264,7 +264,7 @@ fn create_graphics_pipeline(
 
     let pipelines = unsafe {
         vk.create_graphics_pipelines(vk::PipelineCache::null(), &[create_info], None)
-            .unwrap()
+            .expect("Failed to create graphics pipeline for skybox")
     };
 
     unsafe {
@@ -298,34 +298,6 @@ fn create_pipeline_layout(
         .push_constant_ranges(&push_constants_range);
     unsafe {
         vk.create_pipeline_layout(&create_info, None)
-            .expect("Failed to create traditional pipeline layout")
+            .expect("Failed to create pipeline layout")
     }
 }
-
-macro_rules! embed_textures {
-    ([ $($path:literal),* $(,)? ]) => {
-            [
-                $(
-                    include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/", $path))
-                ),*
-            ]
-    };
-}
-
-static SKYBOX1_TEXTURES: [&'static [u8]; 6] = embed_textures!([
-    "assets/skybox/daylight/Daylight Box_Right.png",
-    "assets/skybox/daylight/Daylight Box_Left.png",
-    "assets/skybox/daylight/Daylight Box_Top.png",
-    "assets/skybox/daylight/Daylight Box_Bottom.png",
-    "assets/skybox/daylight/Daylight Box_Front.png",
-    "assets/skybox/daylight/Daylight Box_Back.png",
-]);
-
-static SKYBOX2_TEXTURES: [&'static [u8]; 6] = embed_textures!([
-    "assets/skybox/learnopengl/right.png",
-    "assets/skybox/learnopengl/left.png",
-    "assets/skybox/learnopengl/top.png",
-    "assets/skybox/learnopengl/bottom.png",
-    "assets/skybox/learnopengl/front.png",
-    "assets/skybox/learnopengl/back.png",
-]);

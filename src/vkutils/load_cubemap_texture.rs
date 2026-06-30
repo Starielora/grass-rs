@@ -3,9 +3,17 @@ use ash::vk;
 use crate::vkutils::{self, vk_destroy::VkDestroy};
 
 pub fn load(images: [&[u8]; 6], vk: &vkutils::context::VulkanContext) -> vkutils::image::Image {
-    let (staging_buffer, width, height, single_image_size) =
-        load_textures_to_staging_buffer2(images, vk);
+    let staging_data = load_textures_to_staging_buffer(images, vk);
+    let image = transfer_data(vk, staging_data);
 
+    image
+}
+
+fn transfer_data(
+    vk: &vkutils::context::VulkanContext,
+    input: (vkutils::buffer::Buffer, u32, u32, isize),
+) -> vkutils::image::Image {
+    let (staging_buffer, width, height, single_image_size) = input;
     let format = vk::Format::R8G8B8A8_UNORM;
 
     let image = vkutils::image::Image::new(
@@ -53,10 +61,7 @@ pub fn load(images: [&[u8]; 6], vk: &vkutils::context::VulkanContext) -> vkutils
                     .mip_level(0)
                     .base_array_layer(face as u32)
                     .layer_count(1);
-                let image_extent = vk::Extent3D::default()
-                    .width(width as u32)
-                    .height(height as u32)
-                    .depth(1);
+                let image_extent = vk::Extent3D::default().width(width).height(height).depth(1);
                 let copy_region = vk::BufferImageCopy::default()
                     .image_subresource(image_subresource_layers)
                     .image_extent(image_extent)
@@ -92,13 +97,12 @@ pub fn load(images: [&[u8]; 6], vk: &vkutils::context::VulkanContext) -> vkutils
         subresource_range,
     );
 
-    // cleanup
     staging_buffer.vk_destroy();
 
     image
 }
 
-fn load_textures_to_staging_buffer2(
+fn load_textures_to_staging_buffer(
     files: [&[u8]; 6],
     vk: &vkutils::context::VulkanContext,
 ) -> (vkutils::buffer::Buffer, u32, u32, isize) {
