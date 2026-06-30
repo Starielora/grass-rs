@@ -1,4 +1,3 @@
-use crate::assets::{self, gltf_asset, TraditionalAsset};
 use crate::camera::GPUCameraData;
 use crate::grid2::Grid2;
 use crate::skybox2::Skybox2;
@@ -16,7 +15,6 @@ pub struct Renderer2 {
     view_camera_data_buffer: vkutils::buffer::Buffer,
     grid: Grid2,
     skybox: Skybox2,
-    _cube: TraditionalAsset,
 
     render_finished_semaphore: vk::Semaphore,
 }
@@ -64,27 +62,8 @@ impl Renderer2 {
         )
         .expect("Failed to instantiate Grid object");
 
-        // TODO I do not want this here.
-        // It's here because I want to quickly check if skybox is rendering correctly.
-        let cube_asset_data = gltf_asset::GltfAssetData::new("assets/cube.gltf");
-        let cube_asset = TraditionalAsset::from_gltf(&ctx, &cube_asset_data);
-        let (skybox_vertex_buffer_handle, skybox_index_buffer_handle, skybox_indices_count) =
-            match &cube_asset.meshes[0].primitives {
-                assets::mesh::Primitives::FixedVertexFunctionCombined(primitives) => (
-                    primitives.vb.handle,
-                    primitives.ib.handle,
-                    primitives.primitive_index_count[0] as usize,
-                ),
-                assets::mesh::Primitives::Meshlets(_) => unreachable!(),
-            };
-        let skybox = Skybox2::new(
-            &ctx,
-            skybox_vertex_buffer_handle,
-            skybox_index_buffer_handle,
-            skybox_indices_count,
-            view_camera_data_buffer.device_address.unwrap(),
-        )
-        .expect("Failed to instantiate skybox");
+        let skybox = Skybox2::new(&ctx, view_camera_data_buffer.device_address.unwrap())
+            .expect("Failed to instantiate skybox");
 
         Self {
             vk: ctx.device.clone(),
@@ -94,7 +73,6 @@ impl Renderer2 {
             view_camera_data_buffer,
             grid,
             skybox,
-            _cube: cube_asset,
             render_finished_semaphore,
         }
     }

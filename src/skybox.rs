@@ -74,16 +74,16 @@ fn create_graphics_pipeline(
             .binding(0)
             .format(vk::Format::R32G32B32_SFLOAT)
             .offset(0),
-        vk::VertexInputAttributeDescription::default()
-            .location(1)
-            .binding(0)
-            .format(vk::Format::R32G32B32_SFLOAT)
-            .offset((std::mem::size_of::<f32>() * 3) as u32),
-        vk::VertexInputAttributeDescription::default()
-            .location(2)
-            .binding(0)
-            .format(vk::Format::R32G32_SFLOAT)
-            .offset((std::mem::size_of::<f32>() * 6) as u32),
+        // vk::VertexInputAttributeDescription::default()
+        //     .location(1)
+        //     .binding(0)
+        //     .format(vk::Format::R32G32B32_SFLOAT)
+        //     .offset((std::mem::size_of::<f32>() * 3) as u32),
+        // vk::VertexInputAttributeDescription::default()
+        //     .location(2)
+        //     .binding(0)
+        //     .format(vk::Format::R32G32_SFLOAT)
+        //     .offset((std::mem::size_of::<f32>() * 6) as u32),
     ];
 
     let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::default()

@@ -1,16 +1,15 @@
 use ash::vk;
 
-use crate::vkutils::{self, shaders};
+use crate::vkutils::{self, shaders, vk_destroy::VkDestroy};
 
 pub struct Skybox2 {
     vk: ash::Device,
     pipeline: vk::Pipeline,
     pipeline_layout: vk::PipelineLayout,
     descriptor_set: vk::DescriptorSet,
-    vertex_buffer: vk::Buffer,
-    index_buffer: vk::Buffer,
-    indices_count: usize,
     push_constants: PushConstants,
+    images: std::vec::Vec<vkutils::image::Image>,
+    sampler: vk::Sampler,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -25,6 +24,10 @@ impl std::ops::Drop for Skybox2 {
         unsafe {
             self.vk.destroy_pipeline_layout(self.pipeline_layout, None);
             self.vk.destroy_pipeline(self.pipeline, None);
+            for image in &self.images {
+                image.vk_destroy();
+            }
+            self.vk.destroy_sampler(self.sampler, None);
         }
     }
 }
@@ -32,9 +35,6 @@ impl std::ops::Drop for Skybox2 {
 impl Skybox2 {
     pub fn new(
         ctx: &vkutils::context::VulkanContext,
-        vertex_buffer: vk::Buffer,
-        index_buffer: vk::Buffer,
-        indices_count: usize,
         view_camera: vk::DeviceAddress,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let vk = &ctx.device.clone();
@@ -113,10 +113,9 @@ impl Skybox2 {
             pipeline,
             pipeline_layout,
             descriptor_set: ctx.bindless_descriptor_set.handle,
-            vertex_buffer,
-            index_buffer,
-            indices_count,
             push_constants,
+            images: textures,
+            sampler,
         })
     }
 
@@ -168,11 +167,7 @@ impl Skybox2 {
                 self.push_constants_data(),
             );
 
-            let vertex_buffers = [self.vertex_buffer];
-            let offsets = [0];
-            vk.cmd_bind_vertex_buffers(command_buffer, 0, &vertex_buffers, &offsets);
-            vk.cmd_bind_index_buffer(command_buffer, self.index_buffer, 0, vk::IndexType::UINT32);
-            vk.cmd_draw_indexed(command_buffer, self.indices_count as u32, 1, 0, 0, 0);
+            vk.cmd_draw(command_buffer, 36, 1, 0, 0);
         }
     }
 
@@ -213,32 +208,7 @@ fn create_graphics_pipeline(
         },
     ];
 
-    let vertex_binding_desciptions = [vk::VertexInputBindingDescription::default()
-        .binding(0)
-        .stride((std::mem::size_of::<f32>() * 8) as u32)
-        .input_rate(vk::VertexInputRate::VERTEX)];
-
-    let vertex_attribute_descriptions = [
-        vk::VertexInputAttributeDescription::default()
-            .location(0)
-            .binding(0)
-            .format(vk::Format::R32G32B32_SFLOAT)
-            .offset(0),
-        vk::VertexInputAttributeDescription::default()
-            .location(1)
-            .binding(0)
-            .format(vk::Format::R32G32B32_SFLOAT)
-            .offset((std::mem::size_of::<f32>() * 3) as u32),
-        vk::VertexInputAttributeDescription::default()
-            .location(2)
-            .binding(0)
-            .format(vk::Format::R32G32_SFLOAT)
-            .offset((std::mem::size_of::<f32>() * 6) as u32),
-    ];
-
-    let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::default()
-        .vertex_binding_descriptions(&vertex_binding_desciptions)
-        .vertex_attribute_descriptions(&vertex_attribute_descriptions);
+    let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::default();
 
     let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo {
         topology: vk::PrimitiveTopology::TRIANGLE_LIST,
