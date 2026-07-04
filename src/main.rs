@@ -11,6 +11,7 @@ mod grid;
 mod grid2;
 mod gui;
 mod gui_scene_node;
+mod meshlet2;
 mod meshlet_bounding_sphere;
 mod overlay_drawable;
 mod renderer;
