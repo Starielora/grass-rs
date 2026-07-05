@@ -13,7 +13,6 @@ pub struct PushConstants {
     pub meshlet_vertices: vk::DeviceAddress,
     pub meshlet_triangles: vk::DeviceAddress,
     pub meshlets: vk::DeviceAddress,
-    pub geometry: vk::DeviceAddress,
     pub geometry_instances: vk::DeviceAddress,
     pub meshlet_instances: vk::DeviceAddress,
     pub meshlet_instances_count: u32,
@@ -52,7 +51,6 @@ pub struct Meshlet {
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct Geometry {
-    vertex_offset: u32,   // offset into global vertex buffer offset
     meshlets_offset: u32, // offset into global meshlets array
     meshlets_count: u32,
 }
@@ -65,7 +63,6 @@ pub struct Geometry {
 #[repr(C, align(16))]
 pub struct GeometryInstance {
     transform: glm::Mat4,
-    index: u32, // index into Geometry array
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -75,9 +72,9 @@ struct MeshletInstance {
     meshlet_index: u32,           // global index into the meshlets buffer
 }
 
-const _: () = assert!(std::mem::size_of::<GeometryInstance>() == 80);
+const _: () = assert!(std::mem::size_of::<GeometryInstance>() == 64);
 
-pub struct GeometryDataCPU {
+pub struct GeometryDataCache {
     pub vertices: std::vec::Vec<Vertex>,
     pub meshlet_vertices: std::vec::Vec<u32>,
     pub meshlet_triangles: std::vec::Vec<u8>,
@@ -91,7 +88,6 @@ pub struct GeometryDataHandles {
     pub meshlet_vertices: vkutils::buffer::Buffer,
     pub meshlet_triangles: vkutils::buffer::Buffer,
     pub meshlets: vkutils::buffer::Buffer,
-    pub geometry: vkutils::buffer::Buffer,
 }
 
 pub struct Asset {
@@ -116,7 +112,7 @@ impl Asset {
             parent_transform: glm::Mat4,
         }
 
-        let mut global_geometry_data = GeometryDataCPU {
+        let mut global_geometry_data = GeometryDataCache {
             vertices: vec![],
             meshlet_vertices: vec![],
             meshlet_triangles: vec![],
@@ -135,6 +131,8 @@ impl Asset {
         let mut node_stack: std::vec::Vec<NodeEntry> = vec![];
         let mut mesh_entries: std::collections::HashMap<usize, MeshEntry> =
             std::collections::HashMap::new();
+
+        let gltf_parsing_time = std::time::Instant::now();
 
         for scene in &gltf_asset.scenes {
             // TODO push_mut
@@ -164,7 +162,6 @@ impl Asset {
                     if let Some(mesh_entry) = mesh_entries.get(&mesh_index) {
                         for geometry_index in &mesh_entry.geometries {
                             geometry_instances.push(GeometryInstance {
-                                index: *geometry_index,
                                 transform: world_transform,
                             });
 
@@ -197,7 +194,10 @@ impl Asset {
                                 global_geometry_buffer.len() as u32;
                             {
                                 mesh_geometries.push(index_in_global_geometry_buffer);
+
                                 let meshlets_offset = global_meshlets_buffer.len() as u32;
+                                let vertices_offset = global_vertex_buffer.len() as u32;
+
                                 let global_meshlet_vertices_offset =
                                     global_meshlets_vertices_buffer.len() as u32;
                                 let global_meshlet_triangles_offset =
@@ -215,11 +215,12 @@ impl Asset {
                                     })
                                 }
 
-                                global_meshlets_vertices_buffer.extend(meshlets.vertices);
+                                // rebase meshlet vertices to global index
+                                global_meshlets_vertices_buffer
+                                    .extend(meshlets.vertices.iter().map(|v| v + vertices_offset));
                                 global_meshlets_triangles_buffer.extend(meshlets.triangles);
 
                                 global_geometry_buffer.push(Geometry {
-                                    vertex_offset: global_vertex_buffer.len() as u32,
                                     meshlets_offset: meshlets_offset, // Fill data. Bake global meshlets buffer offset (rebase from local)
                                     meshlets_count: meshlets.meshlets.len() as u32,
                                 });
@@ -244,7 +245,6 @@ impl Asset {
                             }
 
                             geometry_instances.push(GeometryInstance {
-                                index: index_in_global_geometry_buffer,
                                 transform: world_transform,
                             });
 
@@ -277,6 +277,9 @@ impl Asset {
             }
         }
 
+        println!("Gltf parsing time: {:?}", gltf_parsing_time.elapsed());
+
+        let buffers_upload_time = std::time::Instant::now();
         {
             let meshlets_buffer = ctx.upload_buffer(
                 global_meshlets_buffer,
@@ -292,10 +295,6 @@ impl Asset {
             );
             let vertex_buffer = ctx.upload_buffer(
                 global_vertex_buffer,
-                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-            );
-            let geometry_buffer = ctx.upload_buffer(
-                global_geometry_buffer,
                 vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             );
             let mut out: std::vec::Vec<Self> = vec![];
@@ -320,12 +319,13 @@ impl Asset {
                 });
             }
 
+            println!("Buffers upload time: {:?}", buffers_upload_time.elapsed());
+
             let handles = GeometryDataHandles {
                 vertices: vertex_buffer,
                 meshlet_vertices: meshlets_vertices_buffer,
                 meshlet_triangles: meshlets_triangles_buffer,
                 meshlets: meshlets_buffer,
-                geometry: geometry_buffer,
             };
 
             return (handles, out);

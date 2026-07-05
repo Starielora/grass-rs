@@ -266,7 +266,6 @@ impl Renderer2 {
                         .device_address
                         .unwrap(),
                     meshlets: self.asset_data_handles.meshlets.device_address.unwrap(),
-                    geometry: self.asset_data_handles.geometry.device_address.unwrap(),
                     geometry_instances: asset.scene_geometry_instances.device_address.unwrap(),
                     meshlet_instances: asset.scene_meshlet_instances.device_address.unwrap(),
                     meshlet_instances_count: asset.scene_meshlet_instances_count,
