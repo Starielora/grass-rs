@@ -8,18 +8,19 @@
 
 taskPayloadSharedEXT TaskPayload task_payload;
 
-// TODO local_size_x is wasteful
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 void main() {
-    uint gi = gl_WorkGroupID.x; // dispatched exactly geometry_instances_count workgroups
+    uint mi = gl_GlobalInvocationID.x;
+    bool valid = mi < push_constants.meshlet_instances_count;
 
-    GeometryInstance geometry_instance =
-        push_constants.geometry_instance.geometry_instance[gi];
-    Geometry geometry =
-        push_constants.geometry.geometry[geometry_instance.index];
+    bool accept = valid;
 
-    task_payload.geometry_instance_index = gi;
+    uvec4 ballot = subgroupBallot(accept);
+    uint slot = subgroupBallotExclusiveBitCount(ballot); // compact index for survivors
+    if (accept) {
+        task_payload.meshlet_instance_index[slot] = mi;
+    }
+    uint count = subgroupBallotBitCount(ballot); // uniform across the subgroup
 
-    // spawn one mesh workgroup per meshlet in this instance
-    EmitMeshTasksEXT(geometry.meshlets_count, 1, 1);
+    EmitMeshTasksEXT(count, 1, 1);
 }

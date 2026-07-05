@@ -15,7 +15,8 @@ pub struct PushConstants {
     pub meshlets: vk::DeviceAddress,
     pub geometry: vk::DeviceAddress,
     pub geometry_instances: vk::DeviceAddress,
-    pub geometry_instances_count: u32,
+    pub meshlet_instances: vk::DeviceAddress,
+    pub meshlet_instances_count: u32,
 }
 
 impl PushConstants {
@@ -67,6 +68,7 @@ pub struct GeometryInstance {
     index: u32, // index into Geometry array
 }
 
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 struct MeshletInstance {
     geometry_instance_index: u32, // index into the GeometryInstance buffer (keeps transform + Geometry ref)
@@ -106,6 +108,8 @@ pub struct Asset {
     pub geometry_data_buffers: GeometryDataGPU,
     pub scene_geometry_instances: vkutils::buffer::Buffer,
     pub scene_geometry_instances_count: u32,
+    pub scene_meshlet_instances: vkutils::buffer::Buffer,
+    pub scene_meshlet_instances_count: u32,
 }
 
 impl Asset {
@@ -150,6 +154,10 @@ impl Asset {
                 scene_geometry_instances.push(vec![]);
                 scene_geometry_instances.last_mut().unwrap()
             };
+            let meshlet_instances = {
+                scene_meshlet_instances.push(vec![]);
+                scene_meshlet_instances.last_mut().unwrap()
+            };
             for node in &scene.nodes {
                 node_stack.push(NodeEntry {
                     node_index: *node,
@@ -171,6 +179,15 @@ impl Asset {
                                 index: *geometry_index,
                                 transform: world_transform,
                             });
+
+                            let geometry_instance_index = geometry_instances.len() - 1;
+                            let geometry = &global_geometry_buffer[*geometry_index as usize];
+                            for i in 0..geometry.meshlets_count {
+                                meshlet_instances.push(MeshletInstance {
+                                    geometry_instance_index: geometry_instance_index as u32,
+                                    meshlet_index: geometry.meshlets_offset + i,
+                                });
+                            }
                         }
                     } else {
                         // build meshlets
@@ -242,6 +259,16 @@ impl Asset {
                                 index: index_in_global_geometry_buffer,
                                 transform: world_transform,
                             });
+
+                            let geometry_instance_index = geometry_instances.len() - 1;
+                            let geometry =
+                                &global_geometry_buffer[index_in_global_geometry_buffer as usize];
+                            for i in 0..geometry.meshlets_count {
+                                meshlet_instances.push(MeshletInstance {
+                                    geometry_instance_index: geometry_instance_index as u32,
+                                    meshlet_index: geometry.meshlets_offset + i,
+                                })
+                            }
                         }
 
                         mesh_entries.insert(
@@ -284,9 +311,16 @@ impl Asset {
                 vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             );
             let mut out: std::vec::Vec<Self> = vec![];
-            for geometry_instances in &scene_geometry_instances {
-                let buf = ctx.upload_buffer(
+            for (i, geometry_instances) in scene_geometry_instances.iter().enumerate() {
+                let meshlet_instances = &scene_meshlet_instances[i];
+                let geometry_instances_buf = ctx.upload_buffer(
                     geometry_instances,
+                    vk::BufferUsageFlags::STORAGE_BUFFER
+                        | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+                );
+
+                let meshlet_instances_buf = ctx.upload_buffer(
+                    meshlet_instances,
                     vk::BufferUsageFlags::STORAGE_BUFFER
                         | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
                 );
@@ -299,8 +333,10 @@ impl Asset {
                         meshlets: meshlets_buffer.device_address.unwrap(),
                         geometry: geometry_buffer.device_address.unwrap(),
                     },
-                    scene_geometry_instances: buf,
+                    scene_geometry_instances: geometry_instances_buf,
                     scene_geometry_instances_count: geometry_instances.len() as u32,
+                    scene_meshlet_instances: meshlet_instances_buf,
+                    scene_meshlet_instances_count: meshlet_instances.len() as u32,
                 });
             }
 

@@ -76,6 +76,7 @@ impl Renderer2 {
 
         let brabon_data = gltf_asset::GltfAssetData::new(
             "/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
+            // "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
         );
         let brabon_asset = meshlet2::Asset::from_gltf(&ctx, &brabon_data);
         let (meshlet_pipeline, meshlet_pipeline_layout) = meshlet2::render::create_pipeline(
@@ -267,7 +268,8 @@ impl Renderer2 {
                     meshlets: self.asset_data_handles.meshlets.device_address.unwrap(),
                     geometry: self.asset_data_handles.geometry.device_address.unwrap(),
                     geometry_instances: asset.scene_geometry_instances.device_address.unwrap(),
-                    geometry_instances_count: asset.scene_geometry_instances_count,
+                    meshlet_instances: asset.scene_meshlet_instances.device_address.unwrap(),
+                    meshlet_instances_count: asset.scene_meshlet_instances_count,
                 };
 
                 vk.cmd_push_constants(
@@ -280,12 +282,11 @@ impl Renderer2 {
                     pc.data(),
                 );
 
-                // One task workgroup per geometry instance; the task shader uses
-                // gl_WorkGroupID.x as the instance index and fans out to one mesh
-                // workgroup per meshlet via EmitMeshTasksEXT.
+                // One task workgroup per 32 meshlet instances (== subgroup width, so the
+                // task shader's single-subgroup ballot compaction stays correct).
                 self.ext_device.cmd_draw_mesh_tasks(
                     command_buffer,
-                    asset.scene_geometry_instances_count,
+                    (asset.scene_meshlet_instances_count + 31) / 32,
                     1,
                     1,
                 );

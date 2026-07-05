@@ -27,6 +27,11 @@ struct GeometryInstance {
     uint index; // index into geometry array
 };
 
+struct MeshletInstance {
+    uint geometry_instance_index;
+    uint meshlet_index;
+};
+
 layout(buffer_reference) readonly buffer VertexBuf {
     Vertex vertices[];
 };
@@ -51,6 +56,10 @@ layout(buffer_reference) readonly buffer GeometryInstanceBuf {
     GeometryInstance geometry_instance[];
 };
 
+layout(buffer_reference) readonly buffer MeshletInstanceBuf {
+    MeshletInstance items[];
+};
+
 layout(push_constant) uniform constants
 {
     CameraDataBuf view_camera;
@@ -59,10 +68,11 @@ layout(push_constant) uniform constants
     MeshletsTrianglesBuf meshlets_triangles;
     MeshletsBuf meshlets;
     GeometryBuf geometry;
-    GeometryInstanceBuf geometry_instance;
-    uint geometry_instances_count;
+    GeometryInstanceBuf geometry_instances;
+    MeshletInstanceBuf meshlet_instances;
+    uint meshlet_instances_count;
 } push_constants;
 
 struct TaskPayload {
-    uint geometry_instance_index;
+    uint meshlet_instance_index[32]; // must be >= task shader local_size_x
 };
