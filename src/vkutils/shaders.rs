@@ -39,3 +39,7 @@ pub static GRID_FRAG: ShaderData = embed_shader_data!("grid2.frag.spv", MAIN);
 
 pub static SKYBOX_VERT: ShaderData = embed_shader_data!("skybox2.vert.spv", MAIN);
 pub static SKYBOX_FRAG: ShaderData = embed_shader_data!("skybox2.frag.spv", MAIN);
+
+pub static MESHLET_MESH: ShaderData = embed_shader_data!("meshlet2.mesh.spv", MAIN);
+pub static MESHLET_TASK: ShaderData = embed_shader_data!("meshlet2.task.spv", MAIN);
+pub static MESHLET_FRAG: ShaderData = embed_shader_data!("meshlet2.frag.spv", MAIN);

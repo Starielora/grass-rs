@@ -1,5 +1,7 @@
+use crate::assets::{gltf_asset, mesh};
 use crate::camera::GPUCameraData;
 use crate::grid2::Grid2;
+use crate::meshlet2;
 use crate::skybox2::Skybox2;
 use crate::vkutils::{self, vk_destroy::VkDestroy};
 use ash::vk;
@@ -15,6 +17,13 @@ pub struct Renderer2 {
     view_camera_data_buffer: vkutils::buffer::Buffer,
     grid: Grid2,
     skybox: Skybox2,
+
+    // TODO proper structure
+    asset_data_handles: meshlet2::GeometryDataHandles,
+    asssets: std::vec::Vec<meshlet2::Asset>,
+    meshlet_pipeline: vk::Pipeline,
+    meshlet_pipeline_layout: vk::PipelineLayout,
+    ext_device: ash::ext::mesh_shader::Device,
 
     render_finished_semaphore: vk::Semaphore,
 }
@@ -65,6 +74,17 @@ impl Renderer2 {
         let skybox = Skybox2::new(&ctx, view_camera_data_buffer.device_address.unwrap())
             .expect("Failed to instantiate skybox");
 
+        let brabon_data = gltf_asset::GltfAssetData::new(
+            "/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
+        );
+        let brabon_asset = meshlet2::Asset::from_gltf(&ctx, &brabon_data);
+        let (meshlet_pipeline, meshlet_pipeline_layout) = meshlet2::render::create_pipeline(
+            &ctx.device.clone(),
+            ctx.bindless_descriptor_set.layout,
+            ctx.swapchain.surface_format.format,
+            ctx.depth_format,
+        );
+
         Self {
             vk: ctx.device.clone(),
             command_buffers,
@@ -73,6 +93,11 @@ impl Renderer2 {
             view_camera_data_buffer,
             grid,
             skybox,
+            asset_data_handles: brabon_asset.0,
+            asssets: brabon_asset.1,
+            meshlet_pipeline: meshlet_pipeline,
+            meshlet_pipeline_layout: meshlet_pipeline_layout,
+            ext_device: ctx.mesh_shader_device.clone(),
             render_finished_semaphore,
         }
     }
@@ -203,6 +228,67 @@ impl Renderer2 {
                     .depth_attachment(&depth_attachment);
 
                 vk.cmd_begin_rendering(command_buffer, &rendering_info);
+            }
+
+            {
+                vk.cmd_bind_pipeline(
+                    command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    self.meshlet_pipeline,
+                );
+                let viewport = vk::Viewport {
+                    width: vkctx.swapchain.extent.width as f32,
+                    height: vkctx.swapchain.extent.height as f32,
+                    max_depth: 1.0,
+                    ..Default::default()
+                };
+                let scissors = vk::Rect2D {
+                    extent: vkctx.swapchain.extent,
+                    ..Default::default()
+                };
+                vk.cmd_set_viewport(command_buffer, 0, &[viewport]);
+                vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
+
+                let asset = &self.asssets[0];
+
+                let pc = meshlet2::PushConstants {
+                    view_camera: self.view_camera_data_buffer.device_address.unwrap(),
+                    vertices: self.asset_data_handles.vertices.device_address.unwrap(),
+                    meshlet_vertices: self
+                        .asset_data_handles
+                        .meshlet_vertices
+                        .device_address
+                        .unwrap(),
+                    meshlet_triangles: self
+                        .asset_data_handles
+                        .meshlet_triangles
+                        .device_address
+                        .unwrap(),
+                    meshlets: self.asset_data_handles.meshlets.device_address.unwrap(),
+                    geometry: self.asset_data_handles.geometry.device_address.unwrap(),
+                    geometry_instances: asset.scene_geometry_instances.device_address.unwrap(),
+                    geometry_instances_count: asset.scene_geometry_instances_count,
+                };
+
+                vk.cmd_push_constants(
+                    command_buffer,
+                    self.meshlet_pipeline_layout,
+                    vk::ShaderStageFlags::MESH_EXT
+                        | vk::ShaderStageFlags::TASK_EXT
+                        | vk::ShaderStageFlags::FRAGMENT,
+                    0,
+                    pc.data(),
+                );
+
+                // One task workgroup per geometry instance; the task shader uses
+                // gl_WorkGroupID.x as the instance index and fans out to one mesh
+                // workgroup per meshlet via EmitMeshTasksEXT.
+                self.ext_device.cmd_draw_mesh_tasks(
+                    command_buffer,
+                    asset.scene_geometry_instances_count,
+                    1,
+                    1,
+                );
             }
 
             self.skybox.record(command_buffer, vkctx.swapchain.extent);

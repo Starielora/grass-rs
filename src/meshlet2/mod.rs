@@ -1,8 +1,35 @@
 use ash::vk;
 use glm;
-use meshopt::ffi::meshopt_Meshlet;
 
-use crate::assets::{gltf_asset, mesh::Mesh};
+use crate::{assets::gltf_asset, vkutils};
+
+pub mod render;
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct PushConstants {
+    pub view_camera: vk::DeviceAddress,
+    pub vertices: vk::DeviceAddress,
+    pub meshlet_vertices: vk::DeviceAddress,
+    pub meshlet_triangles: vk::DeviceAddress,
+    pub meshlets: vk::DeviceAddress,
+    pub geometry: vk::DeviceAddress,
+    pub geometry_instances: vk::DeviceAddress,
+    pub geometry_instances_count: u32,
+}
+
+impl PushConstants {
+    pub fn data(&self) -> &[u8] {
+        unsafe {
+            std::slice::from_raw_parts(
+                (self as *const PushConstants) as *const u8,
+                std::mem::size_of::<PushConstants>(),
+            )
+        }
+    }
+}
+
+const _: () = assert!(std::mem::size_of::<PushConstants>() <= 128);
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
@@ -29,12 +56,24 @@ pub struct Geometry {
     meshlets_count: u32,
 }
 
+// NOTE: This is read in shaders through a buffer_reference block (std430), where
+// `mat4` has base alignment 16, forcing the struct alignment to 16 and its size to
+// 80 bytes. nalgebra-glm's Mat4 is only align-4, so without the explicit align(16)
+// the CPU stride would be 68, and every element past index 0 would be misaligned.
 #[derive(Debug, Clone, Copy)]
-#[repr(C)]
+#[repr(C, align(16))]
 pub struct GeometryInstance {
     transform: glm::Mat4,
     index: u32, // index into Geometry array
 }
+
+#[repr(C)]
+struct MeshletInstance {
+    geometry_instance_index: u32, // index into the GeometryInstance buffer (keeps transform + Geometry ref)
+    meshlet_index: u32,           // global index into the meshlets buffer
+}
+
+const _: () = assert!(std::mem::size_of::<GeometryInstance>() == 80);
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
@@ -43,7 +82,7 @@ pub struct GeometryDataGPU {
     meshlet_vertices: vk::DeviceAddress, // array of u32, indexing into actual vertex_buffer with Meshlet::vertex_offset + meshlet_vertices[i] over Meshlet::vertex_count -> input for gl_MeshVerticesEXT
     meshlet_triangles: vk::DeviceAddress, // array of u8, indexing into meshlet_vertices with Meshlet::triangle_offset + meshlet_triangles[i] over Meshlet::triangle_count -> input for gl_PrimitiveTriangleIndicesEXT
     meshlets: vk::DeviceAddress,          // array of Meshlet
-    geometry: vk::DeviceAddress,          // array of GeometryInfo
+    geometry: vk::DeviceAddress,          // array of Geometry
 }
 
 pub struct GeometryDataCPU {
@@ -54,12 +93,28 @@ pub struct GeometryDataCPU {
     pub geometry: std::vec::Vec<Geometry>,
 }
 
+// TODO cleanup all these struct duplicates. Some are probably only local during asset creation
+pub struct GeometryDataHandles {
+    pub vertices: vkutils::buffer::Buffer,
+    pub meshlet_vertices: vkutils::buffer::Buffer,
+    pub meshlet_triangles: vkutils::buffer::Buffer,
+    pub meshlets: vkutils::buffer::Buffer,
+    pub geometry: vkutils::buffer::Buffer,
+}
+
 pub struct Asset {
-    geometry_buffer: vk::DeviceAddress,
+    pub geometry_data_buffers: GeometryDataGPU,
+    pub scene_geometry_instances: vkutils::buffer::Buffer,
+    pub scene_geometry_instances_count: u32,
 }
 
 impl Asset {
-    pub fn from_gltf(gltf_asset: &gltf_asset::GltfAssetData) -> Self {
+    // TODO split preparing geometry from uploading to GPU?
+    // Probably yes, because it will allow me to load many assets into single buffers
+    pub fn from_gltf(
+        ctx: &vkutils::context::VulkanContext,
+        gltf_asset: &gltf_asset::GltfAssetData,
+    ) -> (GeometryDataHandles, std::vec::Vec<Self>) {
         struct MeshEntry {
             geometries: std::vec::Vec<u32>, // indices into global geometry buffer
         }
@@ -82,13 +137,19 @@ impl Asset {
         let global_meshlets_buffer = &mut global_geometry_data.meshlets;
         let global_meshlets_vertices_buffer = &mut global_geometry_data.meshlet_vertices;
         let global_meshlets_triangles_buffer = &mut global_geometry_data.meshlet_triangles;
-        let mut draws: std::vec::Vec<GeometryInstance> = vec![];
+        let mut scene_geometry_instances: std::vec::Vec<std::vec::Vec<GeometryInstance>> = vec![];
+        let mut scene_meshlet_instances: std::vec::Vec<std::vec::Vec<MeshletInstance>> = vec![];
 
         let mut node_stack: std::vec::Vec<NodeEntry> = vec![];
         let mut mesh_entries: std::collections::HashMap<usize, MeshEntry> =
             std::collections::HashMap::new();
 
         for scene in &gltf_asset.scenes {
+            // TODO push_mut
+            let geometry_instances = {
+                scene_geometry_instances.push(vec![]);
+                scene_geometry_instances.last_mut().unwrap()
+            };
             for node in &scene.nodes {
                 node_stack.push(NodeEntry {
                     node_index: *node,
@@ -106,7 +167,7 @@ impl Asset {
                     // use cache
                     if let Some(mesh_entry) = mesh_entries.get(&mesh_index) {
                         for geometry_index in &mesh_entry.geometries {
-                            draws.push(GeometryInstance {
+                            geometry_instances.push(GeometryInstance {
                                 index: *geometry_index,
                                 transform: world_transform,
                             });
@@ -177,7 +238,7 @@ impl Asset {
                                 global_vertex_buffer.extend_from_slice(verts);
                             }
 
-                            draws.push(GeometryInstance {
+                            geometry_instances.push(GeometryInstance {
                                 index: index_in_global_geometry_buffer,
                                 transform: world_transform,
                             });
@@ -201,9 +262,58 @@ impl Asset {
             }
         }
 
-        // TODO upload vertex buffer, geometries buffer and draws to GPU
+        {
+            let meshlets_buffer = ctx.upload_buffer(
+                global_meshlets_buffer,
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            );
+            let meshlets_vertices_buffer = ctx.upload_buffer(
+                global_meshlets_vertices_buffer,
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            );
+            let meshlets_triangles_buffer = ctx.upload_buffer(
+                global_meshlets_triangles_buffer,
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            );
+            let vertex_buffer = ctx.upload_buffer(
+                global_vertex_buffer,
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            );
+            let geometry_buffer = ctx.upload_buffer(
+                global_geometry_buffer,
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            );
+            let mut out: std::vec::Vec<Self> = vec![];
+            for geometry_instances in &scene_geometry_instances {
+                let buf = ctx.upload_buffer(
+                    geometry_instances,
+                    vk::BufferUsageFlags::STORAGE_BUFFER
+                        | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+                );
 
-        Self { geometry_buffer: 0 }
+                out.push(Self {
+                    geometry_data_buffers: GeometryDataGPU {
+                        vertices: vertex_buffer.device_address.unwrap(),
+                        meshlet_vertices: meshlets_vertices_buffer.device_address.unwrap(),
+                        meshlet_triangles: meshlets_triangles_buffer.device_address.unwrap(),
+                        meshlets: meshlets_buffer.device_address.unwrap(),
+                        geometry: geometry_buffer.device_address.unwrap(),
+                    },
+                    scene_geometry_instances: buf,
+                    scene_geometry_instances_count: geometry_instances.len() as u32,
+                });
+            }
+
+            let handles = GeometryDataHandles {
+                vertices: vertex_buffer,
+                meshlet_vertices: meshlets_vertices_buffer,
+                meshlet_triangles: meshlets_triangles_buffer,
+                meshlets: meshlets_buffer,
+                geometry: geometry_buffer,
+            };
+
+            return (handles, out);
+        }
     }
 }
 
@@ -227,18 +337,8 @@ pub fn build_meshlets(
 
     // TODO revise max vertices and triangle count - fix in shaders as well
     // TODO use cone weight, when implementing cone culling
-    let mut meshopt_meshlets =
+    let meshopt_meshlets =
         meshopt::build_meshlets(indices.as_slice(), &vertex_adapter, 64, 124, 0.5);
-
-    // Fill meshlets to avoid potential out of bounds
-    while meshopt_meshlets.meshlets.len() % 64 != 0 {
-        meshopt_meshlets.meshlets.push(meshopt_Meshlet {
-            vertex_offset: 0,
-            triangle_offset: 0,
-            vertex_count: 0,
-            triangle_count: 0,
-        });
-    }
 
     meshopt_meshlets
 }

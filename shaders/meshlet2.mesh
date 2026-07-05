@@ -1,0 +1,59 @@
+#version 460 core
+#extension GL_EXT_mesh_shader : require
+#extension GL_ARB_shader_draw_parameters: require
+#extension GL_GOOGLE_include_directive : enable
+
+#include "meshlet2_common.glsl"
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+layout(triangles, max_vertices = 64, max_primitives = 124) out;
+
+taskPayloadSharedEXT TaskPayload task_payload;
+
+layout(location = 0) out vec4 color[];
+
+uint hash(uint a)
+{
+    a = (a + 0x7ed55d16) + (a << 12);
+    a = (a ^ 0xc761c23c) ^ (a >> 19);
+    a = (a + 0x165667b1) + (a << 5);
+    a = (a + 0xd3a2646c) ^ (a << 9);
+    a = (a + 0xfd7046c5) + (a << 3);
+    a = (a ^ 0xb55a4f09) ^ (a >> 16);
+    return a;
+}
+
+void main() {
+    uint gi_index = task_payload.geometry_instance_index;
+    uint local_meshlet = gl_WorkGroupID.x; // 0 .. meshlets_count-1 for THIS instance
+
+    GeometryInstance geometry_instance =
+        push_constants.geometry_instance.geometry_instance[gi_index];
+    Geometry geometry =
+        push_constants.geometry.geometry[geometry_instance.index];
+    uint mi = geometry.meshlets_offset + local_meshlet;
+    Meshlet meshlet =
+        push_constants.meshlets.meshlets[mi];
+
+    uint ti = gl_LocalInvocationID.x; // 0..63 cooperate within the workgroup
+    SetMeshOutputsEXT(meshlet.vertex_count, meshlet.triangle_count);
+
+    for (uint i = ti; i < meshlet.triangle_count; i += 64) {
+        uint a = uint(push_constants.meshlets_triangles.meshlets_triangles[meshlet.triangle_offset + i * 3 + 0]);
+        uint b = uint(push_constants.meshlets_triangles.meshlets_triangles[meshlet.triangle_offset + i * 3 + 1]);
+        uint c = uint(push_constants.meshlets_triangles.meshlets_triangles[meshlet.triangle_offset + i * 3 + 2]);
+        gl_PrimitiveTriangleIndicesEXT[i] = uvec3(a, b, c);
+    }
+
+    for (uint i = ti; i < meshlet.vertex_count; i += 64) {
+        uint vi = push_constants.meshlets_vertices.meshlet_vertices[meshlet.vertex_offset + i];
+        Vertex v = push_constants.vertices.vertices[geometry.vertex_offset + vi];
+        gl_MeshVerticesEXT[i].gl_Position =
+            push_constants.view_camera.projview * geometry_instance.transform * vec4(v.vx, v.vy, v.vz, 1.0);
+
+        uint mhash = hash(mi);
+        vec3 mcolor = vec3(float(mhash & 255), float((mhash >> 8) & 255), float((mhash >> 16) & 255)) / 255.0;
+        // color[i] = vec4(v.nx, v.ny, v.nz, 1.0);
+        color[i] = vec4(mcolor, 1.0);
+    }
+}

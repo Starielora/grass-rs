@@ -1,0 +1,25 @@
+#version 460 core
+#extension GL_EXT_mesh_shader : require
+#extension GL_KHR_shader_subgroup_ballot: require
+#extension GL_ARB_shader_draw_parameters: require
+#extension GL_GOOGLE_include_directive : enable
+
+#include "meshlet2_common.glsl"
+
+taskPayloadSharedEXT TaskPayload task_payload;
+
+// TODO local_size_x is wasteful
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main() {
+    uint gi = gl_WorkGroupID.x; // dispatched exactly geometry_instances_count workgroups
+
+    GeometryInstance geometry_instance =
+        push_constants.geometry_instance.geometry_instance[gi];
+    Geometry geometry =
+        push_constants.geometry.geometry[geometry_instance.index];
+
+    task_payload.geometry_instance_index = gi;
+
+    // spawn one mesh workgroup per meshlet in this instance
+    EmitMeshTasksEXT(geometry.meshlets_count, 1, 1);
+}
