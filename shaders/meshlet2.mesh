@@ -26,23 +26,23 @@ uint hash(uint a)
 void main() {
     uint mi_index = task_payload.meshlet_instance_index[gl_WorkGroupID.x];
     MeshletInstance meshlet_instance = push_constants.meshlet_instances.items[mi_index];
-    GeometryInstance geometry_instance = push_constants.geometry_instances.geometry_instance[meshlet_instance.geometry_instance_index];
-    Geometry geometry = push_constants.geometry.geometry[geometry_instance.index];
-    Meshlet meshlet = push_constants.meshlets.meshlets[meshlet_instance.meshlet_index];
+    GeometryInstance geometry_instance = push_constants.geometry_instances.items[meshlet_instance.geometry_instance_index];
+    Geometry geometry = push_constants.geometry.items[geometry_instance.index];
+    Meshlet meshlet = push_constants.meshlets.items[meshlet_instance.meshlet_index];
 
     uint ti = gl_LocalInvocationID.x; // 0..63 cooperate within the workgroup
     SetMeshOutputsEXT(meshlet.vertex_count, meshlet.triangle_count);
 
     for (uint i = ti; i < meshlet.triangle_count; i += 64) {
-        uint a = uint(push_constants.meshlets_triangles.meshlets_triangles[meshlet.triangle_offset + i * 3 + 0]);
-        uint b = uint(push_constants.meshlets_triangles.meshlets_triangles[meshlet.triangle_offset + i * 3 + 1]);
-        uint c = uint(push_constants.meshlets_triangles.meshlets_triangles[meshlet.triangle_offset + i * 3 + 2]);
+        uint a = uint(push_constants.meshlets_triangles.items[meshlet.triangle_offset + i * 3 + 0]);
+        uint b = uint(push_constants.meshlets_triangles.items[meshlet.triangle_offset + i * 3 + 1]);
+        uint c = uint(push_constants.meshlets_triangles.items[meshlet.triangle_offset + i * 3 + 2]);
         gl_PrimitiveTriangleIndicesEXT[i] = uvec3(a, b, c);
     }
 
     for (uint i = ti; i < meshlet.vertex_count; i += 64) {
-        uint vi = push_constants.meshlets_vertices.meshlet_vertices[meshlet.vertex_offset + i];
-        Vertex v = push_constants.vertices.vertices[geometry.vertex_offset + vi];
+        uint vi = push_constants.meshlets_vertices.items[meshlet.vertex_offset + i];
+        Vertex v = push_constants.vertices.items[geometry.vertex_offset + vi];
         gl_MeshVerticesEXT[i].gl_Position =
             push_constants.view_camera.projview * geometry_instance.transform * vec4(v.vx, v.vy, v.vz, 1.0);
 

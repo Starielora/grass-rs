@@ -286,7 +286,7 @@ impl Renderer2 {
                 // task shader's single-subgroup ballot compaction stays correct).
                 self.ext_device.cmd_draw_mesh_tasks(
                     command_buffer,
-                    (asset.scene_meshlet_instances_count + 31) / 32,
+                    (asset.scene_meshlet_instances_count + 63) / 64,
                     1,
                     1,
                 );

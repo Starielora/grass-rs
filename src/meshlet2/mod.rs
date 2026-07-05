@@ -77,16 +77,6 @@ struct MeshletInstance {
 
 const _: () = assert!(std::mem::size_of::<GeometryInstance>() == 80);
 
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct GeometryDataGPU {
-    vertices: vk::DeviceAddress, // actual vertices buffer, array of 8 * f32 a.k.a Vertex
-    meshlet_vertices: vk::DeviceAddress, // array of u32, indexing into actual vertex_buffer with Meshlet::vertex_offset + meshlet_vertices[i] over Meshlet::vertex_count -> input for gl_MeshVerticesEXT
-    meshlet_triangles: vk::DeviceAddress, // array of u8, indexing into meshlet_vertices with Meshlet::triangle_offset + meshlet_triangles[i] over Meshlet::triangle_count -> input for gl_PrimitiveTriangleIndicesEXT
-    meshlets: vk::DeviceAddress,          // array of Meshlet
-    geometry: vk::DeviceAddress,          // array of Geometry
-}
-
 pub struct GeometryDataCPU {
     pub vertices: std::vec::Vec<Vertex>,
     pub meshlet_vertices: std::vec::Vec<u32>,
@@ -105,9 +95,7 @@ pub struct GeometryDataHandles {
 }
 
 pub struct Asset {
-    pub geometry_data_buffers: GeometryDataGPU,
     pub scene_geometry_instances: vkutils::buffer::Buffer,
-    pub scene_geometry_instances_count: u32,
     pub scene_meshlet_instances: vkutils::buffer::Buffer,
     pub scene_meshlet_instances_count: u32,
 }
@@ -326,15 +314,7 @@ impl Asset {
                 );
 
                 out.push(Self {
-                    geometry_data_buffers: GeometryDataGPU {
-                        vertices: vertex_buffer.device_address.unwrap(),
-                        meshlet_vertices: meshlets_vertices_buffer.device_address.unwrap(),
-                        meshlet_triangles: meshlets_triangles_buffer.device_address.unwrap(),
-                        meshlets: meshlets_buffer.device_address.unwrap(),
-                        geometry: geometry_buffer.device_address.unwrap(),
-                    },
                     scene_geometry_instances: geometry_instances_buf,
-                    scene_geometry_instances_count: geometry_instances.len() as u32,
                     scene_meshlet_instances: meshlet_instances_buf,
                     scene_meshlet_instances_count: meshlet_instances.len() as u32,
                 });

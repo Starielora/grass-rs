@@ -33,27 +33,27 @@ struct MeshletInstance {
 };
 
 layout(buffer_reference) readonly buffer VertexBuf {
-    Vertex vertices[];
+    Vertex items[];
 };
 
 layout(buffer_reference) readonly buffer MeshletsTrianglesBuf {
-    uint8_t meshlets_triangles[];
+    uint8_t items[];
 };
 
 layout(buffer_reference) readonly buffer MeshletsVerticesBuf {
-    uint meshlet_vertices[];
+    uint items[];
 };
 
 layout(buffer_reference) readonly buffer MeshletsBuf {
-    Meshlet meshlets[];
+    Meshlet items[];
 };
 
 layout(buffer_reference) readonly buffer GeometryBuf {
-    Geometry geometry[];
+    Geometry items[];
 };
 
 layout(buffer_reference) readonly buffer GeometryInstanceBuf {
-    GeometryInstance geometry_instance[];
+    GeometryInstance items[];
 };
 
 layout(buffer_reference) readonly buffer MeshletInstanceBuf {
@@ -74,5 +74,5 @@ layout(push_constant) uniform constants
 } push_constants;
 
 struct TaskPayload {
-    uint meshlet_instance_index[32]; // must be >= task shader local_size_x
+    uint meshlet_instance_index[64]; // must be >= task shader local_size_x
 };
