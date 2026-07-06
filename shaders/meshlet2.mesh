@@ -26,7 +26,7 @@ uint hash(uint a)
 void main() {
     uint mi_index = task_payload.meshlet_instance_index[gl_WorkGroupID.x];
     MeshletInstance meshlet_instance = push_constants.meshlet_instances.items[mi_index];
-    GeometryInstance geometry_instance = push_constants.geometry_instances.items[meshlet_instance.geometry_instance_index];
+    mat4 transform = push_constants.geometry_instances.items[meshlet_instance.geometry_instance_index].transform;
     Meshlet meshlet = push_constants.meshlets.items[meshlet_instance.meshlet_index];
 
     uint ti = gl_LocalInvocationID.x; // 0..63 cooperate within the workgroup
@@ -43,7 +43,7 @@ void main() {
         uint vi = push_constants.meshlets_vertices.items[meshlet.vertex_offset + i];
         Vertex v = push_constants.vertices.items[vi];
         gl_MeshVerticesEXT[i].gl_Position =
-            push_constants.view_camera.projview * geometry_instance.transform * vec4(v.vx, v.vy, v.vz, 1.0);
+            push_constants.view_camera.projview * transform * vec4(v.vx, v.vy, v.vz, 1.0);
 
         uint mhash = hash(meshlet_instance.meshlet_index);
         vec3 mcolor = vec3(float(mhash & 255), float((mhash >> 8) & 255), float((mhash >> 16) & 255)) / 255.0;

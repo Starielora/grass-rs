@@ -16,7 +16,7 @@ struct Meshlet {
     uint triangle_count;
 };
 
-struct GeometryInstance {
+struct GeometryInstanceTransform {
     mat4 transform;
 };
 
@@ -41,8 +41,8 @@ layout(buffer_reference) readonly buffer MeshletsBuf {
     Meshlet items[];
 };
 
-layout(buffer_reference) readonly buffer GeometryInstanceBuf {
-    GeometryInstance items[];
+layout(buffer_reference) readonly buffer GeometryInstanceTransformBuf {
+    GeometryInstanceTransform items[];
 };
 
 layout(buffer_reference) readonly buffer MeshletInstanceBuf {
@@ -56,7 +56,7 @@ layout(push_constant) uniform constants
     MeshletsVerticesBuf meshlets_vertices;
     MeshletsTrianglesBuf meshlets_triangles;
     MeshletsBuf meshlets;
-    GeometryInstanceBuf geometry_instances;
+    GeometryInstanceTransformBuf geometry_instances;
     MeshletInstanceBuf meshlet_instances;
     uint meshlet_instances_count;
 } push_constants;

@@ -1,0 +1,31 @@
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct Vertex {
+    pub pos: glm::Vec3,
+    pub norm: glm::Vec3,
+    pub tx: glm::Vec2,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct Meshlet {
+    pub vertex_offset: u32, // offset into meshlet_vertices array (not actual vertex buffer)
+    pub triangle_offset: u32, // offset into meshlet_triangles array
+    pub vertex_count: u32,
+    pub triangle_count: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C, align(16))]
+pub struct GeometryInstanceTransform {
+    pub transform: glm::Mat4,
+}
+
+const _: () = assert!(std::mem::size_of::<GeometryInstanceTransform>() == 64);
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct MeshletInstance {
+    pub geometry_transform_index: u32, // index into the GeometryInstance buffer (keeps transform + Geometry ref)
+    pub meshlet_index: u32,            // global index into the meshlets buffer
+}

@@ -1,6 +1,6 @@
 use ash::vk;
 
-use crate::{meshlet2::PushConstants, vkutils::shaders};
+use crate::{meshlet2::push_constants, vkutils::shaders};
 
 pub fn create_pipeline(
     vk: &ash::Device,
@@ -129,24 +129,13 @@ pub fn create_pipeline(
 
     (pipelines[0], pipeline_layout)
 }
-fn get_push_constants_stage_flags() -> vk::ShaderStageFlags {
-    vk::ShaderStageFlags::MESH_EXT | vk::ShaderStageFlags::TASK_EXT | vk::ShaderStageFlags::FRAGMENT
-}
-
-fn get_push_constant_range() -> [vk::PushConstantRange; 1] {
-    [vk::PushConstantRange {
-        stage_flags: get_push_constants_stage_flags(),
-        offset: 0,
-        size: std::mem::size_of::<PushConstants>() as u32,
-    }]
-}
 
 fn create_pipeline_layout(
     vk: &ash::Device,
     descriptor_set_layout: vk::DescriptorSetLayout,
 ) -> vk::PipelineLayout {
     let set_layouts = [descriptor_set_layout];
-    let push_constants_range = get_push_constant_range();
+    let push_constants_range = push_constants::get_push_constant_range();
     let create_info = vk::PipelineLayoutCreateInfo::default()
         .set_layouts(&set_layouts)
         .push_constant_ranges(&push_constants_range);

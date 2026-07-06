@@ -1,4 +1,4 @@
-use crate::assets::{gltf_asset, mesh};
+use crate::assets::gltf_asset;
 use crate::camera::GPUCameraData;
 use crate::grid2::Grid2;
 use crate::meshlet2;
@@ -79,7 +79,7 @@ impl Renderer2 {
             // "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
         );
         let brabon_asset = meshlet2::Asset::from_gltf(&ctx, &brabon_data);
-        let (meshlet_pipeline, meshlet_pipeline_layout) = meshlet2::render::create_pipeline(
+        let (meshlet_pipeline, meshlet_pipeline_layout) = meshlet2::pipeline::create_pipeline(
             &ctx.device.clone(),
             ctx.bindless_descriptor_set.layout,
             ctx.swapchain.surface_format.format,
@@ -252,7 +252,7 @@ impl Renderer2 {
 
                 let asset = &self.asssets[0];
 
-                let pc = meshlet2::PushConstants {
+                let pc = meshlet2::push_constants::PushConstants {
                     view_camera: self.view_camera_data_buffer.device_address.unwrap(),
                     vertices: self.asset_data_handles.vertices.device_address.unwrap(),
                     meshlet_vertices: self
@@ -266,7 +266,10 @@ impl Renderer2 {
                         .device_address
                         .unwrap(),
                     meshlets: self.asset_data_handles.meshlets.device_address.unwrap(),
-                    geometry_instances: asset.scene_geometry_instances.device_address.unwrap(),
+                    geometry_instances_transforms: asset
+                        .scene_geometry_instances_transforms
+                        .device_address
+                        .unwrap(),
                     meshlet_instances: asset.scene_meshlet_instances.device_address.unwrap(),
                     meshlet_instances_count: asset.scene_meshlet_instances_count,
                 };
