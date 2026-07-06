@@ -1,10 +1,10 @@
 use ash::vk;
-use glm;
 
-use crate::{assets::gltf_asset, meshlet2::gltf::GlobalGeometryData, vkutils};
+use crate::meshlet2::gpu::GlobalGeometryData;
+use crate::{assets::gltf_asset, vkutils};
 
 mod build_meshlets;
-mod gltf;
+pub mod gltf;
 mod gpu;
 pub mod pipeline;
 pub mod push_constants;
@@ -23,6 +23,12 @@ pub struct Asset {
     pub scene_meshlet_instances_count: u32,
 }
 
+pub struct DrawData {
+    pub geometry_instances_transforms: vkutils::buffer::Buffer,
+    pub meshlet_instances: vkutils::buffer::Buffer,
+    pub meshlet_instances_count: u32,
+}
+
 impl Asset {
     // TODO split preparing geometry from uploading to GPU?
     // Probably yes, because it will allow me to load many assets into single buffers
@@ -35,7 +41,6 @@ impl Asset {
             meshlet_vertices: vec![],
             meshlet_triangles: vec![],
             meshlets: vec![],
-            meshlets_info: vec![],
         };
 
         let (per_scene_geometry_instances_transforms, per_scene_meshlet_instances) =

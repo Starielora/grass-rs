@@ -29,3 +29,10 @@ pub struct MeshletInstance {
     pub geometry_transform_index: u32, // index into the GeometryInstance buffer (keeps transform + Geometry ref)
     pub meshlet_index: u32,            // global index into the meshlets buffer
 }
+
+pub struct GlobalGeometryData {
+    pub vertices: std::vec::Vec<Vertex>,
+    pub meshlet_vertices: std::vec::Vec<u32>,
+    pub meshlet_triangles: std::vec::Vec<u8>,
+    pub meshlets: std::vec::Vec<Meshlet>,
+}

@@ -1,3 +1,6 @@
+use gltf::{self, accessor::DataType};
+use std::str::FromStr;
+
 pub enum IndexBufferType {
     U16(std::vec::Vec<u16>),
     U32(std::vec::Vec<u32>),
@@ -63,6 +66,7 @@ macro_rules! extract_buffer {
 }
 
 pub struct GltfAssetData {
+    pub path: std::string::String,
     pub meshes: std::vec::Vec<Mesh>,
     pub nodes: std::vec::Vec<Node>,
     pub scenes: std::vec::Vec<Scene>,
@@ -70,8 +74,8 @@ pub struct GltfAssetData {
 }
 
 impl GltfAssetData {
-    pub fn new(path: &str) -> GltfAssetData {
-        let path = std::path::Path::new(path);
+    pub fn new(path_str: &str) -> GltfAssetData {
+        let path = std::path::Path::new(path_str);
         let dir = path.parent().unwrap();
 
         let gltf = gltf::Gltf::open(path).expect("Failed to open gltf file");
@@ -257,6 +261,7 @@ impl GltfAssetData {
         }
 
         GltfAssetData {
+            path: std::string::String::from_str(path_str).unwrap(),
             meshes,
             nodes,
             scenes,
@@ -264,7 +269,6 @@ impl GltfAssetData {
         }
     }
 }
-use gltf::{self, accessor::DataType};
 
 fn accessor_data_type_to_size(accessor_data_type: gltf::accessor::DataType) -> usize {
     match accessor_data_type {

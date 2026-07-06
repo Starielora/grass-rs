@@ -1,7 +1,7 @@
 use crate::assets::gltf_asset;
 use crate::camera::GPUCameraData;
 use crate::grid2::Grid2;
-use crate::meshlet2;
+use crate::meshlet2::{self, GeometryDataHandles};
 use crate::skybox2::Skybox2;
 use crate::vkutils::{self, vk_destroy::VkDestroy};
 use ash::vk;
@@ -18,12 +18,12 @@ pub struct Renderer2 {
     grid: Grid2,
     skybox: Skybox2,
 
-    // TODO proper structure
-    asset_data_handles: meshlet2::GeometryDataHandles,
-    asssets: std::vec::Vec<meshlet2::Asset>,
     meshlet_pipeline: vk::Pipeline,
     meshlet_pipeline_layout: vk::PipelineLayout,
     ext_device: ash::ext::mesh_shader::Device,
+
+    brabon_draw_data: std::vec::Vec<meshlet2::DrawData>, // this is just vk buffer handles
+    geometry_data_handles: meshlet2::GeometryDataHandles,
 
     render_finished_semaphore: vk::Semaphore,
 }
@@ -78,13 +78,67 @@ impl Renderer2 {
             "/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
             // "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
         );
-        let brabon_asset = meshlet2::Asset::from_gltf(&ctx, &brabon_data);
+
         let (meshlet_pipeline, meshlet_pipeline_layout) = meshlet2::pipeline::create_pipeline(
             &ctx.device.clone(),
             ctx.bindless_descriptor_set.layout,
             ctx.swapchain.surface_format.format,
             ctx.depth_format,
         );
+
+        let mut gltf_meshlet_parser = meshlet2::gltf::Parser::new();
+        let mut brabon_scenes = gltf_meshlet_parser.parse(&brabon_data, glm::Mat4::identity());
+
+        let mut mat = glm::Mat4::identity();
+        mat = glm::translate(&mat, &glm::make_vec3(&[1.0, 1.0, 1.0]));
+        let mut brabon_scenes2 = gltf_meshlet_parser.parse(&brabon_data, mat);
+
+        for meshlet_instance in &mut brabon_scenes2[0].meshlet_instances {
+            meshlet_instance.geometry_transform_index = meshlet_instance.geometry_transform_index
+                + brabon_scenes[0].instances_transforms_data.len() as u32;
+        }
+
+        brabon_scenes[0]
+            .instances_transforms_data
+            .extend(&brabon_scenes2[0].instances_transforms_data);
+        brabon_scenes[0]
+            .meshlet_instances
+            .extend(&brabon_scenes2[0].meshlet_instances);
+
+        let meshlets_buffer = ctx.upload_buffer(
+            &gltf_meshlet_parser.geometry_data.meshlets,
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+        );
+        let meshlets_vertices_buffer = ctx.upload_buffer(
+            &gltf_meshlet_parser.geometry_data.meshlet_vertices,
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+        );
+        let meshlets_triangles_buffer = ctx.upload_buffer(
+            &gltf_meshlet_parser.geometry_data.meshlet_triangles,
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+        );
+        let vertex_buffer = ctx.upload_buffer(
+            &gltf_meshlet_parser.geometry_data.vertices,
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+        );
+        let mut out: std::vec::Vec<meshlet2::DrawData> = vec![];
+        for scene in brabon_scenes {
+            let geometry_instances_buf = ctx.upload_buffer(
+                &scene.instances_transforms_data,
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            );
+
+            let meshlet_instances_buf = ctx.upload_buffer(
+                &scene.meshlet_instances,
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            );
+
+            out.push(meshlet2::DrawData {
+                geometry_instances_transforms: geometry_instances_buf,
+                meshlet_instances: meshlet_instances_buf,
+                meshlet_instances_count: scene.meshlet_instances.len() as u32,
+            });
+        }
 
         Self {
             vk: ctx.device.clone(),
@@ -94,11 +148,16 @@ impl Renderer2 {
             view_camera_data_buffer,
             grid,
             skybox,
-            asset_data_handles: brabon_asset.0,
-            asssets: brabon_asset.1,
             meshlet_pipeline: meshlet_pipeline,
             meshlet_pipeline_layout: meshlet_pipeline_layout,
             ext_device: ctx.mesh_shader_device.clone(),
+            brabon_draw_data: out,
+            geometry_data_handles: GeometryDataHandles {
+                vertices: vertex_buffer,
+                meshlet_vertices: meshlets_vertices_buffer,
+                meshlet_triangles: meshlets_triangles_buffer,
+                meshlets: meshlets_buffer,
+            },
             render_finished_semaphore,
         }
     }
@@ -250,28 +309,27 @@ impl Renderer2 {
                 vk.cmd_set_viewport(command_buffer, 0, &[viewport]);
                 vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
 
-                let asset = &self.asssets[0];
-
+                let brabon_scene_0 = &self.brabon_draw_data[0];
                 let pc = meshlet2::push_constants::PushConstants {
                     view_camera: self.view_camera_data_buffer.device_address.unwrap(),
-                    vertices: self.asset_data_handles.vertices.device_address.unwrap(),
+                    vertices: self.geometry_data_handles.vertices.device_address.unwrap(),
                     meshlet_vertices: self
-                        .asset_data_handles
+                        .geometry_data_handles
                         .meshlet_vertices
                         .device_address
                         .unwrap(),
                     meshlet_triangles: self
-                        .asset_data_handles
+                        .geometry_data_handles
                         .meshlet_triangles
                         .device_address
                         .unwrap(),
-                    meshlets: self.asset_data_handles.meshlets.device_address.unwrap(),
-                    geometry_instances_transforms: asset
-                        .scene_geometry_instances_transforms
+                    meshlets: self.geometry_data_handles.meshlets.device_address.unwrap(),
+                    geometry_instances_transforms: brabon_scene_0
+                        .geometry_instances_transforms
                         .device_address
                         .unwrap(),
-                    meshlet_instances: asset.scene_meshlet_instances.device_address.unwrap(),
-                    meshlet_instances_count: asset.scene_meshlet_instances_count,
+                    meshlet_instances: brabon_scene_0.meshlet_instances.device_address.unwrap(),
+                    meshlet_instances_count: brabon_scene_0.meshlet_instances_count,
                 };
 
                 vk.cmd_push_constants(
@@ -288,7 +346,7 @@ impl Renderer2 {
                 // task shader's single-subgroup ballot compaction stays correct).
                 self.ext_device.cmd_draw_mesh_tasks(
                     command_buffer,
-                    (asset.scene_meshlet_instances_count + 63) / 64,
+                    (brabon_scene_0.meshlet_instances_count + 63) / 64,
                     1,
                     1,
                 );
