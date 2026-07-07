@@ -17,17 +17,17 @@ pub struct Meshlet {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C, align(16))]
-pub struct GeometryInstanceTransform {
+pub struct MeshInstance {
     pub transform: glm::Mat4,
 }
 
-const _: () = assert!(std::mem::size_of::<GeometryInstanceTransform>() == 64);
+const _: () = assert!(std::mem::size_of::<MeshInstance>() == 64);
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct MeshletInstance {
-    pub geometry_transform_index: u32, // index into the GeometryInstance buffer (keeps transform + Geometry ref)
-    pub meshlet_index: u32,            // global index into the meshlets buffer
+    pub mesh_instance_index: u32, // index into the GeometryInstance buffer (keeps transform + Geometry ref)
+    pub meshlet_index: u32,       // global index into the meshlets buffer
 }
 
 pub struct GlobalGeometryData {

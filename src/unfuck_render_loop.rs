@@ -94,13 +94,13 @@ impl Renderer2 {
         let mut brabon_scenes2 = gltf_meshlet_parser.parse(&brabon_data, mat);
 
         for meshlet_instance in &mut brabon_scenes2[0].meshlet_instances {
-            meshlet_instance.geometry_transform_index = meshlet_instance.geometry_transform_index
-                + brabon_scenes[0].instances_transforms_data.len() as u32;
+            meshlet_instance.mesh_instance_index =
+                meshlet_instance.mesh_instance_index + brabon_scenes[0].mesh_instances.len() as u32;
         }
 
         brabon_scenes[0]
-            .instances_transforms_data
-            .extend(&brabon_scenes2[0].instances_transforms_data);
+            .mesh_instances
+            .extend(&brabon_scenes2[0].mesh_instances);
         brabon_scenes[0]
             .meshlet_instances
             .extend(&brabon_scenes2[0].meshlet_instances);
@@ -124,7 +124,7 @@ impl Renderer2 {
         let mut out: std::vec::Vec<meshlet2::DrawData> = vec![];
         for scene in brabon_scenes {
             let geometry_instances_buf = ctx.upload_buffer(
-                &scene.instances_transforms_data,
+                &scene.mesh_instances,
                 vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             );
 
