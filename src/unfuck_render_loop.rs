@@ -22,7 +22,7 @@ pub struct Renderer2 {
     meshlet_pipeline_layout: vk::PipelineLayout,
     ext_device: ash::ext::mesh_shader::Device,
 
-    brabon_draw_data: std::vec::Vec<meshlet2::DrawData>, // this is just vk buffer handles
+    brabon_draw_data: meshlet2::DrawData, // this is just vk buffer handles
     geometry_data_handles: meshlet2::GeometryDataHandles,
 
     render_finished_semaphore: vk::Semaphore,
@@ -87,23 +87,25 @@ impl Renderer2 {
         );
 
         let mut gltf_meshlet_parser = meshlet2::gltf::Parser::new();
-        let mut brabon_scenes = gltf_meshlet_parser.parse(&brabon_data, glm::Mat4::identity());
+        let mut brabon_scene =
+            gltf_meshlet_parser.parse(&brabon_data, glm::Mat4::identity(), Option::None);
 
         let mut mat = glm::Mat4::identity();
         mat = glm::translate(&mat, &glm::make_vec3(&[1.0, 1.0, 1.0]));
-        let mut brabon_scenes2 = gltf_meshlet_parser.parse(&brabon_data, mat);
+        mat = glm::rotate(&mat, 45.0f32.to_radians(), &glm::make_vec3(&[1.0, 1.0, 0.]));
+        let mut brabon_scene2 = gltf_meshlet_parser.parse(&brabon_data, mat, Option::None);
 
-        for meshlet_instance in &mut brabon_scenes2[0].meshlet_instances {
+        for meshlet_instance in &mut brabon_scene2.meshlet_instances {
             meshlet_instance.mesh_instance_index =
-                meshlet_instance.mesh_instance_index + brabon_scenes[0].mesh_instances.len() as u32;
+                meshlet_instance.mesh_instance_index + brabon_scene.mesh_instances.len() as u32;
         }
 
-        brabon_scenes[0]
+        brabon_scene
             .mesh_instances
-            .extend(&brabon_scenes2[0].mesh_instances);
-        brabon_scenes[0]
+            .extend(&brabon_scene2.mesh_instances);
+        brabon_scene
             .meshlet_instances
-            .extend(&brabon_scenes2[0].meshlet_instances);
+            .extend(&brabon_scene2.meshlet_instances);
 
         let meshlets_buffer = ctx.upload_buffer(
             &gltf_meshlet_parser.geometry_data.meshlets,
@@ -121,24 +123,21 @@ impl Renderer2 {
             &gltf_meshlet_parser.geometry_data.vertices,
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
-        let mut out: std::vec::Vec<meshlet2::DrawData> = vec![];
-        for scene in brabon_scenes {
-            let geometry_instances_buf = ctx.upload_buffer(
-                &scene.mesh_instances,
-                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-            );
+        let geometry_instances_buf = ctx.upload_buffer(
+            &brabon_scene.mesh_instances,
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+        );
 
-            let meshlet_instances_buf = ctx.upload_buffer(
-                &scene.meshlet_instances,
-                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-            );
+        let meshlet_instances_buf = ctx.upload_buffer(
+            &brabon_scene.meshlet_instances,
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+        );
 
-            out.push(meshlet2::DrawData {
-                geometry_instances_transforms: geometry_instances_buf,
-                meshlet_instances: meshlet_instances_buf,
-                meshlet_instances_count: scene.meshlet_instances.len() as u32,
-            });
-        }
+        let draw_data = meshlet2::DrawData {
+            geometry_instances_transforms: geometry_instances_buf,
+            meshlet_instances: meshlet_instances_buf,
+            meshlet_instances_count: brabon_scene.meshlet_instances.len() as u32,
+        };
 
         Self {
             vk: ctx.device.clone(),
@@ -151,7 +150,7 @@ impl Renderer2 {
             meshlet_pipeline: meshlet_pipeline,
             meshlet_pipeline_layout: meshlet_pipeline_layout,
             ext_device: ctx.mesh_shader_device.clone(),
-            brabon_draw_data: out,
+            brabon_draw_data: draw_data,
             geometry_data_handles: GeometryDataHandles {
                 vertices: vertex_buffer,
                 meshlet_vertices: meshlets_vertices_buffer,
@@ -309,7 +308,7 @@ impl Renderer2 {
                 vk.cmd_set_viewport(command_buffer, 0, &[viewport]);
                 vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
 
-                let brabon_scene_0 = &self.brabon_draw_data[0];
+                let brabon_scene_0 = &self.brabon_draw_data;
                 let pc = meshlet2::push_constants::PushConstants {
                     view_camera: self.view_camera_data_buffer.device_address.unwrap(),
                     vertices: self.geometry_data_handles.vertices.device_address.unwrap(),

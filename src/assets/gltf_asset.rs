@@ -70,7 +70,7 @@ pub struct GltfAssetData {
     pub meshes: std::vec::Vec<Mesh>,
     pub nodes: std::vec::Vec<Node>,
     pub scenes: std::vec::Vec<Scene>,
-    pub _default_scene: Option<usize>,
+    pub default_scene: Option<usize>,
 }
 
 impl GltfAssetData {
@@ -265,7 +265,7 @@ impl GltfAssetData {
             meshes,
             nodes,
             scenes,
-            _default_scene: document.default_scene().map(|scene| scene.index()),
+            default_scene: document.default_scene().map(|scene| scene.index()),
         }
     }
 }
