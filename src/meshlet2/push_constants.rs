@@ -8,7 +8,7 @@ pub struct PushConstants {
     pub meshlet_vertices: vk::DeviceAddress,
     pub meshlet_triangles: vk::DeviceAddress,
     pub meshlets: vk::DeviceAddress,
-    pub geometry_instances_transforms: vk::DeviceAddress,
+    pub mesh_instances: vk::DeviceAddress,
     pub meshlet_instances: vk::DeviceAddress,
     pub meshlet_instances_count: u32,
 }

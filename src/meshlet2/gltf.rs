@@ -24,11 +24,6 @@ pub struct Parser {
     asset_mesh_cache: AssetMeshCache,
 }
 
-pub struct GltfSceneDrawData {
-    pub mesh_instances: std::vec::Vec<MeshInstance>,
-    pub meshlet_instances: std::vec::Vec<MeshletInstance>,
-}
-
 impl Parser {
     pub fn new() -> Self {
         Self {
@@ -37,17 +32,19 @@ impl Parser {
                 meshlet_vertices: vec![],
                 meshlet_triangles: vec![],
                 meshlets: vec![],
+                mesh_instances: vec![],
+                meshlet_instances: vec![],
             },
             asset_mesh_cache: AssetMeshCache::new(),
         }
     }
 
-    pub fn parse(
+    pub fn push_instance(
         &mut self,
         gltf_asset: &gltf_asset::GltfAssetData,
         init_transform: glm::Mat4,
         scene: Option<usize>,
-    ) -> GltfSceneDrawData {
+    ) {
         let mesh_cache = self
             .asset_mesh_cache
             .entry(gltf_asset.path.clone())
@@ -70,12 +67,8 @@ impl Parser {
         let scene = scene.unwrap_or(gltf_asset.default_scene.unwrap_or(0));
         let scene = &gltf_asset.scenes[scene];
 
-        let mut scene_draw_data = GltfSceneDrawData {
-            mesh_instances: vec![],
-            meshlet_instances: vec![],
-        };
-        let mesh_instances = &mut scene_draw_data.mesh_instances;
-        let meshlet_instances = &mut scene_draw_data.meshlet_instances;
+        let mut mesh_instances = vec![];
+        let mut meshlet_instances = vec![];
 
         for node in &scene.nodes {
             node_stack.push(NodeStackEntry {
@@ -199,8 +192,16 @@ impl Parser {
             }
         }
 
-        println!("Gltf parsing time: {:?}", gltf_parsing_time.elapsed());
+        for meshlet_instance in &mut meshlet_instances {
+            meshlet_instance.mesh_instance_index = meshlet_instance.mesh_instance_index
+                + self.geometry_data.mesh_instances.len() as u32;
+        }
 
-        scene_draw_data
+        self.geometry_data.mesh_instances.extend(&mesh_instances);
+        self.geometry_data
+            .meshlet_instances
+            .extend(&meshlet_instances);
+
+        println!("Gltf parsing time: {:?}", gltf_parsing_time.elapsed());
     }
 }

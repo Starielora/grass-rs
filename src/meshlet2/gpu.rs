@@ -35,4 +35,6 @@ pub struct GlobalGeometryData {
     pub meshlet_vertices: std::vec::Vec<u32>,
     pub meshlet_triangles: std::vec::Vec<u8>,
     pub meshlets: std::vec::Vec<Meshlet>,
+    pub mesh_instances: std::vec::Vec<MeshInstance>,
+    pub meshlet_instances: std::vec::Vec<MeshletInstance>,
 }
