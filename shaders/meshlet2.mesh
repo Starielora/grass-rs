@@ -26,7 +26,8 @@ uint hash(uint a)
 void main() {
     uint mi_index = task_payload.meshlet_instance_index[gl_WorkGroupID.x];
     MeshletInstance meshlet_instance = push_constants.meshlet_instances.items[mi_index];
-    mat4 transform = push_constants.mesh_instances.items[meshlet_instance.mesh_instance_index].transform;
+    MeshInstance mesh_instance = push_constants.mesh_instances.items[meshlet_instance.mesh_instance_index];
+    mat4 transform = mesh_instance.transform;
     Meshlet meshlet = push_constants.meshlets.items[meshlet_instance.meshlet_index];
 
     uint ti = gl_LocalInvocationID.x; // 0..63 cooperate within the workgroup

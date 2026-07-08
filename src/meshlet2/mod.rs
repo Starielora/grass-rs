@@ -12,6 +12,7 @@ pub struct GeometryData {
     pub vertices: vkutils::buffer::Buffer,
     pub meshlet_vertices: vkutils::buffer::Buffer,
     pub meshlet_triangles: vkutils::buffer::Buffer,
+    pub meshes: vkutils::buffer::Buffer,
     pub meshlets: vkutils::buffer::Buffer,
     pub mesh_instances: vkutils::buffer::Buffer,
     pub mesh_instances_count: u32,
@@ -47,10 +48,16 @@ impl GeometryData {
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
 
+        let meshes_buffer = ctx.upload_buffer(
+            &data.meshes,
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+        );
+
         Self {
             vertices: vertex_buffer,
             meshlet_vertices: meshlets_vertices_buffer,
             meshlet_triangles: meshlets_triangles_buffer,
+            meshes: meshes_buffer,
             meshlets: meshlets_buffer,
             mesh_instances: mesh_instances_buffer,
             mesh_instances_count: data.mesh_instances.len() as u32,
@@ -65,6 +72,7 @@ impl vkutils::vk_destroy::VkDestroy for GeometryData {
         self.vertices.vk_destroy();
         self.meshlet_vertices.vk_destroy();
         self.meshlet_triangles.vk_destroy();
+        self.meshes.vk_destroy();
         self.meshlets.vk_destroy();
         self.mesh_instances.vk_destroy();
         self.meshlet_instances.vk_destroy();
@@ -143,6 +151,7 @@ impl GraphicsPipeline {
                 vertices: geometry_data.vertices.device_address.unwrap(),
                 meshlet_vertices: geometry_data.meshlet_vertices.device_address.unwrap(),
                 meshlet_triangles: geometry_data.meshlet_triangles.device_address.unwrap(),
+                meshes: geometry_data.meshes.device_address.unwrap(),
                 meshlets: geometry_data.meshlets.device_address.unwrap(),
                 mesh_instances: geometry_data.mesh_instances.device_address.unwrap(),
                 meshlet_instances: geometry_data.meshlet_instances.device_address.unwrap(),

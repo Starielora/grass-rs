@@ -15,14 +15,34 @@ pub struct Meshlet {
     pub triangle_offset: u32, // offset into meshlet_triangles array
     pub vertex_count: u32,
     pub triangle_count: u32,
+
+    // culling data
+    pub bounding_sphere_center: glm::Vec3,
+    pub bounding_sphere_radius: f32,
+    pub cone_apex: glm::Vec3,
+    pub cone_cutoff: f32,
+    pub cone_axis: glm::Vec3,
+    pub _padding: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct Mesh {
+    pub meshlets_offset: u32, // offset in global buffer
+    pub meshlets_count: u32,
+
+    pub _padding: glm::Vec2,
+
+    pub bounding_sphere_center: glm::Vec3,
+    pub bounding_sphere_radius: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C, align(16))]
 pub struct MeshInstance {
     pub transform: glm::Mat4,
-    pub meshlets_offset: u32, // offset in global buffer
-    pub meshlets_count: u32,
+    pub mesh_index: u32,
+    pub _padding: u32,
 }
 
 const _: () = assert!(std::mem::size_of::<MeshInstance>() == 80);
@@ -38,6 +58,7 @@ pub struct GlobalGeometryData {
     pub vertices: std::vec::Vec<Vertex>,
     pub meshlet_vertices: std::vec::Vec<u32>,
     pub meshlet_triangles: std::vec::Vec<u8>,
+    pub meshes: std::vec::Vec<Mesh>,
     pub meshlets: std::vec::Vec<Meshlet>,
     pub mesh_instances: std::vec::Vec<MeshInstance>,
     pub meshlet_instances: std::vec::Vec<MeshletInstance>,
@@ -50,6 +71,7 @@ pub struct PushConstants {
     pub vertices: vk::DeviceAddress,
     pub meshlet_vertices: vk::DeviceAddress,
     pub meshlet_triangles: vk::DeviceAddress,
+    pub meshes: vk::DeviceAddress,
     pub meshlets: vk::DeviceAddress,
     pub mesh_instances: vk::DeviceAddress,
     pub meshlet_instances: vk::DeviceAddress,

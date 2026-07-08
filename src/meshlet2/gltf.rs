@@ -2,18 +2,19 @@ use crate::{
     assets::gltf_asset,
     meshlet2::{
         build_meshlets,
-        gpu::{GlobalGeometryData, MeshInstance, Meshlet, MeshletInstance, Vertex},
+        gpu::{GlobalGeometryData, Mesh, MeshInstance, Meshlet, MeshletInstance, Vertex},
     },
 };
 
 #[derive(Clone)]
-pub struct MeshletInfo {
+pub struct MeshCacheInfo {
     pub meshlets_offset: u32, // offset into global meshlets array
     pub meshlets_count: u32,
+    pub global_mesh_index: u32, // index into global mesh array (holding bounding data and meshlets offset and count)
 }
 
 struct MeshCacheEntry {
-    meshlets_info: std::vec::Vec<MeshletInfo>, // per each primitive of the mesh
+    mesh_cache_info: std::vec::Vec<MeshCacheInfo>, // per each primitive of the mesh
 }
 
 type MeshCache = std::collections::HashMap<usize, MeshCacheEntry>;
@@ -31,6 +32,7 @@ impl Parser {
                 vertices: vec![],
                 meshlet_vertices: vec![],
                 meshlet_triangles: vec![],
+                meshes: vec![],
                 meshlets: vec![],
                 mesh_instances: vec![],
                 meshlet_instances: vec![],
@@ -52,6 +54,7 @@ impl Parser {
 
         let global_vertex_buffer = &mut self.geometry_data.vertices;
         let global_meshlets_buffer = &mut self.geometry_data.meshlets;
+        let global_meshes_buffer = &mut self.geometry_data.meshes;
         let global_meshlets_vertices_buffer = &mut self.geometry_data.meshlet_vertices;
         let global_meshlets_triangles_buffer = &mut self.geometry_data.meshlet_triangles;
 
@@ -85,25 +88,25 @@ impl Parser {
 
             if let Some(mesh_index) = node.mesh_index {
                 if let Some(mesh_entry) = mesh_cache.get(&mesh_index) {
-                    for meshlet_info in &mesh_entry.meshlets_info {
+                    for mesh_cache_info in &mesh_entry.mesh_cache_info {
                         mesh_instances.push(MeshInstance {
                             transform: world_transform,
-                            meshlets_offset: meshlet_info.meshlets_offset,
-                            meshlets_count: meshlet_info.meshlets_count,
+                            mesh_index: mesh_cache_info.global_mesh_index,
+                            _padding: 0,
                         });
 
                         let mesh_instance_index = mesh_instances.len() - 1;
-                        for i in 0..meshlet_info.meshlets_count {
+                        for i in 0..mesh_cache_info.meshlets_count {
                             meshlet_instances.push(MeshletInstance {
                                 mesh_instance_index: mesh_instance_index as u32,
-                                meshlet_index: meshlet_info.meshlets_offset + i,
+                                meshlet_index: mesh_cache_info.meshlets_offset + i,
                             });
                         }
                     }
                 } else {
-                    let mesh = &gltf_asset.meshes[mesh_index];
-                    let mut meshlets_info: std::vec::Vec<MeshletInfo> = vec![];
-                    for primitive in &mesh.primitives {
+                    let gltf_mesh = &gltf_asset.meshes[mesh_index];
+                    let mut mesh_cache_infos: std::vec::Vec<MeshCacheInfo> = vec![];
+                    for primitive in &gltf_mesh.primitives {
                         let vb = &primitive.vertex_buffer;
                         // TODO avoid clone?
                         let ib = match &primitive.index_buffer {
@@ -113,12 +116,17 @@ impl Parser {
                             gltf_asset::IndexBufferType::U32(items) => items.clone(),
                         };
 
-                        let meshlets = build_meshlets::build_meshlets(vb, &ib);
+                        let (meshlets, meshlets_bounds, sphere) =
+                            build_meshlets::build_meshlets(vb, &ib);
 
-                        let mut meshlet_info = MeshletInfo {
+                        let global_mesh_index = global_meshes_buffer.len() as u32;
+
+                        let mut mesh_cache_info = MeshCacheInfo {
                             meshlets_offset: 0,
                             meshlets_count: 0,
+                            global_mesh_index,
                         };
+
                         {
                             let meshlets_offset = global_meshlets_buffer.len() as u32;
                             let vertices_offset = global_vertex_buffer.len() as u32;
@@ -128,7 +136,11 @@ impl Parser {
                             let global_meshlet_triangles_offset =
                                 global_meshlets_triangles_buffer.len() as u32;
 
-                            for meshlet in &meshlets.meshlets {
+                            assert!(meshlets.meshlets.len() == meshlets_bounds.len());
+
+                            for (meshlet, bounds) in
+                                std::iter::zip(&meshlets.meshlets, &meshlets_bounds)
+                            {
                                 global_meshlets_buffer.push(Meshlet {
                                     // rebase offsets to global buffers
                                     vertex_offset: meshlet.vertex_offset
@@ -137,6 +149,12 @@ impl Parser {
                                         + global_meshlet_triangles_offset,
                                     vertex_count: meshlet.vertex_count,
                                     triangle_count: meshlet.triangle_count,
+                                    bounding_sphere_center: bounds.center.into(),
+                                    bounding_sphere_radius: bounds.radius,
+                                    cone_apex: bounds.cone_apex.into(),
+                                    cone_cutoff: bounds.cone_cutoff,
+                                    cone_axis: bounds.cone_axis.into(),
+                                    _padding: 0.0f32, // unsure if I'll need the u8 versions of cone axis and cutoff. Definitely not right now.
                                 })
                             }
 
@@ -145,10 +163,19 @@ impl Parser {
                                 .extend(meshlets.vertices.iter().map(|v| v + vertices_offset));
                             global_meshlets_triangles_buffer.extend(meshlets.triangles);
 
-                            meshlet_info.meshlets_offset = meshlets_offset;
-                            meshlet_info.meshlets_count = meshlets.meshlets.len() as u32;
+                            let meshlets_count = meshlets.meshlets.len() as u32;
+                            mesh_cache_info.meshlets_offset = meshlets_offset;
+                            mesh_cache_info.meshlets_count = meshlets_count;
 
-                            meshlets_info.push(meshlet_info.clone());
+                            mesh_cache_infos.push(mesh_cache_info.clone());
+
+                            global_meshes_buffer.push(Mesh {
+                                meshlets_offset,
+                                meshlets_count,
+                                _padding: [0.0f32, 0.0f32].into(),
+                                bounding_sphere_center: sphere.center.into(),
+                                bounding_sphere_radius: sphere.radius,
+                            });
                         }
 
                         {
@@ -171,20 +198,25 @@ impl Parser {
 
                         mesh_instances.push(MeshInstance {
                             transform: world_transform,
-                            meshlets_offset: meshlet_info.meshlets_offset,
-                            meshlets_count: meshlet_info.meshlets_count,
+                            mesh_index: global_mesh_index,
+                            _padding: 0,
                         });
 
                         let mesh_instance_index = mesh_instances.len() - 1;
-                        for i in 0..meshlet_info.meshlets_count {
+                        for i in 0..mesh_cache_info.meshlets_count {
                             meshlet_instances.push(MeshletInstance {
                                 mesh_instance_index: mesh_instance_index as u32,
-                                meshlet_index: meshlet_info.meshlets_offset + i,
+                                meshlet_index: mesh_cache_info.meshlets_offset + i,
                             })
                         }
                     }
 
-                    mesh_cache.insert(mesh_index, MeshCacheEntry { meshlets_info });
+                    mesh_cache.insert(
+                        mesh_index,
+                        MeshCacheEntry {
+                            mesh_cache_info: mesh_cache_infos,
+                        },
+                    );
                 }
             }
 

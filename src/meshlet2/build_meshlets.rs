@@ -1,7 +1,11 @@
 pub fn build_meshlets(
     vertices: &std::vec::Vec<f32>,
     indices: &std::vec::Vec<u32>,
-) -> meshopt::Meshlets {
+) -> (
+    meshopt::Meshlets,
+    std::vec::Vec<meshopt::Bounds>,
+    meshopt::Sphere,
+) {
     let vertices_slice = unsafe {
         std::slice::from_raw_parts(
             vertices.as_ptr() as *const u8,
@@ -19,5 +23,21 @@ pub fn build_meshlets(
     let meshopt_meshlets =
         meshopt::build_meshlets(indices.as_slice(), &vertex_adapter, 64, 124, 0.5);
 
-    meshopt_meshlets
+    // TODO repack the data, to reduce size. Cone data perhaps unnecessary
+    let mut meshlets_bounds = vec![];
+    for meshlet in meshopt_meshlets.iter() {
+        let meshlet_bounds = meshopt::compute_meshlet_bounds(meshlet, &vertex_adapter);
+        meshlets_bounds.push(meshlet_bounds);
+    }
+
+    let position_data_adapter = meshopt::PositionDataAdapter {
+        data: vertices_slice,
+        position_count: vertices.len() / 8,
+        position_stride: std::mem::size_of::<f32>() * 8,
+        position_offset: 0,
+    };
+
+    let sphere = meshopt::compute_sphere_bounds(position_data_adapter, None);
+
+    (meshopt_meshlets, meshlets_bounds, sphere)
 }

@@ -14,12 +14,28 @@ struct Meshlet {
     uint triangle_offset;
     uint vertex_count;
     uint triangle_count;
+
+    vec3 bounding_sphere_center;
+    float bounding_sphere_radius;
+    vec3 cone_apex;
+    float cone_cutoff;
+    vec3 cone_axis;
+    float _padding;
+};
+
+struct Mesh {
+    uint meshlets_offset;
+    uint meshlets_count;
+    vec2 _padding;
+
+    vec3 bounding_sphere_center;
+    float bounding_sphere_radius;
 };
 
 struct MeshInstance {
     mat4 transform;
-    uint meshlets_offset;
-    uint meshlets_count;
+    uint mesh_index;
+    uint _padding;
 };
 
 struct MeshletInstance {
@@ -51,12 +67,17 @@ layout(buffer_reference) readonly buffer MeshletInstanceBuf {
     MeshletInstance items[];
 };
 
+layout(buffer_reference) readonly buffer MeshesBuf {
+    Mesh items[];
+};
+
 layout(push_constant) uniform constants
 {
     CameraDataBuf view_camera;
     VertexBuf vertices;
     MeshletsVerticesBuf meshlets_vertices;
     MeshletsTrianglesBuf meshlets_triangles;
+    MeshesBuf meshes;
     MeshletsBuf meshlets;
     MeshInstanceBuf mesh_instances;
     MeshletInstanceBuf meshlet_instances;
