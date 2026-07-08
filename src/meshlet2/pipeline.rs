@@ -1,6 +1,6 @@
 use ash::vk;
 
-use crate::vkutils::shaders;
+use crate::{meshlet2::gpu, vkutils::shaders};
 
 pub fn create_pipeline(
     vk: &ash::Device,
