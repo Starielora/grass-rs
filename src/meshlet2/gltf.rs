@@ -88,6 +88,8 @@ impl Parser {
                     for meshlet_info in &mesh_entry.meshlets_info {
                         mesh_instances.push(MeshInstance {
                             transform: world_transform,
+                            meshlets_offset: meshlet_info.meshlets_offset,
+                            meshlets_count: meshlet_info.meshlets_count,
                         });
 
                         let mesh_instance_index = mesh_instances.len() - 1;
@@ -169,6 +171,8 @@ impl Parser {
 
                         mesh_instances.push(MeshInstance {
                             transform: world_transform,
+                            meshlets_offset: meshlet_info.meshlets_offset,
+                            meshlets_count: meshlet_info.meshlets_count,
                         });
 
                         let mesh_instance_index = mesh_instances.len() - 1;

@@ -1,7 +1,7 @@
 use crate::assets::gltf_asset;
 use crate::camera::GPUCameraData;
 use crate::grid2::Grid2;
-use crate::meshlet2::{self, GeometryData};
+use crate::meshlet2::{self};
 use crate::skybox2::Skybox2;
 use crate::vkutils::{self, vk_destroy::VkDestroy};
 use ash::vk;
@@ -18,9 +18,7 @@ pub struct Renderer2 {
     grid: Grid2,
     skybox: Skybox2,
 
-    meshlet_pipeline: vk::Pipeline,
-    meshlet_pipeline_layout: vk::PipelineLayout,
-    ext_device: ash::ext::mesh_shader::Device,
+    meshlet_pipeline: meshlet2::GraphicsPipeline,
     geometry_data: meshlet2::GeometryData,
 
     render_finished_semaphore: vk::Semaphore,
@@ -33,6 +31,7 @@ impl std::ops::Drop for Renderer2 {
             self.render_target.vk_destroy();
             self.depth_image.vk_destroy();
             self.view_camera_data_buffer.vk_destroy();
+            self.geometry_data.vk_destroy();
             vk.destroy_semaphore(self.render_finished_semaphore, None);
         }
     }
@@ -81,13 +80,6 @@ impl Renderer2 {
         //     "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
         // );
 
-        let (meshlet_pipeline, meshlet_pipeline_layout) = meshlet2::pipeline::create_pipeline(
-            &ctx.device.clone(),
-            ctx.bindless_descriptor_set.layout,
-            ctx.swapchain.surface_format.format,
-            ctx.depth_format,
-        );
-
         let mut gltf_meshlet_parser = meshlet2::gltf::Parser::new();
         gltf_meshlet_parser.push_instance(&brabon_data, glm::Mat4::identity(), Option::None);
 
@@ -97,31 +89,15 @@ impl Renderer2 {
         gltf_meshlet_parser.push_instance(&brabon_data, mat, Option::None);
         // gltf_meshlet_parser.push_instance(&bistro_data, glm::Mat4::identity(), Option::None);
 
-        let meshlets_buffer = ctx.upload_buffer(
-            &gltf_meshlet_parser.geometry_data.meshlets,
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+        let meshlet_pipeline = meshlet2::GraphicsPipeline::new(
+            &ctx.device,
+            &ctx.mesh_shader_device,
+            ctx.bindless_descriptor_set.layout,
+            ctx.swapchain.surface_format.format,
+            ctx.depth_format,
+            view_camera_data_buffer.device_address.unwrap(),
         );
-        let meshlets_vertices_buffer = ctx.upload_buffer(
-            &gltf_meshlet_parser.geometry_data.meshlet_vertices,
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-        );
-        let meshlets_triangles_buffer = ctx.upload_buffer(
-            &gltf_meshlet_parser.geometry_data.meshlet_triangles,
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-        );
-        let vertex_buffer = ctx.upload_buffer(
-            &gltf_meshlet_parser.geometry_data.vertices,
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-        );
-        let mesh_instances_buffer = ctx.upload_buffer(
-            &gltf_meshlet_parser.geometry_data.mesh_instances,
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-        );
-
-        let meshlet_instances_buffer = ctx.upload_buffer(
-            &gltf_meshlet_parser.geometry_data.meshlet_instances,
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-        );
+        let geometry_data = meshlet2::GeometryData::new(&ctx, &gltf_meshlet_parser.geometry_data);
 
         Self {
             vk: ctx.device.clone(),
@@ -131,20 +107,8 @@ impl Renderer2 {
             view_camera_data_buffer,
             grid,
             skybox,
-            meshlet_pipeline: meshlet_pipeline,
-            meshlet_pipeline_layout: meshlet_pipeline_layout,
-            ext_device: ctx.mesh_shader_device.clone(),
-            geometry_data: GeometryData {
-                vertices: vertex_buffer,
-                meshlet_vertices: meshlets_vertices_buffer,
-                meshlet_triangles: meshlets_triangles_buffer,
-                meshlets: meshlets_buffer,
-                mesh_instances: mesh_instances_buffer,
-                mesh_instances_count: gltf_meshlet_parser.geometry_data.mesh_instances.len() as u32,
-                meshlet_instances: meshlet_instances_buffer,
-                meshlet_instances_count: gltf_meshlet_parser.geometry_data.meshlet_instances.len()
-                    as u32,
-            },
+            meshlet_pipeline,
+            geometry_data,
             render_finished_semaphore,
         }
     }
@@ -277,55 +241,11 @@ impl Renderer2 {
                 vk.cmd_begin_rendering(command_buffer, &rendering_info);
             }
 
-            {
-                vk.cmd_bind_pipeline(
-                    command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    self.meshlet_pipeline,
-                );
-                let viewport = vk::Viewport {
-                    width: vkctx.swapchain.extent.width as f32,
-                    height: vkctx.swapchain.extent.height as f32,
-                    max_depth: 1.0,
-                    ..Default::default()
-                };
-                let scissors = vk::Rect2D {
-                    extent: vkctx.swapchain.extent,
-                    ..Default::default()
-                };
-                vk.cmd_set_viewport(command_buffer, 0, &[viewport]);
-                vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
-
-                let pc = meshlet2::push_constants::PushConstants {
-                    view_camera: self.view_camera_data_buffer.device_address.unwrap(),
-                    vertices: self.geometry_data.vertices.device_address.unwrap(),
-                    meshlet_vertices: self.geometry_data.meshlet_vertices.device_address.unwrap(),
-                    meshlet_triangles: self.geometry_data.meshlet_triangles.device_address.unwrap(),
-                    meshlets: self.geometry_data.meshlets.device_address.unwrap(),
-                    mesh_instances: self.geometry_data.mesh_instances.device_address.unwrap(),
-                    meshlet_instances: self.geometry_data.meshlet_instances.device_address.unwrap(),
-                    meshlet_instances_count: self.geometry_data.meshlet_instances_count,
-                };
-
-                vk.cmd_push_constants(
-                    command_buffer,
-                    self.meshlet_pipeline_layout,
-                    vk::ShaderStageFlags::MESH_EXT
-                        | vk::ShaderStageFlags::TASK_EXT
-                        | vk::ShaderStageFlags::FRAGMENT,
-                    0,
-                    pc.data(),
-                );
-
-                // One task workgroup per 32 meshlet instances (== subgroup width, so the
-                // task shader's single-subgroup ballot compaction stays correct).
-                self.ext_device.cmd_draw_mesh_tasks(
-                    command_buffer,
-                    (self.geometry_data.meshlet_instances_count + 63) / 64,
-                    1,
-                    1,
-                );
-            }
+            self.meshlet_pipeline.record(
+                command_buffer,
+                vkctx.swapchain.extent,
+                &self.geometry_data,
+            );
 
             self.skybox.record(command_buffer, vkctx.swapchain.extent);
             self.grid.record(command_buffer, vkctx.swapchain.extent);

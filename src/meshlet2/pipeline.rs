@@ -1,6 +1,6 @@
 use ash::vk;
 
-use crate::{meshlet2::push_constants, vkutils::shaders};
+use crate::vkutils::shaders;
 
 pub fn create_pipeline(
     vk: &ash::Device,
@@ -135,7 +135,7 @@ fn create_pipeline_layout(
     descriptor_set_layout: vk::DescriptorSetLayout,
 ) -> vk::PipelineLayout {
     let set_layouts = [descriptor_set_layout];
-    let push_constants_range = push_constants::get_push_constant_range();
+    let push_constants_range = gpu::get_push_constant_range();
     let create_info = vk::PipelineLayoutCreateInfo::default()
         .set_layouts(&set_layouts)
         .push_constant_ranges(&push_constants_range);

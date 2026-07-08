@@ -18,6 +18,8 @@ struct Meshlet {
 
 struct MeshInstance {
     mat4 transform;
+    uint meshlets_offset;
+    uint meshlets_count;
 };
 
 struct MeshletInstance {
@@ -58,6 +60,7 @@ layout(push_constant) uniform constants
     MeshletsBuf meshlets;
     MeshInstanceBuf mesh_instances;
     MeshletInstanceBuf meshlet_instances;
+    uint mesh_instances_count;
     uint meshlet_instances_count;
 } push_constants;
 
