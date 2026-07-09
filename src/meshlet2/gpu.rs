@@ -54,7 +54,7 @@ pub struct MeshletInstance {
     pub meshlet_index: u32,       // global index into the meshlets buffer
 }
 
-pub struct GlobalGeometryData {
+pub struct GeometryBuildData {
     pub vertices: std::vec::Vec<Vertex>,
     pub meshlet_vertices: std::vec::Vec<u32>,
     pub meshlet_triangles: std::vec::Vec<u8>,

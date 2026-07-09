@@ -6,6 +6,7 @@ use crate::skybox2::Skybox2;
 use crate::vkutils::{self, vk_destroy::VkDestroy};
 use ash::vk;
 use glm;
+use rand::RngExt;
 
 pub struct Renderer2 {
     vk: ash::Device,
@@ -19,7 +20,7 @@ pub struct Renderer2 {
     skybox: Skybox2,
 
     meshlet_pipeline: meshlet2::GraphicsPipeline,
-    geometry_data: meshlet2::GeometryData,
+    geometry_data: meshlet2::GeometryBuffers,
 
     render_finished_semaphore: vk::Semaphore,
 }
@@ -49,8 +50,8 @@ impl Renderer2 {
             ctx.swapchain.images.len().try_into().unwrap(),
         );
 
-        let render_target = get_render_target_image(&ctx);
-        let depth_image = get_depth_image(&ctx);
+        let render_target = create_render_target_image(&ctx);
+        let depth_image = create_depth_image(&ctx);
 
         let render_finished_semaphore = ctx.create_semaphore_vk();
 
@@ -73,21 +74,47 @@ impl Renderer2 {
 
         let brabon_data = gltf_asset::GltfAssetData::new(
             "/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
-            // "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
         );
-        // let bistro_data = gltf_asset::GltfAssetData::new(
-        //     // "/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
-        //     "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
-        // );
 
-        let mut gltf_meshlet_parser = meshlet2::gltf::Parser::new();
-        gltf_meshlet_parser.push_instance(&brabon_data, glm::Mat4::identity(), Option::None);
+        let mut geometry_builder = meshlet2::gltf::GeometryBuilder::new();
+        geometry_builder.add_instance(&brabon_data, glm::Mat4::identity(), Option::None);
+
+        // {
+        //     let mut rng = rand::rng();
+
+        //     for _i in 0..10000 {
+        //         let tx: f32 = rng.random_range(-10.0f32..10.0f32);
+        //         let ty: f32 = rng.random_range(-10.0f32..10.0f32);
+        //         let tz: f32 = rng.random_range(-10.0f32..10.0f32);
+
+        //         let az: f32 = rng.random_range(0.0f32..360.0f32).to_radians();
+        //         let el: f32 = rng.random_range(-90.0f32..90.0f32).to_radians();
+
+        //         let mut mat = glm::Mat4::identity();
+
+        //         mat = glm::translate(&mat, &glm::make_vec3(&[tx, ty, tz]));
+        //         mat = glm::rotate(&mat, az, &glm::make_vec3(&[0.0, -1.0, 0.0]));
+        //         mat = glm::rotate(&mat, el, &glm::make_vec3(&[0.0, 0.0, 1.0]));
+
+        //         gltf_meshlet_parser.push_instance(&brabon_data, mat, Option::None);
+        //     }
+        // }
 
         let mut mat = glm::Mat4::identity();
         mat = glm::translate(&mat, &glm::make_vec3(&[1.0, 1.0, 1.0]));
         mat = glm::rotate(&mat, 45.0f32.to_radians(), &glm::make_vec3(&[1.0, 1.0, 0.]));
-        gltf_meshlet_parser.push_instance(&brabon_data, mat, Option::None);
+        geometry_builder.add_instance(&brabon_data, mat, Option::None);
+
+        println!(
+            "Total meshlet instances: {}",
+            geometry_builder.geometry_data.meshlet_instances.len()
+        );
+
+        // let bistro_data = gltf_asset::GltfAssetData::new(
+        //     "/home/starielora/dev/repos/RTXDI-Assets/bistro/bistro.gltf",
+        // );
         // gltf_meshlet_parser.push_instance(&bistro_data, glm::Mat4::identity(), Option::None);
+        // gltf_meshlet_parser.push_instance(&bistro_data, mat, Option::None);
 
         let meshlet_pipeline = meshlet2::GraphicsPipeline::new(
             &ctx.device,
@@ -97,7 +124,7 @@ impl Renderer2 {
             ctx.depth_format,
             view_camera_data_buffer.device_address.unwrap(),
         );
-        let geometry_data = meshlet2::GeometryData::new(&ctx, &gltf_meshlet_parser.geometry_data);
+        let geometry_data = meshlet2::GeometryBuffers::new(&ctx, &geometry_builder.geometry_data);
 
         Self {
             vk: ctx.device.clone(),
@@ -124,8 +151,8 @@ impl Renderer2 {
     }
 
     pub fn resize(&mut self, ctx: &vkutils::context::VulkanContext) {
-        let render_target = get_render_target_image(&ctx);
-        let depth_image = get_depth_image(&ctx);
+        let render_target = create_render_target_image(&ctx);
+        let depth_image = create_depth_image(&ctx);
 
         self.render_target.vk_destroy();
         self.depth_image.vk_destroy();
@@ -373,7 +400,7 @@ impl Renderer2 {
     }
 }
 
-fn get_render_target_image(ctx: &vkutils::context::VulkanContext) -> vkutils::image::Image {
+fn create_render_target_image(ctx: &vkutils::context::VulkanContext) -> vkutils::image::Image {
     let format = ctx.swapchain.surface_format.format;
     let extent = ctx.swapchain.extent;
 
@@ -388,7 +415,7 @@ fn get_render_target_image(ctx: &vkutils::context::VulkanContext) -> vkutils::im
     )
 }
 
-fn get_depth_image(ctx: &vkutils::context::VulkanContext) -> vkutils::image::Image {
+fn create_depth_image(ctx: &vkutils::context::VulkanContext) -> vkutils::image::Image {
     let extent = ctx.swapchain.extent;
     ctx.create_image(
         ctx.depth_format,

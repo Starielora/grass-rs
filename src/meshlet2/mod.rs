@@ -1,6 +1,6 @@
 use ash::vk;
 
-use crate::{meshlet2::gpu::GlobalGeometryData, vkutils};
+use crate::{meshlet2::gpu::GeometryBuildData, vkutils};
 
 mod build_meshlets;
 pub mod gltf;
@@ -8,7 +8,7 @@ mod gpu;
 pub mod pipeline;
 
 // TODO cleanup all these struct duplicates. Some are probably only local during asset creation
-pub struct GeometryData {
+pub struct GeometryBuffers {
     pub vertices: vkutils::buffer::Buffer,
     pub meshlet_vertices: vkutils::buffer::Buffer,
     pub meshlet_triangles: vkutils::buffer::Buffer,
@@ -20,8 +20,8 @@ pub struct GeometryData {
     pub meshlet_instances_count: u32,
 }
 
-impl GeometryData {
-    pub fn new(ctx: &vkutils::context::VulkanContext, data: &GlobalGeometryData) -> Self {
+impl GeometryBuffers {
+    pub fn new(ctx: &vkutils::context::VulkanContext, data: &GeometryBuildData) -> Self {
         let meshlets_buffer = ctx.upload_buffer(
             &data.meshlets,
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
@@ -67,7 +67,7 @@ impl GeometryData {
     }
 }
 
-impl vkutils::vk_destroy::VkDestroy for GeometryData {
+impl vkutils::vk_destroy::VkDestroy for GeometryBuffers {
     fn vk_destroy(&self) {
         self.vertices.vk_destroy();
         self.meshlet_vertices.vk_destroy();
@@ -122,7 +122,7 @@ impl GraphicsPipeline {
         &self,
         command_buffer: vk::CommandBuffer,
         extent: vk::Extent2D,
-        geometry_data: &GeometryData,
+        geometry_data: &GeometryBuffers,
     ) {
         let vk = &self.vk;
         let vk_ext = &self.vk_ext;

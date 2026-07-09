@@ -2,7 +2,7 @@ use crate::{
     assets::gltf_asset,
     meshlet2::{
         build_meshlets,
-        gpu::{GlobalGeometryData, Mesh, MeshInstance, Meshlet, MeshletInstance, Vertex},
+        gpu::{GeometryBuildData, Mesh, MeshInstance, Meshlet, MeshletInstance, Vertex},
     },
 };
 
@@ -20,15 +20,15 @@ struct MeshCacheEntry {
 type MeshCache = std::collections::HashMap<usize, MeshCacheEntry>;
 type AssetMeshCache = std::collections::HashMap<std::string::String, MeshCache>;
 
-pub struct Parser {
-    pub geometry_data: GlobalGeometryData,
+pub struct GeometryBuilder {
+    pub geometry_data: GeometryBuildData,
     asset_mesh_cache: AssetMeshCache,
 }
 
-impl Parser {
+impl GeometryBuilder {
     pub fn new() -> Self {
         Self {
-            geometry_data: GlobalGeometryData {
+            geometry_data: GeometryBuildData {
                 vertices: vec![],
                 meshlet_vertices: vec![],
                 meshlet_triangles: vec![],
@@ -41,7 +41,7 @@ impl Parser {
         }
     }
 
-    pub fn push_instance(
+    pub fn add_instance(
         &mut self,
         gltf_asset: &gltf_asset::GltfAssetData,
         init_transform: glm::Mat4,

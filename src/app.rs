@@ -61,6 +61,18 @@ impl App {
     }
 }
 
+fn camera_snapshot(
+    cameras: &[Option<camera::Camera>; NUM_CAMERAS],
+    camera_index: usize,
+) -> (glm::Vec4, glm::Mat4, glm::Mat4) {
+    let camera = cameras.iter().nth(camera_index).unwrap().as_ref().unwrap();
+    (
+        camera.pos(),
+        camera.get_projection_view(),
+        camera.get_view(),
+    )
+}
+
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let window_attrs = winit::window::WindowAttributes::default()
@@ -108,50 +120,14 @@ impl ApplicationHandler for App {
                 .update_pos();
         }
 
-        let (mut camera_pos, mut camera_projview, mut camera_view) = {
-            let camera = self
-                .cameras
-                .iter_mut()
-                .nth(self.current_view_camera_index)
-                .unwrap()
-                .as_mut()
-                .unwrap();
-            (
-                camera.pos(),
-                camera.get_projection_view(),
-                camera.get_view(),
-            )
-        };
+        let (mut camera_pos, mut camera_projview, mut camera_view) =
+            camera_snapshot(&self.cameras, self.current_view_camera_index);
 
-        let (ctrl_camera_pos, ctrl_camera_projview, ctrl_camera_view) = {
-            let camera = self
-                .cameras
-                .iter_mut()
-                .nth(self.current_control_camera_index)
-                .unwrap()
-                .as_mut()
-                .unwrap();
-            (
-                camera.pos(),
-                camera.get_projection_view(),
-                camera.get_view(),
-            )
-        };
+        let (ctrl_camera_pos, ctrl_camera_projview, ctrl_camera_view) =
+            camera_snapshot(&self.cameras, self.current_control_camera_index);
 
-        let (cull_camera_pos, cull_camera_projview, cull_camera_view) = {
-            let camera = self
-                .cameras
-                .iter_mut()
-                .nth(self.current_cull_camera_index)
-                .unwrap()
-                .as_mut()
-                .unwrap();
-            (
-                camera.pos(),
-                camera.get_projection_view(),
-                camera.get_view(),
-            )
-        };
+        let (cull_camera_pos, cull_camera_projview, cull_camera_view) =
+            camera_snapshot(&self.cameras, self.current_cull_camera_index);
 
         let use_old_render_logic = if cfg!(feature = "old_renderer") {
             true
@@ -264,20 +240,8 @@ impl ApplicationHandler for App {
 
                 renderer.resize(&vkctx);
                 self.rebuild_swapchain = false;
-                (camera_pos, camera_projview, camera_view) = {
-                    let camera = self
-                        .cameras
-                        .iter_mut()
-                        .nth(self.current_view_camera_index)
-                        .unwrap()
-                        .as_mut()
-                        .unwrap();
-                    (
-                        camera.pos(),
-                        camera.get_projection_view(),
-                        camera.get_view(),
-                    )
-                };
+                (camera_pos, camera_projview, camera_view) =
+                    camera_snapshot(&self.cameras, self.current_view_camera_index);
             }
             renderer.update_gpu_camera_data((camera_pos, camera_projview, camera_view));
             let frame_outcome = renderer.draw(vkctx);
