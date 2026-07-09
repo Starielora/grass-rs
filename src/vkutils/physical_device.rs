@@ -6,6 +6,7 @@ pub struct PhysicalDevice {
     pub memory_props: vk::PhysicalDeviceMemoryProperties,
     pub graphics_queue_family_index: u32,
     pub compute_queue_family_index: u32,
+    pub subgroup_size: u32,
 }
 
 pub fn find_suitable(instance: &ash::Instance) -> PhysicalDevice {
@@ -63,6 +64,12 @@ pub fn find_suitable(instance: &ash::Instance) -> PhysicalDevice {
     let memory_props = unsafe { instance.get_physical_device_memory_properties(physical_device) };
     let props = unsafe { instance.get_physical_device_properties(physical_device) };
 
+    let mut subgroup_props = vk::PhysicalDeviceSubgroupProperties::default();
+    let mut props2 = ash::vk::PhysicalDeviceProperties2::default().push_next(&mut subgroup_props);
+    unsafe {
+        instance.get_physical_device_properties2(physical_device, &mut props2);
+    }
+
     let device_name: std::vec::Vec<u8> = props.device_name.iter().map(|v| *v as u8).collect();
 
     println!(
@@ -78,6 +85,7 @@ pub fn find_suitable(instance: &ash::Instance) -> PhysicalDevice {
         memory_props,
         graphics_queue_family_index: queues[0],
         compute_queue_family_index: queues[1],
+        subgroup_size: subgroup_props.subgroup_size,
     }
 }
 

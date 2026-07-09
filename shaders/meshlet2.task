@@ -8,7 +8,8 @@
 
 taskPayloadSharedEXT TaskPayload task_payload;
 
-layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+// pulls id 0 from layout(constant_id = 0) which happens to be SUBGROUP_SIZE
+layout(local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;
 void main() {
     uint mi = gl_GlobalInvocationID.x;
     bool valid = mi < push_constants.meshlet_instances_count;

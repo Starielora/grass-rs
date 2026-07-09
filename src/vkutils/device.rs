@@ -47,7 +47,8 @@ pub fn create(
 
     let mut vk13_physical_device_features = vk::PhysicalDeviceVulkan13Features::default()
         .dynamic_rendering(true)
-        .maintenance4(true);
+        .maintenance4(true)
+        .subgroup_size_control(true);
 
     let mut mesh_shading_features = vk::PhysicalDeviceMeshShaderFeaturesEXT::default()
         .mesh_shader(true)

@@ -7,7 +7,9 @@ pub fn create_pipeline(
     descriptor_set_layout: vk::DescriptorSetLayout,
     swapchain_format: vk::Format,
     depth_format: vk::Format,
+    subgroup_size: u32,
 ) -> (vk::Pipeline, vk::PipelineLayout) {
+    assert!(subgroup_size <= 64, "TaskPayload array is sized [64]");
     let pipeline_layout = create_pipeline_layout(vk, descriptor_set_layout);
 
     let ms = &shaders::MESHLET_MESH;
@@ -18,26 +20,45 @@ pub fn create_pipeline(
     let ms_module = shaders::create_shader_module(vk, ms.spv).unwrap();
     let ts_module = shaders::create_shader_module(vk, ts.spv).unwrap();
     let fs_module = shaders::create_shader_module(vk, fs.spv).unwrap();
+    let ts_name = unsafe { std::ffi::CStr::from_ptr(ts.entry_point_name()) };
+    let ms_name = unsafe { std::ffi::CStr::from_ptr(ms.entry_point_name()) };
+    let fs_name = unsafe { std::ffi::CStr::from_ptr(fs.entry_point_name()) };
+
+    let spec_entry = vk::SpecializationMapEntry {
+        constant_id: 0,
+        offset: 0,
+        size: std::mem::size_of::<u32>(),
+    };
+    let spec_data: u32 = subgroup_size;
+    let spec_data_bytes = spec_data.to_ne_bytes();
+    let spec_info = vk::SpecializationInfo {
+        map_entry_count: 1,
+        p_map_entries: &spec_entry,
+        data_size: spec_data_bytes.len(),
+        p_data: spec_data_bytes.as_ptr() as *const std::ffi::c_void,
+        ..Default::default()
+    };
+
+    // TODO probably could hide this behind checking for VK_EXT_subgroup_size_control support or VK >= 1.3
+    let mut required = vk::PipelineShaderStageRequiredSubgroupSizeCreateInfo::default()
+        .required_subgroup_size(subgroup_size);
 
     let shader_stages = [
-        vk::PipelineShaderStageCreateInfo {
-            stage: vk::ShaderStageFlags::TASK_EXT,
-            module: ts_module,
-            p_name: ts.entry_point_name(),
-            ..Default::default()
-        },
-        vk::PipelineShaderStageCreateInfo {
-            stage: vk::ShaderStageFlags::MESH_EXT,
-            module: ms_module,
-            p_name: ms.entry_point_name(),
-            ..Default::default()
-        },
-        vk::PipelineShaderStageCreateInfo {
-            stage: vk::ShaderStageFlags::FRAGMENT,
-            module: fs_module,
-            p_name: fs.entry_point_name(),
-            ..Default::default()
-        },
+        vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::TASK_EXT)
+            .module(ts_module)
+            .name(ts_name)
+            .specialization_info(&spec_info)
+            .push_next(&mut required),
+        vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::MESH_EXT)
+            .module(ms_module)
+            .name(ms_name)
+            .specialization_info(&spec_info),
+        vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::FRAGMENT)
+            .module(fs_module)
+            .name(fs_name),
     ];
 
     let viewport_state = vk::PipelineViewportStateCreateInfo::default()

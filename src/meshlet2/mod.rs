@@ -7,7 +7,6 @@ pub mod gltf;
 mod gpu;
 pub mod pipeline;
 
-// TODO cleanup all these struct duplicates. Some are probably only local during asset creation
 pub struct GeometryBuffers {
     pub vertices: vkutils::buffer::Buffer,
     pub meshlet_vertices: vkutils::buffer::Buffer,
@@ -85,6 +84,7 @@ pub struct GraphicsPipeline {
     pipeline: vk::Pipeline,
     pipeline_layout: vk::PipelineLayout,
     view_camera_bda: vk::DeviceAddress,
+    subgroup_size: u32,
 }
 
 impl std::ops::Drop for GraphicsPipeline {
@@ -105,9 +105,15 @@ impl GraphicsPipeline {
         swapchain_format: vk::Format,
         depth_format: vk::Format,
         view_camera: vk::DeviceAddress,
+        subgroup_size: u32,
     ) -> Self {
-        let (pipeline, pipeline_layout) =
-            pipeline::create_pipeline(vk, descriptor_set_layout, swapchain_format, depth_format);
+        let (pipeline, pipeline_layout) = pipeline::create_pipeline(
+            vk,
+            descriptor_set_layout,
+            swapchain_format,
+            depth_format,
+            subgroup_size,
+        );
 
         Self {
             vk: vk.clone(),
@@ -115,6 +121,7 @@ impl GraphicsPipeline {
             pipeline,
             pipeline_layout,
             view_camera_bda: view_camera,
+            subgroup_size,
         }
     }
 
@@ -173,7 +180,8 @@ impl GraphicsPipeline {
             // task shader's single-subgroup ballot compaction stays correct).
             vk_ext.cmd_draw_mesh_tasks(
                 command_buffer,
-                (geometry_data.meshlet_instances_count + 63) / 64,
+                (geometry_data.meshlet_instances_count + (self.subgroup_size - 1))
+                    / self.subgroup_size,
                 1,
                 1,
             );
