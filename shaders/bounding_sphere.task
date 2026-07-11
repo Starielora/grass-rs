@@ -5,27 +5,20 @@
 #extension GL_GOOGLE_include_directive : enable
 
 #include "meshlet2_common.glsl"
+#include "bounding_sphere_common.glsl"
 
-struct Sphere {
-    vec3 center;
-    float radius;
-};
-
-struct TaskPayload2 {
-    Sphere spheres[64];
-};
-
-taskPayloadSharedEXT TaskPayload2 payload;
+Sphere world_sphere(mat4 transform, vec3 center, float radius) {
+    Sphere s;
+    s.center = (transform * vec4(center, 1.0)).xyz;
+    s.radius = radius * length(transform[0].xyz);
+    return s;
+}
 
 Sphere get_mesh_instance_bounding_sphere(uint mesh_instance_index) {
     MeshInstance mesh_instance = push_constants.mesh_instances.items[mesh_instance_index];
     Mesh mesh = push_constants.meshes.items[mesh_instance.mesh_index];
 
-    Sphere s;
-    s.center = (mesh_instance.transform * vec4(mesh.bounding_sphere_center, 1.0)).xyz;
-    s.radius = mesh.bounding_sphere_radius * length(mesh_instance.transform[0].xyz);
-
-    return s;
+    return world_sphere(mesh_instance.transform, mesh.bounding_sphere_center, mesh.bounding_sphere_radius);
 }
 
 Sphere get_meshlet_instance_bounding_sphere(uint meshlet_instance_index) {
@@ -33,21 +26,16 @@ Sphere get_meshlet_instance_bounding_sphere(uint meshlet_instance_index) {
     Meshlet meshlet = push_constants.meshlets.items[meshlet_instance.meshlet_index];
     MeshInstance mesh_instance = push_constants.mesh_instances.items[meshlet_instance.mesh_instance_index];
 
-    Sphere s;
-    s.center = (mesh_instance.transform * vec4(meshlet.bounding_sphere_center, 1.0)).xyz;
-    s.radius = meshlet.bounding_sphere_radius * length(mesh_instance.transform[0].xyz);
-
-    return s;
+    return world_sphere(mesh_instance.transform, meshlet.bounding_sphere_center, meshlet.bounding_sphere_radius);
 }
 
 // TODO would define be better?
 layout(constant_id = 1) const bool MESH_BOUNDING_SPHERE = false;
+layout(local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;
+taskPayloadSharedEXT TaskPayload payload;
 
-// pulls id 0 from layout(constant_id = 0) which happens to be SUBGROUP_SIZE
-// TODO actually pull it from specialization constant
-layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 void main() {
-    uint wg = gl_WorkGroupID.x + gl_WorkGroupID.y * gl_NumWorkGroups.x; // 2D dispatch, because I'm hitting 65535 limit quickly with meshlet-instance-count dispatches
+    uint wg = gl_WorkGroupID.x + gl_WorkGroupID.y * gl_NumWorkGroups.x;
     uint mi = wg * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
     bool valid = false;
 

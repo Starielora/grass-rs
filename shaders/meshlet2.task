@@ -5,6 +5,7 @@
 #extension GL_GOOGLE_include_directive : enable
 
 #include "meshlet2_common.glsl"
+#include "meshlet2_payload.glsl"
 
 taskPayloadSharedEXT TaskPayload task_payload;
 

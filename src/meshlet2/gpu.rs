@@ -103,3 +103,30 @@ pub fn get_push_constant_range() -> [vk::PushConstantRange; 1] {
         size: std::mem::size_of::<PushConstants>() as u32,
     }]
 }
+
+pub(super) fn create_pipeline_layout(
+    vk: &ash::Device,
+    descriptor_set_layout: vk::DescriptorSetLayout,
+) -> vk::PipelineLayout {
+    let set_layouts = [descriptor_set_layout];
+    let push_constants_range = get_push_constant_range();
+    let create_info = vk::PipelineLayoutCreateInfo::default()
+        .set_layouts(&set_layouts)
+        .push_constant_ranges(&push_constants_range);
+    unsafe {
+        vk.create_pipeline_layout(&create_info, None)
+            .expect("Failed to create pipeline layout")
+    }
+}
+
+pub(super) fn task_dispatch_2d(
+    instance_count: u32,
+    subgroup_size: u32,
+    max_dim: u32,
+) -> (u32, u32) {
+    let total_groups = (instance_count + (subgroup_size - 1)) / subgroup_size;
+    let group_x = total_groups.min(max_dim);
+    let group_y = (total_groups + max_dim - 1) / max_dim;
+
+    (group_x, group_y)
+}

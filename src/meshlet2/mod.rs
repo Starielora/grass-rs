@@ -1,6 +1,9 @@
 use ash::vk;
 
-use crate::{meshlet2::gpu::GeometryBuildData, vkutils};
+use crate::{
+    meshlet2::gpu::{task_dispatch_2d, GeometryBuildData},
+    vkutils,
+};
 
 pub mod bounding_sphere;
 mod build_meshlets;
@@ -63,6 +66,21 @@ impl GeometryBuffers {
             mesh_instances_count: data.mesh_instances.len() as u32,
             meshlet_instances: meshlet_instances_buffer,
             meshlet_instances_count: data.meshlet_instances.len() as u32,
+        }
+    }
+
+    pub fn push_constants(&self, view_camera: vk::DeviceAddress) -> gpu::PushConstants {
+        gpu::PushConstants {
+            view_camera,
+            vertices: self.vertices.device_address.unwrap(),
+            meshlet_vertices: self.meshlet_vertices.device_address.unwrap(),
+            meshlet_triangles: self.meshlet_triangles.device_address.unwrap(),
+            meshes: self.meshes.device_address.unwrap(),
+            meshlets: self.meshlets.device_address.unwrap(),
+            mesh_instances: self.mesh_instances.device_address.unwrap(),
+            meshlet_instances: self.meshlet_instances.device_address.unwrap(),
+            mesh_instances_count: self.mesh_instances_count,
+            meshlet_instances_count: self.meshlet_instances_count,
         }
     }
 }
@@ -157,34 +175,21 @@ impl GraphicsPipeline {
             vk.cmd_set_viewport(command_buffer, 0, &[viewport]);
             vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
 
-            let pc = gpu::PushConstants {
-                view_camera: self.view_camera_bda,
-                vertices: geometry_data.vertices.device_address.unwrap(),
-                meshlet_vertices: geometry_data.meshlet_vertices.device_address.unwrap(),
-                meshlet_triangles: geometry_data.meshlet_triangles.device_address.unwrap(),
-                meshes: geometry_data.meshes.device_address.unwrap(),
-                meshlets: geometry_data.meshlets.device_address.unwrap(),
-                mesh_instances: geometry_data.mesh_instances.device_address.unwrap(),
-                meshlet_instances: geometry_data.meshlet_instances.device_address.unwrap(),
-                mesh_instances_count: geometry_data.mesh_instances_count,
-                meshlet_instances_count: geometry_data.meshlet_instances_count,
-            };
+            let pc = geometry_data.push_constants(self.view_camera_bda);
 
             vk.cmd_push_constants(
                 command_buffer,
                 self.pipeline_layout,
-                vk::ShaderStageFlags::MESH_EXT
-                    | vk::ShaderStageFlags::TASK_EXT
-                    | vk::ShaderStageFlags::FRAGMENT,
+                gpu::get_push_constants_stage_flags(),
                 0,
                 pc.data(),
             );
 
-            let total_groups = (geometry_data.meshlet_instances_count + (self.subgroup_size - 1))
-                / self.subgroup_size;
-            let max_dim = self.max_task_workgroup_count[0];
-            let group_x = total_groups.min(max_dim);
-            let group_y = (total_groups + max_dim - 1) / max_dim;
+            let (group_x, group_y) = task_dispatch_2d(
+                geometry_data.meshlet_instances_count,
+                self.subgroup_size,
+                self.max_task_workgroup_count[0],
+            );
 
             vk_ext.cmd_draw_mesh_tasks(command_buffer, group_x, group_y, 1);
         }

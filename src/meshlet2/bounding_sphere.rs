@@ -1,7 +1,10 @@
 use ash::vk;
 
 use crate::{
-    meshlet2::{gpu, GeometryBuffers},
+    meshlet2::{
+        gpu::{self, task_dispatch_2d},
+        GeometryBuffers,
+    },
     vkutils::shaders,
 };
 
@@ -34,7 +37,7 @@ impl BoundingSphere {
         subgroup_size: u32,
         max_task_workgroup_count: [u32; 3],
     ) -> Self {
-        let pipeline_layout = create_pipeline_layout(vk, descriptor_set_layout);
+        let pipeline_layout = gpu::create_pipeline_layout(vk, descriptor_set_layout);
         let pipeline_mesh = create_pipeline(
             vk,
             pipeline_layout,
@@ -86,22 +89,21 @@ impl BoundingSphere {
         let (pipeline, dispatch_count_x, dispatch_count_y) = match self.draw_mode {
             DrawMode::NONE => return,
             DrawMode::MESH => {
-                let total_groups = (geometry_data.mesh_instances_count + (self.subgroup_size - 1))
-                    / self.subgroup_size;
-                let max_dim = self.max_task_workgroup_count[0]; // maxTaskWorkGroupCount[0] — ideally query, don't hardcode
-                let group_x = total_groups.min(max_dim);
-                let group_y = (total_groups + max_dim - 1) / max_dim;
+                let (group_x, group_y) = task_dispatch_2d(
+                    geometry_data.mesh_instances_count,
+                    self.subgroup_size,
+                    self.max_task_workgroup_count[0],
+                );
 
                 // TODO 2D dispatch similarly to meshlets
                 (self.pipeline_mesh, group_x, group_y)
             }
             DrawMode::MESHLET => {
-                let total_groups = (geometry_data.meshlet_instances_count
-                    + (self.subgroup_size - 1))
-                    / self.subgroup_size;
-                let max_dim = self.max_task_workgroup_count[0]; // maxTaskWorkGroupCount[0] — ideally query, don't hardcode
-                let group_x = total_groups.min(max_dim);
-                let group_y = (total_groups + max_dim - 1) / max_dim;
+                let (group_x, group_y) = task_dispatch_2d(
+                    geometry_data.meshlet_instances_count,
+                    self.subgroup_size,
+                    self.max_task_workgroup_count[0],
+                );
                 (self.pipeline_meshlet, group_x, group_y)
             }
         };
@@ -121,18 +123,7 @@ impl BoundingSphere {
             vk.cmd_set_viewport(command_buffer, 0, &[viewport]);
             vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
 
-            let pc = gpu::PushConstants {
-                view_camera: self.view_camera_bda,
-                vertices: geometry_data.vertices.device_address.unwrap(),
-                meshlet_vertices: geometry_data.meshlet_vertices.device_address.unwrap(),
-                meshlet_triangles: geometry_data.meshlet_triangles.device_address.unwrap(),
-                meshes: geometry_data.meshes.device_address.unwrap(),
-                meshlets: geometry_data.meshlets.device_address.unwrap(),
-                mesh_instances: geometry_data.mesh_instances.device_address.unwrap(),
-                meshlet_instances: geometry_data.meshlet_instances.device_address.unwrap(),
-                mesh_instances_count: geometry_data.mesh_instances_count,
-                meshlet_instances_count: geometry_data.meshlet_instances_count,
-            };
+            let pc = geometry_data.push_constants(self.view_camera_bda);
 
             vk.cmd_push_constants(
                 command_buffer,
@@ -292,20 +283,4 @@ fn create_pipeline(
     }
 
     pipelines[0]
-}
-
-// TODO duplicate with graphics pipeline, because they're using the same task shader.
-fn create_pipeline_layout(
-    vk: &ash::Device,
-    descriptor_set_layout: vk::DescriptorSetLayout,
-) -> vk::PipelineLayout {
-    let set_layouts = [descriptor_set_layout];
-    let push_constants_range = gpu::get_push_constant_range();
-    let create_info = vk::PipelineLayoutCreateInfo::default()
-        .set_layouts(&set_layouts)
-        .push_constant_ranges(&push_constants_range);
-    unsafe {
-        vk.create_pipeline_layout(&create_info, None)
-            .expect("Failed to create pipeline layout")
-    }
 }

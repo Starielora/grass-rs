@@ -2,6 +2,7 @@
 #extension GL_EXT_mesh_shader : require
 
 #include "meshlet2_common.glsl"
+#include "bounding_sphere_common.glsl"
 
 #define SEGMENTS 20
 #define NUM_CIRCLES 3
@@ -14,17 +15,7 @@ layout(location = 0) out vec4 color[];
 
 const float PI = 3.14159265358979323846;
 
-struct Sphere {
-    vec3 center;
-    float radius;
-};
-
-// TODO ugh, clean up this mess - it's a different struct than in meshlet2_common, but I need structs from this file
-struct TaskPayload2 {
-    Sphere spheres[64];
-};
-
-taskPayloadSharedEXT TaskPayload2 payload;
+taskPayloadSharedEXT TaskPayload payload;
 
 void main() {
     Sphere s = payload.spheres[gl_WorkGroupID.x];

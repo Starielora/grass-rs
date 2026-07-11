@@ -10,7 +10,7 @@ pub fn create_pipeline(
     subgroup_size: u32,
 ) -> (vk::Pipeline, vk::PipelineLayout) {
     assert!(subgroup_size <= 64, "TaskPayload array is sized [64]");
-    let pipeline_layout = create_pipeline_layout(vk, descriptor_set_layout);
+    let pipeline_layout = gpu::create_pipeline_layout(vk, descriptor_set_layout);
 
     let ms = &shaders::MESHLET_MESH;
     let ts = &shaders::MESHLET_TASK;
@@ -149,19 +149,4 @@ pub fn create_pipeline(
     }
 
     (pipelines[0], pipeline_layout)
-}
-
-fn create_pipeline_layout(
-    vk: &ash::Device,
-    descriptor_set_layout: vk::DescriptorSetLayout,
-) -> vk::PipelineLayout {
-    let set_layouts = [descriptor_set_layout];
-    let push_constants_range = gpu::get_push_constant_range();
-    let create_info = vk::PipelineLayoutCreateInfo::default()
-        .set_layouts(&set_layouts)
-        .push_constant_ranges(&push_constants_range);
-    unsafe {
-        vk.create_pipeline_layout(&create_info, None)
-            .expect("Failed to create pipeline layout")
-    }
 }
