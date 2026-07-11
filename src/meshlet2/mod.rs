@@ -2,6 +2,7 @@ use ash::vk;
 
 use crate::{meshlet2::gpu::GeometryBuildData, vkutils};
 
+pub mod bounding_sphere;
 mod build_meshlets;
 pub mod gltf;
 mod gpu;
@@ -85,6 +86,7 @@ pub struct GraphicsPipeline {
     pipeline_layout: vk::PipelineLayout,
     view_camera_bda: vk::DeviceAddress,
     subgroup_size: u32,
+    max_task_workgroup_count: [u32; 3],
 }
 
 impl std::ops::Drop for GraphicsPipeline {
@@ -106,6 +108,7 @@ impl GraphicsPipeline {
         depth_format: vk::Format,
         view_camera: vk::DeviceAddress,
         subgroup_size: u32,
+        max_task_workgroup_count: [u32; 3],
     ) -> Self {
         let (pipeline, pipeline_layout) = pipeline::create_pipeline(
             vk,
@@ -122,6 +125,7 @@ impl GraphicsPipeline {
             pipeline_layout,
             view_camera_bda: view_camera,
             subgroup_size,
+            max_task_workgroup_count,
         }
     }
 
@@ -176,15 +180,13 @@ impl GraphicsPipeline {
                 pc.data(),
             );
 
-            // One task workgroup per 64 meshlet instances (== subgroup width, so the
-            // task shader's single-subgroup ballot compaction stays correct).
-            vk_ext.cmd_draw_mesh_tasks(
-                command_buffer,
-                (geometry_data.meshlet_instances_count + (self.subgroup_size - 1))
-                    / self.subgroup_size,
-                1,
-                1,
-            );
+            let total_groups = (geometry_data.meshlet_instances_count + (self.subgroup_size - 1))
+                / self.subgroup_size;
+            let max_dim = self.max_task_workgroup_count[0];
+            let group_x = total_groups.min(max_dim);
+            let group_y = (total_groups + max_dim - 1) / max_dim;
+
+            vk_ext.cmd_draw_mesh_tasks(command_buffer, group_x, group_y, 1);
         }
     }
 }

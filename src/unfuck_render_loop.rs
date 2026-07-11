@@ -23,6 +23,7 @@ pub struct Renderer2 {
     skybox: Skybox2,
     frustum: Frustum2,
     frustum_enabled: bool,
+    bounding_sphere: meshlet2::bounding_sphere::BoundingSphere,
 
     meshlet_pipeline: meshlet2::GraphicsPipeline,
     geometry_data: meshlet2::GeometryBuffers,
@@ -94,6 +95,17 @@ impl Renderer2 {
             cull_camera_bda,
         );
 
+        let bounding_sphere = meshlet2::bounding_sphere::BoundingSphere::new(
+            &ctx.device,
+            &ctx.mesh_shader_device,
+            ctx.bindless_descriptor_set.layout,
+            ctx.swapchain.surface_format.format,
+            ctx.depth_format,
+            view_camera_data_buffer.device_address.unwrap(),
+            ctx.physical_device.subgroup_size,
+            ctx.physical_device.max_task_workgroup_count,
+        );
+
         let brabon_data = gltf_asset::GltfAssetData::new(
             "/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
         );
@@ -101,26 +113,26 @@ impl Renderer2 {
         let mut geometry_builder = meshlet2::gltf::GeometryBuilder::new();
         geometry_builder.add_instance(&brabon_data, glm::Mat4::identity(), Option::None);
 
-        // {
-        //     let mut rng = rand::rng();
+        {
+            let mut rng = rand::rng();
 
-        //     for _i in 0..10000 {
-        //         let tx: f32 = rng.random_range(-10.0f32..10.0f32);
-        //         let ty: f32 = rng.random_range(-10.0f32..10.0f32);
-        //         let tz: f32 = rng.random_range(-10.0f32..10.0f32);
+            for _i in 0..1000 {
+                let tx: f32 = rng.random_range(-10.0f32..10.0f32);
+                let ty: f32 = rng.random_range(-10.0f32..10.0f32);
+                let tz: f32 = rng.random_range(-10.0f32..10.0f32);
 
-        //         let az: f32 = rng.random_range(0.0f32..360.0f32).to_radians();
-        //         let el: f32 = rng.random_range(-90.0f32..90.0f32).to_radians();
+                let az: f32 = rng.random_range(0.0f32..360.0f32).to_radians();
+                let el: f32 = rng.random_range(-90.0f32..90.0f32).to_radians();
 
-        //         let mut mat = glm::Mat4::identity();
+                let mut mat = glm::Mat4::identity();
 
-        //         mat = glm::translate(&mat, &glm::make_vec3(&[tx, ty, tz]));
-        //         mat = glm::rotate(&mat, az, &glm::make_vec3(&[0.0, -1.0, 0.0]));
-        //         mat = glm::rotate(&mat, el, &glm::make_vec3(&[0.0, 0.0, 1.0]));
+                mat = glm::translate(&mat, &glm::make_vec3(&[tx, ty, tz]));
+                mat = glm::rotate(&mat, az, &glm::make_vec3(&[0.0, -1.0, 0.0]));
+                mat = glm::rotate(&mat, el, &glm::make_vec3(&[0.0, 0.0, 1.0]));
 
-        //         geometry_builder.add_instance(&brabon_data, mat, Option::None);
-        //     }
-        // }
+                geometry_builder.add_instance(&brabon_data, mat, Option::None);
+            }
+        }
 
         let mut mat = glm::Mat4::identity();
         mat = glm::translate(&mat, &glm::make_vec3(&[1.0, 1.0, 1.0]));
@@ -146,6 +158,7 @@ impl Renderer2 {
             ctx.depth_format,
             view_camera_data_buffer.device_address.unwrap(),
             ctx.physical_device.subgroup_size,
+            ctx.physical_device.max_task_workgroup_count,
         );
         let geometry_data = meshlet2::GeometryBuffers::new(&ctx, &geometry_builder.geometry_data);
 
@@ -160,6 +173,7 @@ impl Renderer2 {
             skybox,
             frustum,
             frustum_enabled: true,
+            bounding_sphere,
             meshlet_pipeline,
             geometry_data,
             render_finished_semaphore,
@@ -168,6 +182,10 @@ impl Renderer2 {
 
     pub fn toggle_frustum(&mut self) {
         self.frustum_enabled = !self.frustum_enabled;
+    }
+
+    pub fn toggle_bounding_sphere_mode(&mut self) {
+        self.bounding_sphere.toggle_mode();
     }
 
     // TODO make type safe - don't rely on tuple indices - easy to mix
@@ -315,6 +333,13 @@ impl Renderer2 {
             );
 
             self.skybox.record(command_buffer, vkctx.swapchain.extent);
+
+            self.bounding_sphere.record(
+                command_buffer,
+                vkctx.swapchain.extent,
+                &self.geometry_data,
+            );
+
             if self.frustum_enabled {
                 self.frustum.record(command_buffer, vkctx.swapchain.extent);
             }

@@ -238,6 +238,6 @@ impl GeometryBuilder {
             .meshlet_instances
             .extend(&meshlet_instances);
 
-        println!("Gltf parsing time: {:?}", gltf_parsing_time.elapsed());
+        // println!("Gltf parsing time: {:?}", gltf_parsing_time.elapsed());
     }
 }

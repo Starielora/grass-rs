@@ -11,7 +11,8 @@ taskPayloadSharedEXT TaskPayload task_payload;
 // pulls id 0 from layout(constant_id = 0) which happens to be SUBGROUP_SIZE
 layout(local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;
 void main() {
-    uint mi = gl_GlobalInvocationID.x;
+    uint wg = gl_WorkGroupID.x + gl_WorkGroupID.y * gl_NumWorkGroups.x; // 2D dispatch, because I'm hitting 65535 limit quickly with meshlet-instance-count dispatches
+    uint mi = wg * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
     bool valid = mi < push_constants.meshlet_instances_count;
 
     bool accept = valid;

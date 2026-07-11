@@ -373,6 +373,14 @@ impl ApplicationHandler for App {
                                 self.renderer2.as_mut().unwrap().toggle_frustum()
                             }
                         },
+                        (KeyCode::KeyB, state) => match state {
+                            ElementState::Pressed => {}
+                            ElementState::Released => self
+                                .renderer2
+                                .as_mut()
+                                .unwrap()
+                                .toggle_bounding_sphere_mode(),
+                        },
                         (KeyCode::KeyQ, _) => camera.set_move_down(state == ElementState::Pressed),
                         (KeyCode::KeyE, _) => camera.set_move_up(state == ElementState::Pressed),
                         (KeyCode::F4, ElementState::Pressed) => {

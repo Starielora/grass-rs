@@ -1,0 +1,61 @@
+#version 450 core
+#extension GL_EXT_mesh_shader : require
+
+#include "meshlet2_common.glsl"
+
+#define SEGMENTS 20
+#define NUM_CIRCLES 3
+#define NUM_LINES (SEGMENTS * NUM_CIRCLES)
+
+layout(local_size_x = NUM_LINES, local_size_y = 1, local_size_z = 1) in;
+layout(lines, max_vertices = NUM_LINES * 2, max_primitives = NUM_LINES) out;
+
+layout(location = 0) out vec4 color[];
+
+const float PI = 3.14159265358979323846;
+
+struct Sphere {
+    vec3 center;
+    float radius;
+};
+
+// TODO ugh, clean up this mess - it's a different struct than in meshlet2_common, but I need structs from this file
+struct TaskPayload2 {
+    Sphere spheres[64];
+};
+
+taskPayloadSharedEXT TaskPayload2 payload;
+
+void main() {
+    Sphere s = payload.spheres[gl_WorkGroupID.x];
+
+    SetMeshOutputsEXT(NUM_LINES * 2, NUM_LINES);
+
+    uint ti = gl_LocalInvocationID.x;
+    uint circle = ti / SEGMENTS;
+    uint seg = ti % SEGMENTS;
+
+    float a0 = float(seg) * 2.0 * PI / float(SEGMENTS);
+    float a1 = float(seg + 1) * 2.0 * PI / float(SEGMENTS);
+
+    vec3 p0, p1;
+    if (circle == 0u) {
+        p0 = vec3(cos(a0), sin(a0), 0.0);
+        p1 = vec3(cos(a1), sin(a1), 0.0);
+    } else if (circle == 1u) {
+        p0 = vec3(cos(a0), 0.0, sin(a0));
+        p1 = vec3(cos(a1), 0.0, sin(a1));
+    } else {
+        p0 = vec3(0.0, cos(a0), sin(a0));
+        p1 = vec3(0.0, cos(a1), sin(a1));
+    }
+
+    gl_MeshVerticesEXT[ti * 2 + 0].gl_Position = push_constants.view_camera.projview * vec4(s.center + s.radius * p0, 1.0);
+    gl_MeshVerticesEXT[ti * 2 + 1].gl_Position = push_constants.view_camera.projview * vec4(s.center + s.radius * p1, 1.0);
+    gl_PrimitiveLineIndicesEXT[ti] = uvec2(ti * 2, ti * 2 + 1);
+
+    vec4 sphere_color = vec4(1.0, 1.0, 0.0, 1.0);
+
+    color[ti * 2 + 0] = sphere_color;
+    color[ti * 2 + 1] = sphere_color;
+}

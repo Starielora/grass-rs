@@ -7,6 +7,7 @@ pub struct PhysicalDevice {
     pub graphics_queue_family_index: u32,
     pub compute_queue_family_index: u32,
     pub subgroup_size: u32,
+    pub max_task_workgroup_count: [u32; 3],
 }
 
 pub fn find_suitable(instance: &ash::Instance) -> PhysicalDevice {
@@ -64,8 +65,11 @@ pub fn find_suitable(instance: &ash::Instance) -> PhysicalDevice {
     let memory_props = unsafe { instance.get_physical_device_memory_properties(physical_device) };
     let props = unsafe { instance.get_physical_device_properties(physical_device) };
 
+    let mut mesh_shader_ext_props = vk::PhysicalDeviceMeshShaderPropertiesEXT::default();
     let mut subgroup_props = vk::PhysicalDeviceSubgroupProperties::default();
-    let mut props2 = ash::vk::PhysicalDeviceProperties2::default().push_next(&mut subgroup_props);
+    let mut props2 = ash::vk::PhysicalDeviceProperties2::default()
+        .push_next(&mut subgroup_props)
+        .push_next(&mut mesh_shader_ext_props);
     unsafe {
         instance.get_physical_device_properties2(physical_device, &mut props2);
     }
@@ -86,6 +90,7 @@ pub fn find_suitable(instance: &ash::Instance) -> PhysicalDevice {
         graphics_queue_family_index: queues[0],
         compute_queue_family_index: queues[1],
         subgroup_size: subgroup_props.subgroup_size,
+        max_task_workgroup_count: mesh_shader_ext_props.max_task_work_group_count,
     }
 }
 
