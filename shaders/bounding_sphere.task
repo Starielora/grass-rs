@@ -29,8 +29,6 @@ Sphere get_meshlet_instance_bounding_sphere(uint meshlet_instance_index) {
     return world_sphere(mesh_instance.transform, meshlet.bounding_sphere_center, meshlet.bounding_sphere_radius);
 }
 
-// TODO would define be better?
-layout(constant_id = 1) const bool MESH_BOUNDING_SPHERE = false;
 layout(local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;
 taskPayloadSharedEXT TaskPayload payload;
 
@@ -39,11 +37,11 @@ void main() {
     uint mi = wg * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
     bool valid = false;
 
-    if (MESH_BOUNDING_SPHERE) {
-        valid = mi < push_constants.mesh_instances_count;
-    } else {
+    #if MESHLET_BOUNDING_SPHERE
         valid = mi < push_constants.meshlet_instances_count;
-    }
+    #else
+        valid = mi < push_constants.mesh_instances_count;
+    #endif
 
     bool accept = valid;
 
@@ -51,11 +49,11 @@ void main() {
     uint slot = subgroupBallotExclusiveBitCount(ballot); // compact index for survivors
     if (accept) {
         Sphere s;
-        if (MESH_BOUNDING_SPHERE) {
-            s = get_mesh_instance_bounding_sphere(mi);
-        } else {
+        #if MESHLET_BOUNDING_SPHERE
             s = get_meshlet_instance_bounding_sphere(mi);
-        }
+        #else
+            s = get_mesh_instance_bounding_sphere(mi);
+        #endif
         payload.spheres[slot] = s;
     }
     uint count = subgroupBallotBitCount(ballot); // uniform across the subgroup

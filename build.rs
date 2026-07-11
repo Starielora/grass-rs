@@ -7,6 +7,32 @@ use std::{
 
 const STAGE_EXTENSIONS: &[&str] = &["vert", "frag", "comp", "geom", "mesh", "task"];
 
+struct ShaderVariant {
+    suffix: &'static str,
+    defines: &'static [&'static str],
+}
+
+const DEFAULT_VARIANT: &[ShaderVariant] = &[ShaderVariant {
+    suffix: "",
+    defines: &[],
+}];
+
+fn shader_variants(file_name: &str) -> &'static [ShaderVariant] {
+    match file_name {
+        "bounding_sphere.task" => &[
+            ShaderVariant {
+                suffix: "object_variant",
+                defines: &["MESHLET_BOUNDING_SPHERE=0"],
+            },
+            ShaderVariant {
+                suffix: "meshlet_variant",
+                defines: &["MESHLET_BOUNDING_SPHERE=1"],
+            },
+        ],
+        _ => DEFAULT_VARIANT,
+    }
+}
+
 fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let shader_dir = Path::new("shaders");
@@ -26,26 +52,39 @@ fn main() {
         }
 
         let name = src.file_name().unwrap().to_str().unwrap();
-        let spv = out_dir.join(format!("{name}.spv"));
-        let dep = out_dir.join(format!("{name}.d"));
 
-        if up_to_date(&spv, &dep) {
-            continue;
+        for variant in shader_variants(name) {
+            let out_name = if variant.suffix.is_empty() {
+                format!("{name}.spv")
+            } else {
+                format!("{name}.{}.spv", variant.suffix)
+            };
+
+            let spv = out_dir.join(&out_name);
+            let dep = out_dir.join(format!("{out_name}.d"));
+
+            if up_to_date(&spv, &dep) {
+                continue;
+            }
+
+            println!("cargo:warning=compiling {out_name}");
+
+            let mut cmd = Command::new("glslc");
+            cmd.args(["-O", "-g", "--target-env=vulkan1.3", "-MD"])
+                .arg("-MF")
+                .arg(&dep);
+            for def in variant.defines {
+                cmd.arg(format!("-D{def}"));
+            }
+            let status = cmd
+                .arg(&src)
+                .arg("-o")
+                .arg(&spv)
+                .status()
+                .unwrap_or_else(|e| panic!("glslc failed to start for {name}: {e}"));
+
+            assert!(status.success(), "glslc failed for {name}");
         }
-
-        println!("cargo:warning=compiling {name}");
-
-        let status = Command::new("glslc")
-            .args(["-O", "-g", "--target-env=vulkan1.3", "-MD"])
-            .arg("-MF")
-            .arg(&dep)
-            .arg(&src)
-            .arg("-o")
-            .arg(&spv)
-            .status()
-            .unwrap_or_else(|e| panic!("glslc failed to start for {name}: {e}"));
-
-        assert!(status.success(), "glslc failed for {name}");
     }
 }
 

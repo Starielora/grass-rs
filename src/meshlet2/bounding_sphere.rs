@@ -44,7 +44,7 @@ impl BoundingSphere {
             swapchain_format,
             depth_format,
             subgroup_size,
-            true,
+            false,
         );
 
         let pipeline_meshlet = create_pipeline(
@@ -53,7 +53,7 @@ impl BoundingSphere {
             swapchain_format,
             depth_format,
             subgroup_size,
-            false,
+            true,
         );
 
         Self {
@@ -157,12 +157,16 @@ fn create_pipeline(
     swapchain_format: vk::Format,
     depth_format: vk::Format,
     subgroup_size: u32,
-    is_mesh: bool,
+    meshlet_variant: bool,
 ) -> vk::Pipeline {
     assert!(subgroup_size <= 64, "TaskPayload array is sized [64]");
 
     let ms = &shaders::BOUNDING_SPHERE_MESH;
-    let ts = &shaders::BOUNDING_SPHERE_TASK;
+    let ts = if meshlet_variant {
+        &shaders::BOUNDING_SPHERE_TASK_MESHLET
+    } else {
+        &shaders::BOUNDING_SPHERE_TASK_OBJECT
+    };
     let fs = &shaders::MESHLET_FRAG;
 
     // TODO error handling
@@ -177,23 +181,15 @@ fn create_pipeline(
     let mut required = vk::PipelineShaderStageRequiredSubgroupSizeCreateInfo::default()
         .required_subgroup_size(subgroup_size);
 
-    let spec_entries = [
-        vk::SpecializationMapEntry {
-            constant_id: 0,
-            offset: 0,
-            size: std::mem::size_of::<u32>(),
-        },
-        vk::SpecializationMapEntry {
-            constant_id: 1,
-            offset: std::mem::size_of::<u32>() as u32,
-            size: std::mem::size_of::<vk::Bool32>(),
-        },
-    ];
-    let spec_data: [u32; 2] = [subgroup_size, is_mesh as u32];
-    let spec_data_u8: [u8; 8] = unsafe { std::mem::transmute(spec_data) }; // TODO fragile af
+    let spec_entries = [vk::SpecializationMapEntry {
+        constant_id: 0,
+        offset: 0,
+        size: std::mem::size_of::<u32>(),
+    }];
+    let spec_data = subgroup_size.to_ne_bytes();
     let spec_info = vk::SpecializationInfo::default()
         .map_entries(&spec_entries)
-        .data(&spec_data_u8);
+        .data(&spec_data);
 
     let shader_stages = [
         vk::PipelineShaderStageCreateInfo::default()

@@ -48,4 +48,7 @@ pub static FRUSTUM_VERT: ShaderData = embed_shader_data!("frustum2.vert.spv", MA
 pub static FRUSTUM_FRAG: ShaderData = embed_shader_data!("frustum2.frag.spv", MAIN);
 
 pub static BOUNDING_SPHERE_MESH: ShaderData = embed_shader_data!("bounding_sphere.mesh.spv", MAIN);
-pub static BOUNDING_SPHERE_TASK: ShaderData = embed_shader_data!("bounding_sphere.task.spv", MAIN);
+pub static BOUNDING_SPHERE_TASK_OBJECT: ShaderData =
+    embed_shader_data!("bounding_sphere.task.object_variant.spv", MAIN);
+pub static BOUNDING_SPHERE_TASK_MESHLET: ShaderData =
+    embed_shader_data!("bounding_sphere.task.meshlet_variant.spv", MAIN);
