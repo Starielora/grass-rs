@@ -7,6 +7,7 @@ mod camera;
 mod dir_light;
 mod fps_window;
 mod frustum;
+mod frustum2;
 mod grid;
 mod grid2;
 mod gui;

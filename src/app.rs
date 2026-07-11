@@ -59,6 +59,19 @@ impl App {
             rebuild_swapchain: false,
         }
     }
+
+    fn switch_camera(&mut self, cam_id: usize) {
+        if self.keyboard_modifiers_state.state().shift_key() {
+            self.current_view_camera_index = cam_id;
+        } else if self.keyboard_modifiers_state.state().control_key() {
+            self.current_control_camera_index = cam_id;
+        } else if self.keyboard_modifiers_state.state().alt_key() {
+            self.current_cull_camera_index = cam_id;
+        } else {
+            self.current_view_camera_index = cam_id;
+            self.current_control_camera_index = cam_id;
+        }
+    }
 }
 
 fn camera_snapshot(
@@ -243,7 +256,10 @@ impl ApplicationHandler for App {
                 (camera_pos, camera_projview, camera_view) =
                     camera_snapshot(&self.cameras, self.current_view_camera_index);
             }
-            renderer.update_gpu_camera_data((camera_pos, camera_projview, camera_view));
+            renderer.update_gpu_camera_data(
+                (camera_pos, camera_projview, camera_view),
+                (cull_camera_pos, cull_camera_projview, cull_camera_view),
+            );
             let frame_outcome = renderer.draw(vkctx);
 
             match frame_outcome {
@@ -337,6 +353,12 @@ impl ApplicationHandler for App {
                                 })
                                 .unwrap();
                         }
+                        (KeyCode::Digit1, _) => {
+                            self.switch_camera(0);
+                        }
+                        (KeyCode::Digit2, _) => {
+                            self.switch_camera(1);
+                        }
                         (KeyCode::KeyA, _) => camera.set_move_left(state == ElementState::Pressed),
                         (KeyCode::KeyD, _) => camera.set_move_right(state == ElementState::Pressed),
                         (KeyCode::KeyW, _) => {
@@ -345,7 +367,12 @@ impl ApplicationHandler for App {
                         (KeyCode::KeyS, _) => {
                             camera.set_move_backward(state == ElementState::Pressed)
                         }
-                        (KeyCode::KeyF, _) => {}
+                        (KeyCode::KeyF, state) => match state {
+                            ElementState::Pressed => {}
+                            ElementState::Released => {
+                                self.renderer2.as_mut().unwrap().toggle_frustum()
+                            }
+                        },
                         (KeyCode::KeyQ, _) => camera.set_move_down(state == ElementState::Pressed),
                         (KeyCode::KeyE, _) => camera.set_move_up(state == ElementState::Pressed),
                         (KeyCode::F4, ElementState::Pressed) => {

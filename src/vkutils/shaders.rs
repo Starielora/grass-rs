@@ -43,3 +43,6 @@ pub static SKYBOX_FRAG: ShaderData = embed_shader_data!("skybox2.frag.spv", MAIN
 pub static MESHLET_MESH: ShaderData = embed_shader_data!("meshlet2.mesh.spv", MAIN);
 pub static MESHLET_TASK: ShaderData = embed_shader_data!("meshlet2.task.spv", MAIN);
 pub static MESHLET_FRAG: ShaderData = embed_shader_data!("meshlet2.frag.spv", MAIN);
+
+pub static FRUSTUM_VERT: ShaderData = embed_shader_data!("frustum2.vert.spv", MAIN);
+pub static FRUSTUM_FRAG: ShaderData = embed_shader_data!("frustum2.frag.spv", MAIN);

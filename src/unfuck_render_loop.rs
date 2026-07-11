@@ -1,5 +1,6 @@
 use crate::assets::gltf_asset;
 use crate::camera::GPUCameraData;
+use crate::frustum2::Frustum2;
 use crate::grid2::Grid2;
 use crate::meshlet2::{self};
 use crate::skybox2::Skybox2;
@@ -15,9 +16,13 @@ pub struct Renderer2 {
     render_target: vkutils::image::Image,
     depth_image: vkutils::image::Image,
 
+    // TODO maybe don't spit such small buffers into multiple - use one backing memory
     view_camera_data_buffer: vkutils::buffer::Buffer,
+    cull_camera_data_buffer: vkutils::buffer::Buffer,
     grid: Grid2,
     skybox: Skybox2,
+    frustum: Frustum2,
+    frustum_enabled: bool,
 
     meshlet_pipeline: meshlet2::GraphicsPipeline,
     geometry_data: meshlet2::GeometryBuffers,
@@ -32,6 +37,7 @@ impl std::ops::Drop for Renderer2 {
             self.render_target.vk_destroy();
             self.depth_image.vk_destroy();
             self.view_camera_data_buffer.vk_destroy();
+            self.cull_camera_data_buffer.vk_destroy();
             self.geometry_data.vk_destroy();
             vk.destroy_semaphore(self.render_finished_semaphore, None);
         }
@@ -59,18 +65,34 @@ impl Renderer2 {
             size_of::<GPUCameraData>(),
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
+        let cull_camera_data_buffer = ctx.create_bar_buffer(
+            size_of::<GPUCameraData>(),
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+        );
+
+        let view_camera_bda = view_camera_data_buffer.device_address.unwrap();
+        let cull_camera_bda = cull_camera_data_buffer.device_address.unwrap();
 
         let grid = Grid2::new(
             &ctx.device,
             ctx.swapchain.surface_format.format,
             ctx.depth_format,
             ctx.bindless_descriptor_set.layout,
-            view_camera_data_buffer.device_address.unwrap(),
+            view_camera_bda,
         )
         .expect("Failed to instantiate Grid object");
 
         let skybox = Skybox2::new(&ctx, view_camera_data_buffer.device_address.unwrap())
             .expect("Failed to instantiate skybox");
+
+        let frustum = Frustum2::new(
+            &ctx.device,
+            ctx.bindless_descriptor_set.layout,
+            ctx.swapchain.surface_format.format,
+            ctx.depth_format,
+            view_camera_bda,
+            cull_camera_bda,
+        );
 
         let brabon_data = gltf_asset::GltfAssetData::new(
             "/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
@@ -79,26 +101,26 @@ impl Renderer2 {
         let mut geometry_builder = meshlet2::gltf::GeometryBuilder::new();
         geometry_builder.add_instance(&brabon_data, glm::Mat4::identity(), Option::None);
 
-        {
-            let mut rng = rand::rng();
+        // {
+        //     let mut rng = rand::rng();
 
-            for _i in 0..10000 {
-                let tx: f32 = rng.random_range(-10.0f32..10.0f32);
-                let ty: f32 = rng.random_range(-10.0f32..10.0f32);
-                let tz: f32 = rng.random_range(-10.0f32..10.0f32);
+        //     for _i in 0..10000 {
+        //         let tx: f32 = rng.random_range(-10.0f32..10.0f32);
+        //         let ty: f32 = rng.random_range(-10.0f32..10.0f32);
+        //         let tz: f32 = rng.random_range(-10.0f32..10.0f32);
 
-                let az: f32 = rng.random_range(0.0f32..360.0f32).to_radians();
-                let el: f32 = rng.random_range(-90.0f32..90.0f32).to_radians();
+        //         let az: f32 = rng.random_range(0.0f32..360.0f32).to_radians();
+        //         let el: f32 = rng.random_range(-90.0f32..90.0f32).to_radians();
 
-                let mut mat = glm::Mat4::identity();
+        //         let mut mat = glm::Mat4::identity();
 
-                mat = glm::translate(&mat, &glm::make_vec3(&[tx, ty, tz]));
-                mat = glm::rotate(&mat, az, &glm::make_vec3(&[0.0, -1.0, 0.0]));
-                mat = glm::rotate(&mat, el, &glm::make_vec3(&[0.0, 0.0, 1.0]));
+        //         mat = glm::translate(&mat, &glm::make_vec3(&[tx, ty, tz]));
+        //         mat = glm::rotate(&mat, az, &glm::make_vec3(&[0.0, -1.0, 0.0]));
+        //         mat = glm::rotate(&mat, el, &glm::make_vec3(&[0.0, 0.0, 1.0]));
 
-                geometry_builder.add_instance(&brabon_data, mat, Option::None);
-            }
-        }
+        //         geometry_builder.add_instance(&brabon_data, mat, Option::None);
+        //     }
+        // }
 
         let mut mat = glm::Mat4::identity();
         mat = glm::translate(&mat, &glm::make_vec3(&[1.0, 1.0, 1.0]));
@@ -133,21 +155,38 @@ impl Renderer2 {
             render_target,
             depth_image,
             view_camera_data_buffer,
+            cull_camera_data_buffer,
             grid,
             skybox,
+            frustum,
+            frustum_enabled: true,
             meshlet_pipeline,
             geometry_data,
             render_finished_semaphore,
         }
     }
 
+    pub fn toggle_frustum(&mut self) {
+        self.frustum_enabled = !self.frustum_enabled;
+    }
+
     // TODO make type safe - don't rely on tuple indices - easy to mix
-    pub fn update_gpu_camera_data(&self, view_camera_data: (glm::Vec4, glm::Mat4, glm::Mat4)) {
+    pub fn update_gpu_camera_data(
+        &self,
+        view_camera_data: (glm::Vec4, glm::Mat4, glm::Mat4),
+        cull_camera_data: (glm::Vec4, glm::Mat4, glm::Mat4),
+    ) {
         self.view_camera_data_buffer
             .update_contents(&[GPUCameraData {
                 pos: view_camera_data.0,
                 projview: view_camera_data.1,
                 view: view_camera_data.2,
+            }]);
+        self.cull_camera_data_buffer
+            .update_contents(&[GPUCameraData {
+                pos: cull_camera_data.0,
+                projview: cull_camera_data.1,
+                view: cull_camera_data.2,
             }]);
     }
 
@@ -276,6 +315,9 @@ impl Renderer2 {
             );
 
             self.skybox.record(command_buffer, vkctx.swapchain.extent);
+            if self.frustum_enabled {
+                self.frustum.record(command_buffer, vkctx.swapchain.extent);
+            }
             self.grid.record(command_buffer, vkctx.swapchain.extent);
 
             vk.cmd_end_rendering(command_buffer);
