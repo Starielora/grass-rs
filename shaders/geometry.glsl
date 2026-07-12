@@ -18,10 +18,17 @@ struct Meshlet {
     float _padding;
 };
 
-struct Mesh {
+struct MeshLod {
     uint meshlets_offset;
     uint meshlets_count;
-    vec2 _padding;
+};
+
+struct Mesh {
+    MeshLod lod[8];
+    uint lod_count;
+    uint _pad0;
+    uint _pad1;
+    uint _pad2;
 
     vec3 bounding_sphere_center;
     float bounding_sphere_radius;
@@ -36,6 +43,7 @@ struct MeshInstance {
 struct MeshletInstance {
     uint mesh_instance_index;
     uint meshlet_index;
+    uint lod_index; // TODO remove this once LOD is implemented on compute prepass
 };
 
 // This is basically VkDrawMeshTasksIndirectCommandEXT
@@ -76,4 +84,3 @@ layout(buffer_reference) readonly buffer MeshesBuf {
 layout(buffer_reference) readonly buffer DrawParamsBuf {
     DrawParameters items[];
 };
-

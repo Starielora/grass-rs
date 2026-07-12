@@ -2,14 +2,13 @@ use crate::{
     assets::gltf_asset,
     meshlet2::{
         build_meshlets,
-        gpu::{GeometryBuildData, Mesh, MeshInstance, Meshlet, MeshletInstance, Vertex},
+        gpu::{self, GeometryBuildData, Mesh, MeshInstance, Meshlet, MeshletInstance, Vertex},
     },
 };
 
 #[derive(Clone)]
 pub struct MeshCacheInfo {
-    pub meshlets_offset: u32, // offset into global meshlets array
-    pub meshlets_count: u32,
+    pub mesh_lods: std::vec::Vec<gpu::MeshLod>,
     pub global_mesh_index: u32, // index into global mesh array (holding bounding data and meshlets offset and count)
 }
 
@@ -96,11 +95,14 @@ impl GeometryBuilder {
                         });
 
                         let mesh_instance_index = mesh_instances.len() - 1;
-                        for i in 0..mesh_cache_info.meshlets_count {
-                            meshlet_instances.push(MeshletInstance {
-                                mesh_instance_index: mesh_instance_index as u32,
-                                meshlet_index: mesh_cache_info.meshlets_offset + i,
-                            });
+                        for (lod_index, lod) in mesh_cache_info.mesh_lods.iter().enumerate() {
+                            for i in 0..lod.meshlets_count {
+                                meshlet_instances.push(MeshletInstance {
+                                    mesh_instance_index: mesh_instance_index as u32,
+                                    meshlet_index: lod.meshlets_offset + i,
+                                    lod_index: lod_index as u32,
+                                })
+                            }
                         }
                     }
                 } else {
@@ -116,67 +118,107 @@ impl GeometryBuilder {
                             gltf_asset::IndexBufferType::U32(items) => items.clone(),
                         };
 
-                        let (meshlets, meshlets_bounds, sphere) =
-                            build_meshlets::build_meshlets(vb, &ib);
+                        let mesh_sphere = build_meshlets::compute_sphere_bounds(vb);
 
                         let global_mesh_index = global_meshes_buffer.len() as u32;
 
                         let mut mesh_cache_info = MeshCacheInfo {
-                            meshlets_offset: 0,
-                            meshlets_count: 0,
+                            mesh_lods: vec![],
                             global_mesh_index,
                         };
 
-                        {
-                            let meshlets_offset = global_meshlets_buffer.len() as u32;
-                            let vertices_offset = global_vertex_buffer.len() as u32;
+                        let mut mesh_lod_count: usize = 0;
+                        let mut lods: std::vec::Vec<gpu::MeshLod> = vec![];
+                        let mut lod_indices = ib.clone();
 
-                            let global_meshlet_vertices_offset =
-                                global_meshlets_vertices_buffer.len() as u32;
-                            let global_meshlet_triangles_offset =
-                                global_meshlets_triangles_buffer.len() as u32;
-
-                            assert!(meshlets.meshlets.len() == meshlets_bounds.len());
-
-                            for (meshlet, bounds) in
-                                std::iter::zip(&meshlets.meshlets, &meshlets_bounds)
-                            {
-                                global_meshlets_buffer.push(Meshlet {
-                                    // rebase offsets to global buffers
-                                    vertex_offset: meshlet.vertex_offset
-                                        + global_meshlet_vertices_offset,
-                                    triangle_offset: meshlet.triangle_offset
-                                        + global_meshlet_triangles_offset,
-                                    vertex_count: meshlet.vertex_count,
-                                    triangle_count: meshlet.triangle_count,
-                                    bounding_sphere_center: bounds.center.into(),
-                                    bounding_sphere_radius: bounds.radius,
-                                    cone_apex: bounds.cone_apex.into(),
-                                    cone_cutoff: bounds.cone_cutoff,
-                                    cone_axis: bounds.cone_axis.into(),
-                                    _padding: 0.0f32, // unsure if I'll need the u8 versions of cone axis and cutoff. Definitely not right now.
-                                })
-                            }
-
-                            // rebase meshlet vertices to global index
-                            global_meshlets_vertices_buffer
-                                .extend(meshlets.vertices.iter().map(|v| v + vertices_offset));
-                            global_meshlets_triangles_buffer.extend(meshlets.triangles);
-
-                            let meshlets_count = meshlets.meshlets.len() as u32;
-                            mesh_cache_info.meshlets_offset = meshlets_offset;
-                            mesh_cache_info.meshlets_count = meshlets_count;
-
-                            mesh_cache_infos.push(mesh_cache_info.clone());
-
-                            global_meshes_buffer.push(Mesh {
-                                meshlets_offset,
-                                meshlets_count,
-                                _padding: [0.0f32, 0.0f32].into(),
-                                bounding_sphere_center: sphere.center.into(),
-                                bounding_sphere_radius: sphere.radius,
+                        'lod_loop: while mesh_lod_count < gpu::MAX_LODS {
+                            lods.push(gpu::MeshLod {
+                                meshlets_offset: 0,
+                                meshlets_count: 0,
                             });
+                            let lod = &mut lods[mesh_lod_count];
+                            mesh_lod_count += 1;
+
+                            {
+                                let meshlets_offset = global_meshlets_buffer.len() as u32;
+                                let vertices_offset = global_vertex_buffer.len() as u32;
+
+                                let global_meshlet_vertices_offset =
+                                    global_meshlets_vertices_buffer.len() as u32;
+                                let global_meshlet_triangles_offset =
+                                    global_meshlets_triangles_buffer.len() as u32;
+
+                                let (meshlets, meshlets_bounds) =
+                                    build_meshlets::build_meshlets(vb, &lod_indices);
+                                assert!(meshlets.meshlets.len() == meshlets_bounds.len());
+
+                                for (meshlet, bounds) in
+                                    std::iter::zip(&meshlets.meshlets, &meshlets_bounds)
+                                {
+                                    global_meshlets_buffer.push(Meshlet {
+                                        // rebase offsets to global buffers
+                                        vertex_offset: meshlet.vertex_offset
+                                            + global_meshlet_vertices_offset,
+                                        triangle_offset: meshlet.triangle_offset
+                                            + global_meshlet_triangles_offset,
+                                        vertex_count: meshlet.vertex_count,
+                                        triangle_count: meshlet.triangle_count,
+                                        bounding_sphere_center: bounds.center.into(),
+                                        bounding_sphere_radius: bounds.radius,
+                                        cone_apex: bounds.cone_apex.into(),
+                                        cone_cutoff: bounds.cone_cutoff,
+                                        cone_axis: bounds.cone_axis.into(),
+                                        _padding: 0.0f32, // unsure if I'll need the u8 versions of cone axis and cutoff. Definitely not right now.
+                                    })
+                                }
+
+                                // rebase meshlet vertices to global index
+                                global_meshlets_vertices_buffer
+                                    .extend(meshlets.vertices.iter().map(|v| v + vertices_offset));
+                                global_meshlets_triangles_buffer.extend(meshlets.triangles);
+
+                                let meshlets_count = meshlets.meshlets.len() as u32;
+
+                                lod.meshlets_offset = meshlets_offset;
+                                lod.meshlets_count = meshlets_count;
+
+                                // mesh_cache_info.meshlets_offset = meshlets_offset;
+                                // mesh_cache_info.meshlets_count = meshlets_count;
+                                mesh_cache_info.mesh_lods.push(lod.clone());
+
+                                if lods.len() < gpu::MAX_LODS {
+                                    let next_indices_target =
+                                        (lod_indices.len() as f32 * 0.5f32) as usize;
+                                    let next_indices = build_meshlets::simplify(
+                                        &lod_indices,
+                                        vb,
+                                        next_indices_target,
+                                        1.0f32,
+                                    );
+                                    assert!(next_indices.len() <= lod_indices.len());
+                                    if next_indices.len() == lod_indices.len() {
+                                        break 'lod_loop;
+                                    }
+
+                                    lod_indices = next_indices;
+                                }
+                            }
                         }
+
+                        mesh_cache_infos.push(mesh_cache_info.clone());
+
+                        let mut mesh_lods = [gpu::MeshLod {
+                            meshlets_offset: 0,
+                            meshlets_count: 0,
+                        }; gpu::MAX_LODS];
+                        mesh_lods[..lods.len()].copy_from_slice(&lods);
+                        global_meshes_buffer.push(Mesh {
+                            mesh_lods,
+                            lod_count: lods.len() as u32,
+                            _padding: [0.0f32, 0.0f32, 0.0f32].into(),
+                            bounding_sphere_center: mesh_sphere.center.into(),
+                            bounding_sphere_radius: mesh_sphere.radius,
+                        });
 
                         {
                             // guards for unsafe below
@@ -203,11 +245,14 @@ impl GeometryBuilder {
                         });
 
                         let mesh_instance_index = mesh_instances.len() - 1;
-                        for i in 0..mesh_cache_info.meshlets_count {
-                            meshlet_instances.push(MeshletInstance {
-                                mesh_instance_index: mesh_instance_index as u32,
-                                meshlet_index: mesh_cache_info.meshlets_offset + i,
-                            })
+                        for (lod_index, lod) in mesh_cache_info.mesh_lods.iter().enumerate() {
+                            for i in 0..lod.meshlets_count {
+                                meshlet_instances.push(MeshletInstance {
+                                    mesh_instance_index: mesh_instance_index as u32,
+                                    meshlet_index: lod.meshlets_offset + i,
+                                    lod_index: lod_index as u32,
+                                })
+                            }
                         }
                     }
 

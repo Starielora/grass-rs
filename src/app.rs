@@ -389,6 +389,12 @@ impl ApplicationHandler for App {
                                 winit::keyboard::ModifiersKeyState::Unknown => {}
                             }
                         }
+                        (KeyCode::Equal, ElementState::Pressed) => {
+                            self.renderer2.as_mut().unwrap().incr_lod();
+                        }
+                        (KeyCode::Minus, ElementState::Pressed) => {
+                            self.renderer2.as_mut().unwrap().decr_lod();
+                        }
                         _ => {
                             if let PhysicalKey::Code(key) = key {
                                 println!(

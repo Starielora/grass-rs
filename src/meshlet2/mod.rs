@@ -70,6 +70,7 @@ impl GeometryBuffers {
         &self,
         draw_params: vk::DeviceAddress,
         view_camera: vk::DeviceAddress,
+        lod: u32,
     ) -> gpu::PushConstants {
         gpu::PushConstants {
             view_camera,
@@ -83,6 +84,7 @@ impl GeometryBuffers {
             draw_params,
             mesh_instances_count: self.mesh_instances_count,
             meshlet_instances_count: self.meshlet_instances_count,
+            selected_lod: lod,
         }
     }
 }
@@ -108,6 +110,7 @@ pub struct GraphicsPipeline {
     draw_params_buffer: vk::Buffer,
     draw_params_bda: vk::DeviceAddress,
     draw_params_count: u32,
+    pub lod: u32,
 }
 
 impl std::ops::Drop for GraphicsPipeline {
@@ -150,6 +153,7 @@ impl GraphicsPipeline {
             draw_params_buffer: draw_params,
             draw_params_bda,
             draw_params_count: draws_count,
+            lod: 0,
         }
     }
 
@@ -181,7 +185,8 @@ impl GraphicsPipeline {
             vk.cmd_set_viewport(command_buffer, 0, &[viewport]);
             vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
 
-            let pc = geometry_data.push_constants(self.draw_params_bda, self.view_camera_bda);
+            let pc =
+                geometry_data.push_constants(self.draw_params_bda, self.view_camera_bda, self.lod);
 
             vk.cmd_push_constants(
                 command_buffer,

@@ -201,6 +201,16 @@ impl Renderer2 {
         self.bounding_sphere.toggle_mode();
     }
 
+    pub fn incr_lod(&mut self) {
+        self.meshlet_pipeline.lod += 1;
+        println!("Current lod: {}", self.meshlet_pipeline.lod);
+    }
+
+    pub fn decr_lod(&mut self) {
+        self.meshlet_pipeline.lod -= 1;
+        println!("Current lod: {}", self.meshlet_pipeline.lod);
+    }
+
     // TODO make type safe - don't rely on tuple indices - easy to mix
     pub fn update_gpu_camera_data(
         &self,
@@ -351,6 +361,7 @@ impl Renderer2 {
                 command_buffer,
                 vkctx.swapchain.extent,
                 &self.geometry_data,
+                self.meshlet_pipeline.lod,
             );
 
             if self.frustum_enabled {

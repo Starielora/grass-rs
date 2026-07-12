@@ -18,6 +18,7 @@ layout(push_constant) uniform constants
     DrawParamsBuf draw_params;
     uint mesh_instances_count;
     uint meshlet_instances_count;
+    uint selected_lod;
 } push_constants;
 
 

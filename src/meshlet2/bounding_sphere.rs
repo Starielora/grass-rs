@@ -82,6 +82,7 @@ impl BoundingSphere {
         command_buffer: vk::CommandBuffer,
         extent: vk::Extent2D,
         geometry_data: &GeometryBuffers,
+        lod: u32,
     ) {
         let vk = &self.vk;
         let vk_ext = &self.vk_ext;
@@ -123,7 +124,7 @@ impl BoundingSphere {
             vk.cmd_set_viewport(command_buffer, 0, &[viewport]);
             vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
 
-            let pc = geometry_data.push_constants(0, self.view_camera_bda);
+            let pc = geometry_data.push_constants(0, self.view_camera_bda, lod);
 
             vk.cmd_push_constants(
                 command_buffer,

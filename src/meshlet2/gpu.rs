@@ -27,15 +27,25 @@ pub struct Meshlet {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct Mesh {
+pub struct MeshLod {
     pub meshlets_offset: u32, // offset in global buffer
     pub meshlets_count: u32,
+}
 
-    pub _padding: glm::Vec2,
+pub const MAX_LODS: usize = 8;
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct Mesh {
+    pub mesh_lods: [MeshLod; MAX_LODS],
+    pub lod_count: u32,
+    pub _padding: glm::Vec3,
 
     pub bounding_sphere_center: glm::Vec3,
     pub bounding_sphere_radius: f32,
 }
+
+const _: () = assert!(std::mem::size_of::<Mesh>() == 96);
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C, align(16))]
@@ -52,6 +62,7 @@ const _: () = assert!(std::mem::size_of::<MeshInstance>() == 80);
 pub struct MeshletInstance {
     pub mesh_instance_index: u32, // index into the GeometryInstance buffer (keeps transform + Geometry ref)
     pub meshlet_index: u32,       // global index into the meshlets buffer
+    pub lod_index: u32,
 }
 
 pub struct GeometryBuildData {
@@ -78,6 +89,7 @@ pub struct PushConstants {
     pub draw_params: vk::DeviceAddress,
     pub mesh_instances_count: u32,
     pub meshlet_instances_count: u32,
+    pub selected_lod: u32,
 }
 
 const _: () = assert!(std::mem::size_of::<PushConstants>() <= 128);

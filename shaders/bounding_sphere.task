@@ -39,9 +39,12 @@ void main() {
 
     #if MESHLET_BOUNDING_SPHERE
         valid = mi < push_constants.meshlet_instances_count;
+        valid = valid &&
+            push_constants.meshlet_instances.items[mi].lod_index == push_constants.selected_lod;
     #else
         valid = mi < push_constants.mesh_instances_count;
     #endif
+
 
     bool accept = valid;
 

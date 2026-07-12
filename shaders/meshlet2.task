@@ -16,7 +16,8 @@ void main() {
     uint mi = wg * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
     bool valid = mi < push_constants.meshlet_instances_count;
 
-    bool accept = valid;
+    bool accept = valid &&
+        push_constants.meshlet_instances.items[mi].lod_index == push_constants.selected_lod;
 
     uvec4 ballot = subgroupBallot(accept);
     uint slot = subgroupBallotExclusiveBitCount(ballot); // compact index for survivors
