@@ -18,6 +18,7 @@ pub struct GeometryBuffers {
     pub mesh_instances_count: u32,
     pub meshlet_instances: vkutils::buffer::Buffer,
     pub meshlet_instances_count: u32,
+    pub per_lod_draws: std::vec::Vec<(vkutils::buffer::Buffer, vkutils::buffer::Buffer, u32, u32)>, // TODO this is temporary to test LOD. Meshlet instances will be set in compute prepass with according LOD
 }
 
 impl GeometryBuffers {
@@ -53,6 +54,8 @@ impl GeometryBuffers {
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
 
+        let per_lod_draws = create_meshlets_to_draw_buffer(ctx, data);
+
         Self {
             vertices: vertex_buffer,
             meshlet_vertices: meshlets_vertices_buffer,
@@ -63,14 +66,16 @@ impl GeometryBuffers {
             mesh_instances_count: data.mesh_instances.len() as u32,
             meshlet_instances: meshlet_instances_buffer,
             meshlet_instances_count: data.meshlet_instances.len() as u32,
+            per_lod_draws,
         }
     }
 
     pub fn push_constants(
         &self,
-        draw_params: vk::DeviceAddress,
+        task_dispatches: vk::DeviceAddress,
         view_camera: vk::DeviceAddress,
         lod: u32,
+        meshlet_instances_draws: vk::DeviceAddress,
     ) -> gpu::PushConstants {
         gpu::PushConstants {
             view_camera,
@@ -81,12 +86,55 @@ impl GeometryBuffers {
             meshlets: self.meshlets.device_address.unwrap(),
             mesh_instances: self.mesh_instances.device_address.unwrap(),
             meshlet_instances: self.meshlet_instances.device_address.unwrap(),
-            draw_params,
+            task_dispatches,
+            meshlet_instances_draws,
             mesh_instances_count: self.mesh_instances_count,
             meshlet_instances_count: self.meshlet_instances_count,
-            selected_lod: lod,
+            draws_count: self.per_lod_draws[lod as usize].2,
         }
     }
+}
+
+fn create_meshlets_to_draw_buffer(
+    ctx: &vkutils::context::VulkanContext,
+    data: &GeometryBuildData,
+) -> std::vec::Vec<(vkutils::buffer::Buffer, vkutils::buffer::Buffer, u32, u32)> {
+    let mut per_lod_buf: std::vec::Vec<std::vec::Vec<u32>> = vec![];
+    per_lod_buf.resize(gpu::MAX_LODS, vec![]);
+
+    for (meshlet_instance_index, meshlet_instance) in data.meshlet_instances.iter().enumerate() {
+        let buf = &mut per_lod_buf[meshlet_instance.lod_index as usize];
+        buf.push(meshlet_instance_index as u32);
+    }
+
+    let mut out: std::vec::Vec<(vkutils::buffer::Buffer, vkutils::buffer::Buffer, u32, u32)> =
+        vec![];
+    for buf in &per_lod_buf {
+        let (dx, dy) = gpu::task_dispatch_2d(
+            buf.len() as u32,
+            ctx.physical_device.subgroup_size,
+            ctx.physical_device.max_task_workgroup_count[0],
+        );
+        let dispatch = vk::DrawMeshTasksIndirectCommandEXT {
+            group_count_x: dx,
+            group_count_y: dy,
+            group_count_z: 1,
+        };
+        let dispatch_buf = ctx.upload_buffer(
+            &vec![dispatch],
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::INDIRECT_BUFFER,
+        );
+        out.push((
+            ctx.upload_buffer(
+                &buf,
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            ),
+            dispatch_buf,
+            buf.len() as u32,
+            1,
+        ));
+    }
+    out
 }
 
 impl vkutils::vk_destroy::VkDestroy for GeometryBuffers {
@@ -98,6 +146,11 @@ impl vkutils::vk_destroy::VkDestroy for GeometryBuffers {
         self.meshlets.vk_destroy();
         self.mesh_instances.vk_destroy();
         self.meshlet_instances.vk_destroy();
+
+        for (buf1, buf2, _, _) in &self.per_lod_draws {
+            buf1.vk_destroy();
+            buf2.vk_destroy();
+        }
     }
 }
 
@@ -107,9 +160,7 @@ pub struct GraphicsPipeline {
     pipeline: vk::Pipeline,
     pipeline_layout: vk::PipelineLayout,
     view_camera_bda: vk::DeviceAddress,
-    draw_params_buffer: vk::Buffer,
-    draw_params_bda: vk::DeviceAddress,
-    draw_params_count: u32,
+    task_dispatches_bda: vk::DeviceAddress,
     pub lod: u32,
 }
 
@@ -131,9 +182,7 @@ impl GraphicsPipeline {
         swapchain_format: vk::Format,
         depth_format: vk::Format,
         view_camera: vk::DeviceAddress,
-        draw_params: vk::Buffer,
         draw_params_bda: vk::DeviceAddress,
-        draws_count: u32,
         subgroup_size: u32,
     ) -> Self {
         let (pipeline, pipeline_layout) = pipeline::create_pipeline(
@@ -150,9 +199,7 @@ impl GraphicsPipeline {
             pipeline,
             pipeline_layout,
             view_camera_bda: view_camera,
-            draw_params_buffer: draw_params,
-            draw_params_bda,
-            draw_params_count: draws_count,
+            task_dispatches_bda: draw_params_bda,
             lod: 0,
         }
     }
@@ -185,8 +232,15 @@ impl GraphicsPipeline {
             vk.cmd_set_viewport(command_buffer, 0, &[viewport]);
             vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
 
-            let pc =
-                geometry_data.push_constants(self.draw_params_bda, self.view_camera_bda, self.lod);
+            let (draw_buf, dispatch_buf, _draws_count, elements_in_draw_buf) =
+                &geometry_data.per_lod_draws[self.lod as usize];
+
+            let pc = geometry_data.push_constants(
+                self.task_dispatches_bda,
+                self.view_camera_bda,
+                self.lod,
+                draw_buf.device_address.unwrap(),
+            );
 
             vk.cmd_push_constants(
                 command_buffer,
@@ -198,9 +252,9 @@ impl GraphicsPipeline {
 
             vk_ext.cmd_draw_mesh_tasks_indirect(
                 command_buffer,
-                self.draw_params_buffer,
+                dispatch_buf.handle,
                 0,
-                self.draw_params_count,
+                *elements_in_draw_buf,
                 std::mem::size_of::<vk::DrawMeshTasksIndirectCommandEXT>() as u32,
             );
         }

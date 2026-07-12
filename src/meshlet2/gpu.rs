@@ -86,10 +86,11 @@ pub struct PushConstants {
     pub meshlets: vk::DeviceAddress,
     pub mesh_instances: vk::DeviceAddress,
     pub meshlet_instances: vk::DeviceAddress,
-    pub draw_params: vk::DeviceAddress,
+    pub task_dispatches: vk::DeviceAddress,
+    pub meshlet_instances_draws: vk::DeviceAddress,
     pub mesh_instances_count: u32,
     pub meshlet_instances_count: u32,
-    pub selected_lod: u32,
+    pub draws_count: u32,
 }
 
 const _: () = assert!(std::mem::size_of::<PushConstants>() <= 128);

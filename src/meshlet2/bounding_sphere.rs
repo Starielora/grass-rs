@@ -87,6 +87,11 @@ impl BoundingSphere {
         let vk = &self.vk;
         let vk_ext = &self.vk_ext;
 
+        match self.draw_mode {
+            DrawMode::NONE => return,
+            _ => {}
+        }
+
         let (pipeline, dispatch_count_x, dispatch_count_y) = match self.draw_mode {
             DrawMode::NONE => return,
             DrawMode::MESH => {
@@ -96,7 +101,6 @@ impl BoundingSphere {
                     self.max_task_workgroup_count[0],
                 );
 
-                // TODO 2D dispatch similarly to meshlets
                 (self.pipeline_mesh, group_x, group_y)
             }
             DrawMode::MESHLET => {
@@ -124,19 +128,44 @@ impl BoundingSphere {
             vk.cmd_set_viewport(command_buffer, 0, &[viewport]);
             vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
 
-            let pc = geometry_data.push_constants(0, self.view_camera_bda, lod);
+            let (draw_buf, dispatch_buf, _draws_count, elements_in_draw_buf) =
+                &geometry_data.per_lod_draws[lod as usize];
+            let pc = geometry_data.push_constants(
+                0,
+                self.view_camera_bda,
+                lod,
+                draw_buf.device_address.unwrap(),
+            );
 
             vk.cmd_push_constants(
                 command_buffer,
                 self.pipeline_layout,
-                vk::ShaderStageFlags::MESH_EXT
-                    | vk::ShaderStageFlags::TASK_EXT
-                    | vk::ShaderStageFlags::FRAGMENT,
+                gpu::get_push_constants_stage_flags(),
                 0,
                 pc.data(),
             );
 
-            vk_ext.cmd_draw_mesh_tasks(command_buffer, dispatch_count_x, dispatch_count_y, 1);
+            match self.draw_mode {
+                DrawMode::NONE => todo!(),
+                DrawMode::MESH => {
+                    // TODO indirect
+                    vk_ext.cmd_draw_mesh_tasks(
+                        command_buffer,
+                        dispatch_count_x,
+                        dispatch_count_y,
+                        1,
+                    );
+                }
+                DrawMode::MESHLET => {
+                    vk_ext.cmd_draw_mesh_tasks_indirect(
+                        command_buffer,
+                        dispatch_buf.handle,
+                        0,
+                        *elements_in_draw_buf,
+                        std::mem::size_of::<vk::DrawMeshTasksIndirectCommandEXT>() as u32,
+                    );
+                }
+            }
         }
     }
 }

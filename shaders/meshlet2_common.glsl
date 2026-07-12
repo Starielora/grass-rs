@@ -15,10 +15,11 @@ layout(push_constant) uniform constants
     MeshletsBuf meshlets;
     MeshInstanceBuf mesh_instances;
     MeshletInstanceBuf meshlet_instances;
-    DrawParamsBuf draw_params;
+    TaskDispatchesBuf task_dispatches;
+    MeshletInstancesDrawsBuf meshlet_instances_draws;
     uint mesh_instances_count;
     uint meshlet_instances_count;
-    uint selected_lod;
+    uint draws_count;
 } push_constants;
 
 
