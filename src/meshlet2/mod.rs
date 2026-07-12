@@ -1,14 +1,11 @@
 use ash::vk;
 
-use crate::{
-    meshlet2::gpu::{task_dispatch_2d, GeometryBuildData},
-    vkutils,
-};
+use crate::{meshlet2::gpu::GeometryBuildData, vkutils};
 
 pub mod bounding_sphere;
 mod build_meshlets;
 pub mod gltf;
-mod gpu;
+pub mod gpu;
 pub mod pipeline;
 
 pub struct GeometryBuffers {
@@ -69,7 +66,11 @@ impl GeometryBuffers {
         }
     }
 
-    pub fn push_constants(&self, view_camera: vk::DeviceAddress) -> gpu::PushConstants {
+    pub fn push_constants(
+        &self,
+        draw_params: vk::DeviceAddress,
+        view_camera: vk::DeviceAddress,
+    ) -> gpu::PushConstants {
         gpu::PushConstants {
             view_camera,
             vertices: self.vertices.device_address.unwrap(),
@@ -79,6 +80,7 @@ impl GeometryBuffers {
             meshlets: self.meshlets.device_address.unwrap(),
             mesh_instances: self.mesh_instances.device_address.unwrap(),
             meshlet_instances: self.meshlet_instances.device_address.unwrap(),
+            draw_params,
             mesh_instances_count: self.mesh_instances_count,
             meshlet_instances_count: self.meshlet_instances_count,
         }
@@ -103,8 +105,9 @@ pub struct GraphicsPipeline {
     pipeline: vk::Pipeline,
     pipeline_layout: vk::PipelineLayout,
     view_camera_bda: vk::DeviceAddress,
-    subgroup_size: u32,
-    max_task_workgroup_count: [u32; 3],
+    draw_params_buffer: vk::Buffer,
+    draw_params_bda: vk::DeviceAddress,
+    draw_params_count: u32,
 }
 
 impl std::ops::Drop for GraphicsPipeline {
@@ -125,8 +128,10 @@ impl GraphicsPipeline {
         swapchain_format: vk::Format,
         depth_format: vk::Format,
         view_camera: vk::DeviceAddress,
+        draw_params: vk::Buffer,
+        draw_params_bda: vk::DeviceAddress,
+        draws_count: u32,
         subgroup_size: u32,
-        max_task_workgroup_count: [u32; 3],
     ) -> Self {
         let (pipeline, pipeline_layout) = pipeline::create_pipeline(
             vk,
@@ -142,8 +147,9 @@ impl GraphicsPipeline {
             pipeline,
             pipeline_layout,
             view_camera_bda: view_camera,
-            subgroup_size,
-            max_task_workgroup_count,
+            draw_params_buffer: draw_params,
+            draw_params_bda,
+            draw_params_count: draws_count,
         }
     }
 
@@ -175,7 +181,7 @@ impl GraphicsPipeline {
             vk.cmd_set_viewport(command_buffer, 0, &[viewport]);
             vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
 
-            let pc = geometry_data.push_constants(self.view_camera_bda);
+            let pc = geometry_data.push_constants(self.draw_params_bda, self.view_camera_bda);
 
             vk.cmd_push_constants(
                 command_buffer,
@@ -185,13 +191,13 @@ impl GraphicsPipeline {
                 pc.data(),
             );
 
-            let (group_x, group_y) = task_dispatch_2d(
-                geometry_data.meshlet_instances_count,
-                self.subgroup_size,
-                self.max_task_workgroup_count[0],
+            vk_ext.cmd_draw_mesh_tasks_indirect(
+                command_buffer,
+                self.draw_params_buffer,
+                0,
+                self.draw_params_count,
+                std::mem::size_of::<vk::DrawMeshTasksIndirectCommandEXT>() as u32,
             );
-
-            vk_ext.cmd_draw_mesh_tasks(command_buffer, group_x, group_y, 1);
         }
     }
 }

@@ -75,6 +75,7 @@ pub struct PushConstants {
     pub meshlets: vk::DeviceAddress,
     pub mesh_instances: vk::DeviceAddress,
     pub meshlet_instances: vk::DeviceAddress,
+    pub draw_params: vk::DeviceAddress,
     pub mesh_instances_count: u32,
     pub meshlet_instances_count: u32,
 }
@@ -119,11 +120,7 @@ pub(super) fn create_pipeline_layout(
     }
 }
 
-pub(super) fn task_dispatch_2d(
-    instance_count: u32,
-    subgroup_size: u32,
-    max_dim: u32,
-) -> (u32, u32) {
+pub fn task_dispatch_2d(instance_count: u32, subgroup_size: u32, max_dim: u32) -> (u32, u32) {
     let total_groups = (instance_count + (subgroup_size - 1)) / subgroup_size;
     let group_x = total_groups.min(max_dim);
     let group_y = (total_groups + max_dim - 1) / max_dim;

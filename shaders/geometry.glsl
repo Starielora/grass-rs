@@ -38,6 +38,13 @@ struct MeshletInstance {
     uint meshlet_index;
 };
 
+// This is basically VkDrawMeshTasksIndirectCommandEXT
+struct DrawParameters {
+    uint groupCountX;
+    uint groupCountY;
+    uint groupCountZ;
+};
+
 layout(buffer_reference) readonly buffer VertexBuf {
     Vertex items[];
 };
@@ -65,3 +72,8 @@ layout(buffer_reference) readonly buffer MeshletInstanceBuf {
 layout(buffer_reference) readonly buffer MeshesBuf {
     Mesh items[];
 };
+
+layout(buffer_reference) readonly buffer DrawParamsBuf {
+    DrawParameters items[];
+};
+

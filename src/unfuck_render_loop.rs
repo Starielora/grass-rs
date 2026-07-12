@@ -27,6 +27,7 @@ pub struct Renderer2 {
 
     meshlet_pipeline: meshlet2::GraphicsPipeline,
     geometry_data: meshlet2::GeometryBuffers,
+    draw_params_buf: vkutils::buffer::Buffer,
 
     render_finished_semaphore: vk::Semaphore,
 }
@@ -35,6 +36,7 @@ impl std::ops::Drop for Renderer2 {
     fn drop(&mut self) {
         let vk = &self.vk;
         unsafe {
+            self.draw_params_buf.vk_destroy();
             self.render_target.vk_destroy();
             self.depth_image.vk_destroy();
             self.view_camera_data_buffer.vk_destroy();
@@ -116,7 +118,7 @@ impl Renderer2 {
         {
             let mut rng = rand::rng();
 
-            for _i in 0..1000 {
+            for _i in 0..10 {
                 let tx: f32 = rng.random_range(-10.0f32..10.0f32);
                 let ty: f32 = rng.random_range(-10.0f32..10.0f32);
                 let tz: f32 = rng.random_range(-10.0f32..10.0f32);
@@ -150,6 +152,15 @@ impl Renderer2 {
         // geometry_builder.add_instance(&bistro_data, glm::Mat4::identity(), Option::None);
         // geometry_builder.add_instance(&bistro_data, mat, Option::None);
 
+        let geometry_data = meshlet2::GeometryBuffers::new(&ctx, &geometry_builder.geometry_data);
+        let subgroup_size = ctx.physical_device.subgroup_size;
+        let max_task_workgroup_count = ctx.physical_device.max_task_workgroup_count;
+        let (draw_params_buf, draws_count) = create_draw_params_buf(
+            &ctx,
+            &geometry_data,
+            subgroup_size,
+            max_task_workgroup_count[0],
+        );
         let meshlet_pipeline = meshlet2::GraphicsPipeline::new(
             &ctx.device,
             &ctx.mesh_shader_device,
@@ -157,10 +168,11 @@ impl Renderer2 {
             ctx.swapchain.surface_format.format,
             ctx.depth_format,
             view_camera_data_buffer.device_address.unwrap(),
-            ctx.physical_device.subgroup_size,
-            ctx.physical_device.max_task_workgroup_count,
+            draw_params_buf.handle,
+            draw_params_buf.device_address.unwrap(),
+            draws_count,
+            subgroup_size,
         );
-        let geometry_data = meshlet2::GeometryBuffers::new(&ctx, &geometry_builder.geometry_data);
 
         Self {
             vk: ctx.device.clone(),
@@ -176,6 +188,7 @@ impl Renderer2 {
             bounding_sphere,
             meshlet_pipeline,
             geometry_data,
+            draw_params_buf,
             render_finished_semaphore,
         }
     }
@@ -466,6 +479,34 @@ impl Renderer2 {
             }
         }
     }
+}
+
+fn create_draw_params_buf(
+    ctx: &&mut vkutils::context::VulkanContext,
+    geometry_data: &meshlet2::GeometryBuffers,
+    subgroup_size: u32,
+    max_dim: u32,
+) -> (vkutils::buffer::Buffer, u32) {
+    let (group_count_x, group_count_y) = meshlet2::gpu::task_dispatch_2d(
+        geometry_data.meshlet_instances_count,
+        subgroup_size,
+        max_dim,
+    );
+    let draws: std::vec::Vec<vk::DrawMeshTasksIndirectCommandEXT> =
+        vec![vk::DrawMeshTasksIndirectCommandEXT {
+            group_count_x,
+            group_count_y,
+            group_count_z: 1,
+        }];
+
+    let buffer = ctx.upload_buffer(
+        &draws,
+        vk::BufferUsageFlags::STORAGE_BUFFER
+            | vk::BufferUsageFlags::INDIRECT_BUFFER
+            | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+    );
+
+    (buffer, draws.len() as u32)
 }
 
 fn create_render_target_image(ctx: &vkutils::context::VulkanContext) -> vkutils::image::Image {

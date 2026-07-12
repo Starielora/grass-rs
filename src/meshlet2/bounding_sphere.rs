@@ -123,7 +123,7 @@ impl BoundingSphere {
             vk.cmd_set_viewport(command_buffer, 0, &[viewport]);
             vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
 
-            let pc = geometry_data.push_constants(self.view_camera_bda);
+            let pc = geometry_data.push_constants(0, self.view_camera_bda);
 
             vk.cmd_push_constants(
                 command_buffer,
