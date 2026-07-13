@@ -57,7 +57,7 @@ impl GeometryBuilder {
         let global_meshlets_vertices_buffer = &mut self.geometry_data.meshlet_vertices;
         let global_meshlets_triangles_buffer = &mut self.geometry_data.meshlet_triangles;
 
-        let gltf_parsing_time = std::time::Instant::now();
+        // let gltf_parsing_time = std::time::Instant::now();
 
         let mut node_stack: std::vec::Vec<NodeStackEntry> = vec![];
 
@@ -182,8 +182,6 @@ impl GeometryBuilder {
                                 lod.meshlets_offset = meshlets_offset;
                                 lod.meshlets_count = meshlets_count;
 
-                                // mesh_cache_info.meshlets_offset = meshlets_offset;
-                                // mesh_cache_info.meshlets_count = meshlets_count;
                                 mesh_cache_info.mesh_lods.push(lod.clone());
 
                                 if lods.len() < gpu::MAX_LODS {

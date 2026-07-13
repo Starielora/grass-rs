@@ -88,6 +88,7 @@ pub struct PushConstants {
     pub meshlet_instances: vk::DeviceAddress,
     pub task_dispatches: vk::DeviceAddress,
     pub meshlet_instances_draws: vk::DeviceAddress,
+    pub meshlet_instances_draws_count: vk::DeviceAddress,
     pub mesh_instances_count: u32,
     pub meshlet_instances_count: u32,
     pub draws_count: u32,

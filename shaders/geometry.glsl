@@ -81,10 +81,11 @@ layout(buffer_reference) readonly buffer MeshesBuf {
     Mesh items[];
 };
 
-layout(buffer_reference) readonly buffer TaskDispatchesBuf {
+layout(buffer_reference) buffer TaskDispatchesBuf {
     TaskDispatch items[];
 };
 
-layout(buffer_reference) readonly buffer MeshletInstancesDrawsBuf {
-    uint meshlet_instance_index[];
+layout(buffer_reference) buffer MeshletInstancesDrawsBuf {
+    // uint meshlet_instance_index[];
+    MeshletInstance meshlet_instances[];
 };

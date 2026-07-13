@@ -97,17 +97,6 @@ impl Renderer2 {
             cull_camera_bda,
         );
 
-        let bounding_sphere = meshlet2::bounding_sphere::BoundingSphere::new(
-            &ctx.device,
-            &ctx.mesh_shader_device,
-            ctx.bindless_descriptor_set.layout,
-            ctx.swapchain.surface_format.format,
-            ctx.depth_format,
-            view_camera_data_buffer.device_address.unwrap(),
-            ctx.physical_device.subgroup_size,
-            ctx.physical_device.max_task_workgroup_count,
-        );
-
         let brabon_data = gltf_asset::GltfAssetData::new(
             "/home/starielora/dev/repos/Vulkan-Assets/models/chinesedragon.gltf",
         );
@@ -168,8 +157,21 @@ impl Renderer2 {
             ctx.swapchain.surface_format.format,
             ctx.depth_format,
             view_camera_data_buffer.device_address.unwrap(),
+            draw_params_buf.handle,
             draw_params_buf.device_address.unwrap(),
             subgroup_size,
+        );
+
+        let bounding_sphere = meshlet2::bounding_sphere::BoundingSphere::new(
+            &ctx.device,
+            &ctx.mesh_shader_device,
+            ctx.bindless_descriptor_set.layout,
+            ctx.swapchain.surface_format.format,
+            ctx.depth_format,
+            view_camera_data_buffer.device_address.unwrap(),
+            ctx.physical_device.subgroup_size,
+            ctx.physical_device.max_task_workgroup_count,
+            draw_params_buf.handle,
         );
 
         Self {

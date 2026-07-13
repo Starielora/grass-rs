@@ -52,3 +52,7 @@ pub static BOUNDING_SPHERE_TASK_OBJECT: ShaderData =
     embed_shader_data!("bounding_sphere.task.object_variant.spv", MAIN);
 pub static BOUNDING_SPHERE_TASK_MESHLET: ShaderData =
     embed_shader_data!("bounding_sphere.task.meshlet_variant.spv", MAIN);
+
+pub static PREPASS_COMP: ShaderData = embed_shader_data!("prepass.comp.spv", MAIN);
+pub static PREPASS_SET_DISPATCHES_COMP: ShaderData =
+    embed_shader_data!("prepass_set_dispatches.comp.spv", MAIN);

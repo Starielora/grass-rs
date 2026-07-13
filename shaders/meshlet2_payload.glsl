@@ -4,5 +4,6 @@ struct TaskPayload {
     // Instead, I'm going for a worst case scenario - 64 or 128 elements, which will fit all cases, and use gl_WorkGroupSize.x to query chosen wokrgroup size
     // ... because constant would not solve my issues, as apparently AMD GPU driver can dynamically choose a subgroup size of EITHER 32 or 64
     // And thinking about managing the requiredSubgroupSize VK extension with all that just made me give up and go as simple as possible.
-    uint meshlet_instance_index[64]; // must be >= task shader local_size_x
+    // uint meshlet_instance_index[64]; // must be >= task shader local_size_x
+    MeshletInstance meshlet_instances[64];
 };

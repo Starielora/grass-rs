@@ -24,6 +24,7 @@ pub struct BoundingSphere {
     subgroup_size: u32,
     max_task_workgroup_count: [u32; 3],
     draw_mode: DrawMode,
+    task_dispatches_handle: vk::Buffer,
 }
 
 impl BoundingSphere {
@@ -36,6 +37,7 @@ impl BoundingSphere {
         view_camera: vk::DeviceAddress,
         subgroup_size: u32,
         max_task_workgroup_count: [u32; 3],
+        task_dispatches_handle: vk::Buffer,
     ) -> Self {
         let pipeline_layout = gpu::create_pipeline_layout(vk, descriptor_set_layout);
         let pipeline_mesh = create_pipeline(
@@ -66,6 +68,7 @@ impl BoundingSphere {
             subgroup_size,
             max_task_workgroup_count,
             draw_mode: DrawMode::NONE,
+            task_dispatches_handle,
         }
     }
 
@@ -134,7 +137,8 @@ impl BoundingSphere {
                 0,
                 self.view_camera_bda,
                 lod,
-                draw_buf.device_address.unwrap(),
+                geometry_data.draws_buffer.device_address.unwrap(),
+                geometry_data.draws_count_buffer.device_address.unwrap(),
             );
 
             vk.cmd_push_constants(
@@ -159,11 +163,18 @@ impl BoundingSphere {
                 DrawMode::MESHLET => {
                     vk_ext.cmd_draw_mesh_tasks_indirect(
                         command_buffer,
-                        dispatch_buf.handle,
+                        self.task_dispatches_handle,
                         0,
-                        *elements_in_draw_buf,
+                        1,
                         std::mem::size_of::<vk::DrawMeshTasksIndirectCommandEXT>() as u32,
                     );
+                    // vk_ext.cmd_draw_mesh_tasks_indirect(
+                    //     command_buffer,
+                    //     dispatch_buf.handle,
+                    //     0,
+                    //     *elements_in_draw_buf,
+                    //     std::mem::size_of::<vk::DrawMeshTasksIndirectCommandEXT>() as u32,
+                    // );
                 }
             }
         }

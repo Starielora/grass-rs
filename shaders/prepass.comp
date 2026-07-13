@@ -1,0 +1,39 @@
+#version 460 core
+#extension GL_KHR_shader_subgroup_ballot: require
+#extension GL_ARB_shader_draw_parameters: require
+#extension GL_GOOGLE_include_directive : enable
+
+#include "meshlet2_common.glsl"
+
+layout(local_size_x=64,local_size_y=1,local_size_z=1) in;
+void main()
+{
+    uint mi = gl_GlobalInvocationID.x;
+
+    if (mi >= push_constants.mesh_instances_count)
+        return;
+
+    MeshInstance mesh_instance = push_constants.mesh_instances.items[mi];
+    Mesh mesh = push_constants.meshes.items[mesh_instance.mesh_index];
+
+    vec4 mesh_pos = mesh_instance.transform * vec4(mesh.bounding_sphere_center, 1.0);
+
+    float dist_to_camera = length(mesh_pos - push_constants.view_camera.position);
+
+    uint lod = uint(clamp(dist_to_camera, 0.0, 50.0f) / (50.0f/float(mesh.lod_count)));
+
+    // uint lod = uint(clamp(dist_to_camera, 0.0, float(mesh.lod_count - 1)));
+    MeshLod mesh_lod = mesh.lod[lod];
+
+    uint meshlets_offset = mesh_lod.meshlets_offset;
+    uint slots_start = atomicAdd(push_constants.draw_counter.count, mesh_lod.meshlets_count);
+    for (uint i = 0; i < mesh_lod.meshlets_count; ++i) {
+        uint slot = slots_start + i;
+        MeshletInstance instance;
+        instance.lod_index = lod;
+        instance.mesh_instance_index = mi;
+        instance.meshlet_index = meshlets_offset + i;
+        push_constants.meshlet_instances_draws.meshlet_instances[slot] = instance;
+    }
+
+}
