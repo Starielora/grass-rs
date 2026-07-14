@@ -1,3 +1,5 @@
+#extension GL_EXT_shader_8bit_storage : require
+
 struct Vertex {
     float vx, vy, vz;
     float nx, ny, nz;
@@ -47,7 +49,7 @@ struct MeshletInstance {
 };
 
 // This is basically VkDrawMeshTasksIndirectCommandEXT
-struct TaskDispatch {
+struct DrawMeshTasksCommand {
     uint groupCountX;
     uint groupCountY;
     uint groupCountZ;
@@ -81,11 +83,15 @@ layout(buffer_reference) readonly buffer MeshesBuf {
     Mesh items[];
 };
 
-layout(buffer_reference) buffer TaskDispatchesBuf {
-    TaskDispatch items[];
+layout(buffer_reference) buffer DrawMeshTasksCommandBuf {
+    DrawMeshTasksCommand items[];
 };
 
-layout(buffer_reference) buffer MeshletInstancesDrawsBuf {
-    // uint meshlet_instance_index[];
-    MeshletInstance meshlet_instances[];
+layout(buffer_reference) buffer VisibleMeshletInstancesBuf {
+    MeshletInstance items[];
 };
+
+layout(buffer_reference) buffer VisibleMeshletInstancesCountBuf {
+    uint count;
+};
+

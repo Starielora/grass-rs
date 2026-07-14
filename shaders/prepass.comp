@@ -1,9 +1,7 @@
 #version 460 core
-#extension GL_KHR_shader_subgroup_ballot: require
-#extension GL_ARB_shader_draw_parameters: require
 #extension GL_GOOGLE_include_directive : enable
 
-#include "meshlet2_common.glsl"
+#include "prepass_common.glsl"
 
 layout(local_size_x=64,local_size_y=1,local_size_z=1) in;
 void main()
@@ -26,14 +24,14 @@ void main()
     MeshLod mesh_lod = mesh.lod[lod];
 
     uint meshlets_offset = mesh_lod.meshlets_offset;
-    uint slots_start = atomicAdd(push_constants.draw_counter.count, mesh_lod.meshlets_count);
+    uint slots_start = atomicAdd(push_constants.visible_meshlet_instances_count.count, mesh_lod.meshlets_count);
     for (uint i = 0; i < mesh_lod.meshlets_count; ++i) {
         uint slot = slots_start + i;
         MeshletInstance instance;
         instance.lod_index = lod;
         instance.mesh_instance_index = mi;
         instance.meshlet_index = meshlets_offset + i;
-        push_constants.meshlet_instances_draws.meshlet_instances[slot] = instance;
+        push_constants.visible_meshlet_instances.items[slot] = instance;
     }
 
 }

@@ -1,17 +1,17 @@
 #version 460 core
 #extension GL_GOOGLE_include_directive : enable
 
-#include "meshlet2_common.glsl"
+#include "prepass_common.glsl"
 
 layout(local_size_x=1,local_size_y=1,local_size_z=1) in;
 void main() {
-    uint instance_count = push_constants.draw_counter.count;
+    uint instance_count = push_constants.visible_meshlet_instances_count.count;
     // TODO use SUBGROUP_SIZE
     uint total_groups = (instance_count + (64 - 1)) / 64;
     uint group_x = min(total_groups, 64);
     uint group_y = (total_groups + 64 - 1) / 64;
 
-    push_constants.task_dispatches.items[0].groupCountX = group_x;
-    push_constants.task_dispatches.items[0].groupCountY = group_y;
-    push_constants.task_dispatches.items[0].groupCountZ = 1;
+    push_constants.draw_mesh_tasks_commands.items[0].groupCountX = group_x;
+    push_constants.draw_mesh_tasks_commands.items[0].groupCountY = group_y;
+    push_constants.draw_mesh_tasks_commands.items[0].groupCountZ = 1;
 }

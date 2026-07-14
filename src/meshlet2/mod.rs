@@ -2,14 +2,12 @@ use ash::vk;
 
 use crate::{
     meshlet2::gpu::{GeometryBuildData, MeshletInstance},
-    vkutils::{
-        self,
-        shaders::{self, ShaderData},
-    },
+    vkutils::{self},
 };
 
 pub mod bounding_sphere;
 mod build_meshlets;
+pub mod compute;
 pub mod gltf;
 pub mod gpu;
 pub mod pipeline;
@@ -117,9 +115,9 @@ impl GeometryBuffers {
             meshlets: self.meshlets.device_address.unwrap(),
             mesh_instances: self.mesh_instances.device_address.unwrap(),
             meshlet_instances: self.meshlet_instances.device_address.unwrap(),
-            task_dispatches,
-            meshlet_instances_draws,
-            meshlet_instances_draws_count: draws_count_buffer,
+            draw_mesh_tasks_commands: task_dispatches,
+            visible_meshlet_instances: meshlet_instances_draws,
+            visible_meshlet_instances_count: draws_count_buffer,
             mesh_instances_count: self.mesh_instances_count,
             meshlet_instances_count: self.meshlet_instances_count,
             draws_count: self.per_lod_draws[lod as usize].2,
@@ -183,6 +181,8 @@ impl vkutils::vk_destroy::VkDestroy for GeometryBuffers {
             buf1.vk_destroy();
             buf2.vk_destroy();
         }
+        self.draws_buffer.vk_destroy();
+        self.draws_count_buffer.vk_destroy();
     }
 }
 
@@ -194,9 +194,6 @@ pub struct GraphicsPipeline {
     view_camera_bda: vk::DeviceAddress,
     task_dispatches_handle: vk::Buffer,
     task_dispatches_bda: vk::DeviceAddress,
-    compute_prepass_pipeline: vk::Pipeline,
-    compute_prepass_pipeline_layout: vk::PipelineLayout,
-    compute_prepass_dispatch_pipeline: vk::Pipeline,
     pub lod: u32,
 }
 
@@ -222,12 +219,6 @@ impl GraphicsPipeline {
         draw_params_bda: vk::DeviceAddress,
         subgroup_size: u32,
     ) -> Self {
-        let (
-            compute_prepass_pipeline,
-            compute_prepass_pipeline_layout,
-            compute_prepass_dispatch_pipeline,
-        ) = create_compute_prepass_pipeline(vk, descriptor_set_layout, subgroup_size);
-
         let (pipeline, pipeline_layout) = pipeline::create_pipeline(
             vk,
             descriptor_set_layout,
@@ -245,9 +236,6 @@ impl GraphicsPipeline {
             task_dispatches_handle: draw_params_handle,
             task_dispatches_bda: draw_params_bda,
             lod: 0,
-            compute_prepass_pipeline,
-            compute_prepass_pipeline_layout,
-            compute_prepass_dispatch_pipeline,
         }
     }
 
@@ -263,90 +251,6 @@ impl GraphicsPipeline {
         geometry_data
             .draws_count_buffer
             .update_contents(&[0 as u32]);
-
-        // prepass
-        unsafe {
-            vk.cmd_bind_pipeline(
-                command_buffer,
-                vk::PipelineBindPoint::COMPUTE,
-                self.compute_prepass_pipeline,
-            );
-
-            let pc = geometry_data.push_constants(
-                self.task_dispatches_bda,
-                self.view_camera_bda,
-                self.lod,
-                geometry_data.draws_buffer.device_address.unwrap(),
-                geometry_data.draws_count_buffer.device_address.unwrap(),
-            );
-
-            vk.cmd_push_constants(
-                command_buffer,
-                self.compute_prepass_pipeline_layout,
-                vk::ShaderStageFlags::COMPUTE,
-                0,
-                pc.data(),
-            );
-
-            vk.cmd_dispatch(command_buffer, geometry_data.mesh_instances_count, 1, 1);
-
-            let barrier = vk::MemoryBarrier::default()
-                .src_access_mask(vk::AccessFlags::SHADER_WRITE)
-                .dst_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE);
-
-            vk.cmd_pipeline_barrier(
-                command_buffer,
-                vk::PipelineStageFlags::COMPUTE_SHADER, // src: the prepass
-                vk::PipelineStageFlags::COMPUTE_SHADER,
-                vk::DependencyFlags::empty(),
-                &[barrier],
-                &[], // no buffer barriers
-                &[], // no image barriers
-            );
-
-            vk.cmd_bind_pipeline(
-                command_buffer,
-                vk::PipelineBindPoint::COMPUTE,
-                self.compute_prepass_dispatch_pipeline,
-            );
-
-            let pc = geometry_data.push_constants(
-                self.task_dispatches_bda,
-                self.view_camera_bda,
-                self.lod,
-                geometry_data.draws_buffer.device_address.unwrap(),
-                geometry_data.draws_count_buffer.device_address.unwrap(),
-            );
-
-            vk.cmd_push_constants(
-                command_buffer,
-                self.compute_prepass_pipeline_layout,
-                vk::ShaderStageFlags::COMPUTE,
-                0,
-                pc.data(),
-            );
-
-            vk.cmd_dispatch(command_buffer, 1, 1, 1);
-
-            let barrier = vk::MemoryBarrier::default()
-                .src_access_mask(vk::AccessFlags::SHADER_WRITE)
-                .dst_access_mask(
-                    vk::AccessFlags::INDIRECT_COMMAND_READ  // task_dispatches read by cmd_draw_mesh_tasks_indirect
-                        | vk::AccessFlags::SHADER_READ, // draws buffer + draw_counter read by task/mesh shaders
-                );
-
-            vk.cmd_pipeline_barrier(
-                command_buffer,
-                vk::PipelineStageFlags::COMPUTE_SHADER, // src: the prepass
-                vk::PipelineStageFlags::DRAW_INDIRECT          // dst: fetch of indirect args
-                    | vk::PipelineStageFlags::TASK_SHADER_EXT  // dst: task shader reads the draws buffer
-                    | vk::PipelineStageFlags::MESH_SHADER_EXT, // dst: mesh shader reads it too
-                vk::DependencyFlags::empty(),
-                &[barrier],
-                &[], // no buffer barriers
-                &[], // no image barriers
-            );
-        }
 
         unsafe {
             vk.cmd_bind_pipeline(
@@ -392,79 +296,4 @@ impl GraphicsPipeline {
             );
         }
     }
-}
-
-fn create_compute_prepass_pipeline(
-    vk: &ash::Device,
-    descriptor_set_layout: vk::DescriptorSetLayout,
-    subgroup_size: u32,
-) -> (vk::Pipeline, vk::PipelineLayout, vk::Pipeline) {
-    let pc_range = [vk::PushConstantRange {
-        stage_flags: vk::ShaderStageFlags::COMPUTE,
-        offset: 0,
-        size: std::mem::size_of::<gpu::PushConstants>() as u32,
-    }];
-
-    let set_layouts = [descriptor_set_layout];
-    let push_constants_range = pc_range;
-    let create_info = vk::PipelineLayoutCreateInfo::default()
-        .set_layouts(&set_layouts)
-        .push_constant_ranges(&push_constants_range);
-
-    let pipeline_layout = unsafe {
-        vk.create_pipeline_layout(&create_info, None)
-            .expect("Failed to create pipeline layout")
-    };
-
-    let cs = &shaders::PREPASS_COMP;
-    let cs_module = shaders::create_shader_module(vk, cs.spv).unwrap();
-    let cs_name = unsafe { std::ffi::CStr::from_ptr(cs.entry_point_name()) };
-    // TODO probably could hide this behind checking for VK_EXT_subgroup_size_control support or VK >= 1.3
-    let mut required = vk::PipelineShaderStageRequiredSubgroupSizeCreateInfo::default()
-        .required_subgroup_size(subgroup_size);
-    let stage = vk::PipelineShaderStageCreateInfo::default()
-        .stage(vk::ShaderStageFlags::COMPUTE)
-        .module(cs_module)
-        .name(cs_name)
-        .push_next(&mut required);
-
-    let create_info = vk::ComputePipelineCreateInfo::default()
-        .layout(pipeline_layout)
-        .stage(stage);
-
-    let prepass_pipeline = unsafe {
-        vk.create_compute_pipelines(vk::PipelineCache::null(), &[create_info], None)
-            .expect("Failed to create compute pipeline")[0]
-    };
-
-    unsafe {
-        vk.destroy_shader_module(cs_module, None);
-    }
-
-    let cs = &shaders::PREPASS_SET_DISPATCHES_COMP;
-    let cs_module = shaders::create_shader_module(vk, cs.spv).unwrap();
-    let cs_name = unsafe { std::ffi::CStr::from_ptr(cs.entry_point_name()) };
-    // TODO probably could hide this behind checking for VK_EXT_subgroup_size_control support or VK >= 1.3
-    let mut required = vk::PipelineShaderStageRequiredSubgroupSizeCreateInfo::default()
-        .required_subgroup_size(subgroup_size);
-    let stage = vk::PipelineShaderStageCreateInfo::default()
-        .stage(vk::ShaderStageFlags::COMPUTE)
-        .module(cs_module)
-        .name(cs_name)
-        .push_next(&mut required);
-
-    let create_info = vk::ComputePipelineCreateInfo::default()
-        .layout(pipeline_layout)
-        .stage(stage);
-
-    let prepass_set_dispatches = unsafe {
-        vk.create_compute_pipelines(vk::PipelineCache::null(), &[create_info], None)
-            .expect("Failed to create compute pipeline")[0]
-    };
-
-    unsafe {
-        vk.destroy_shader_module(cs_module, None);
-    }
-
-    (prepass_pipeline, pipeline_layout, prepass_set_dispatches)
 }

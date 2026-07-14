@@ -5,10 +5,6 @@
 
 #include "geometry.glsl"
 
-layout(buffer_reference) buffer DrawCounterBuf {
-    uint count;
-};
-
 layout(push_constant) uniform constants
 {
     CameraDataBuf view_camera;
@@ -19,9 +15,9 @@ layout(push_constant) uniform constants
     MeshletsBuf meshlets;
     MeshInstanceBuf mesh_instances;
     MeshletInstanceBuf meshlet_instances;
-    TaskDispatchesBuf task_dispatches;
-    MeshletInstancesDrawsBuf meshlet_instances_draws;
-    DrawCounterBuf draw_counter;
+    DrawMeshTasksCommandBuf draw_mesh_tasks_commands;
+    VisibleMeshletInstancesBuf visible_meshlet_instances;
+    VisibleMeshletInstancesCountBuf visible_meshlet_instances_count;
     uint mesh_instances_count;
     uint meshlet_instances_count;
     uint draws_count;

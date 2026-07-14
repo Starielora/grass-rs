@@ -25,6 +25,7 @@ pub struct Renderer2 {
     frustum_enabled: bool,
     bounding_sphere: meshlet2::bounding_sphere::BoundingSphere,
 
+    compute_prepass_pipeline: meshlet2::compute::ComputePrepassPipeline,
     meshlet_pipeline: meshlet2::GraphicsPipeline,
     geometry_data: meshlet2::GeometryBuffers,
     draw_params_buf: vkutils::buffer::Buffer,
@@ -174,6 +175,12 @@ impl Renderer2 {
             draw_params_buf.handle,
         );
 
+        let compute_prepass_pipeline = meshlet2::compute::ComputePrepassPipeline::new(
+            &ctx.device,
+            ctx.bindless_descriptor_set.layout,
+            ctx.physical_device.subgroup_size,
+        );
+
         Self {
             vk: ctx.device.clone(),
             command_buffers,
@@ -186,6 +193,7 @@ impl Renderer2 {
             frustum,
             frustum_enabled: true,
             bounding_sphere,
+            compute_prepass_pipeline,
             meshlet_pipeline,
             geometry_data,
             draw_params_buf,
@@ -271,6 +279,13 @@ impl Renderer2 {
             };
             vk.begin_command_buffer(command_buffer, &begin_info)
                 .expect("Failed to begin command buffer");
+
+            self.compute_prepass_pipeline.record(
+                command_buffer,
+                &self.geometry_data,
+                self.view_camera_data_buffer.device_address.unwrap(),
+                self.draw_params_buf.device_address.unwrap(),
+            );
 
             let color_clear_value = vk::ClearValue {
                 color: vk::ClearColorValue {
