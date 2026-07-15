@@ -1,7 +1,7 @@
 use ash::vk;
 
 use crate::{
-    meshlet2::gpu::{GeometryBuildData, MeshletInstance},
+    meshlet2::gpu::{CPUPushConstant, GeometryBuildData, MeshletInstance},
     vkutils::{self},
 };
 
@@ -24,6 +24,32 @@ pub struct GeometryBuffers {
     pub _meshlet_instances_count: u32,
     pub visible_meshlets_instances: vkutils::buffer::Buffer,
     pub visible_meshlets_instances_count: vkutils::buffer::Buffer,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+struct PushConstant {
+    pub view_camera: vk::DeviceAddress,
+    pub vertices: vk::DeviceAddress,
+    pub meshlet_vertices: vk::DeviceAddress,
+    pub meshlet_triangles: vk::DeviceAddress,
+    pub meshes: vk::DeviceAddress,
+    pub meshlets: vk::DeviceAddress,
+    pub mesh_instances: vk::DeviceAddress,
+    pub meshlet_instances: vk::DeviceAddress,
+    pub visible_meshlet_instances: vk::DeviceAddress,
+    pub visible_meshlet_instances_count: vk::DeviceAddress,
+    pub mesh_instances_count: u32,
+}
+
+const _: () = assert!(std::mem::size_of::<PushConstant>() <= 128);
+
+impl gpu::CPUPushConstant for PushConstant {
+    fn stage_flags() -> vk::ShaderStageFlags {
+        vk::ShaderStageFlags::TASK_EXT
+            | vk::ShaderStageFlags::MESH_EXT
+            | vk::ShaderStageFlags::FRAGMENT
+    }
 }
 
 impl GeometryBuffers {
@@ -99,8 +125,8 @@ impl GeometryBuffers {
         view_camera: vk::DeviceAddress,
         meshlet_instances_draws: vk::DeviceAddress,
         draws_count_buffer: vk::DeviceAddress,
-    ) -> gpu::PushConstants {
-        gpu::PushConstants {
+    ) -> PushConstant {
+        PushConstant {
             view_camera,
             vertices: self.vertices.device_address.unwrap(),
             meshlet_vertices: self.meshlet_vertices.device_address.unwrap(),
@@ -223,7 +249,7 @@ impl GraphicsPipeline {
             vk.cmd_push_constants(
                 command_buffer,
                 self.pipeline_layout,
-                gpu::get_push_constants_stage_flags(),
+                PushConstant::stage_flags(),
                 0,
                 pc.data(),
             );

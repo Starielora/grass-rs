@@ -2,7 +2,7 @@ use ash::vk;
 
 use crate::{
     meshlet2::{
-        gpu::{self, task_dispatch_2d},
+        gpu::{self, task_dispatch_2d, CPUPushConstant},
         GeometryBuffers,
     },
     vkutils::shaders,
@@ -27,6 +27,36 @@ pub struct BoundingSphere {
     task_dispatches_handle: vk::Buffer,
 }
 
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+struct PushConstant {
+    pub view_camera: vk::DeviceAddress,
+    pub vertices: vk::DeviceAddress,
+    pub meshlet_vertices: vk::DeviceAddress,
+    pub meshlet_triangles: vk::DeviceAddress,
+    pub meshes: vk::DeviceAddress,
+    pub meshlets: vk::DeviceAddress,
+    pub mesh_instances: vk::DeviceAddress,
+    pub meshlet_instances: vk::DeviceAddress,
+    pub visible_meshlet_instances: vk::DeviceAddress,
+    pub visible_meshlet_instances_count: vk::DeviceAddress,
+    pub mesh_instances_count: u32,
+}
+
+const _: () = assert!(std::mem::size_of::<PushConstant>() <= 128);
+
+fn get_push_constants_stage_flags() -> vk::ShaderStageFlags {
+    vk::ShaderStageFlags::MESH_EXT | vk::ShaderStageFlags::TASK_EXT | vk::ShaderStageFlags::FRAGMENT
+}
+
+fn get_push_constant_range() -> vk::PushConstantRange {
+    vk::PushConstantRange {
+        stage_flags: get_push_constants_stage_flags(),
+        offset: 0,
+        size: std::mem::size_of::<PushConstant>() as u32,
+    }
+}
+
 impl BoundingSphere {
     pub fn new(
         vk: &ash::Device,
@@ -39,7 +69,8 @@ impl BoundingSphere {
         max_task_workgroup_count: [u32; 3],
         task_dispatches_handle: vk::Buffer,
     ) -> Self {
-        let pipeline_layout = gpu::create_pipeline_layout(vk, descriptor_set_layout);
+        let pipeline_layout =
+            gpu::create_pipeline_layout(vk, descriptor_set_layout, get_push_constant_range());
         let pipeline_mesh = create_pipeline(
             vk,
             pipeline_layout,
@@ -138,7 +169,7 @@ impl BoundingSphere {
             vk.cmd_push_constants(
                 command_buffer,
                 self.pipeline_layout,
-                gpu::get_push_constants_stage_flags(),
+                get_push_constants_stage_flags(),
                 0,
                 pc.data(),
             );

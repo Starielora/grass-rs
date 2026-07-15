@@ -1,6 +1,9 @@
 use ash::vk;
 
-use crate::{meshlet2::gpu, vkutils::shaders};
+use crate::{
+    meshlet2::gpu::{self, CPUPushConstant},
+    vkutils::shaders,
+};
 
 pub fn create_pipeline(
     vk: &ash::Device,
@@ -10,7 +13,8 @@ pub fn create_pipeline(
     subgroup_size: u32,
 ) -> (vk::Pipeline, vk::PipelineLayout) {
     assert!(subgroup_size <= 64, "TaskPayload array is sized [64]");
-    let pipeline_layout = gpu::create_pipeline_layout(vk, descriptor_set_layout);
+    let pipeline_layout =
+        gpu::create_pipeline_layout(vk, descriptor_set_layout, super::PushConstant::range());
 
     let ms = &shaders::MESHLET_MESH;
     let ts = &shaders::MESHLET_TASK;

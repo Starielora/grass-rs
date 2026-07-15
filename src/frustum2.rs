@@ -1,6 +1,9 @@
 use ash::vk;
 
-use crate::vkutils::shaders;
+use crate::{
+    meshlet2::gpu::{self, CPUPushConstant},
+    vkutils::shaders,
+};
 
 pub struct Frustum2 {
     vk: ash::Device,
@@ -13,15 +16,22 @@ pub struct Frustum2 {
     pub edges_color: [f32; 4],
 }
 
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct PushConstants {
+pub struct PushConstant {
     view_camera: vk::DeviceAddress,
     cull_camera: vk::DeviceAddress,
     edges_color: glm::Vec4,
     planes_color: glm::Vec4,
 }
 
-const _: () = assert!(std::mem::size_of::<PushConstants>() <= 128);
+const _: () = assert!(std::mem::size_of::<PushConstant>() <= 128);
+
+impl gpu::CPUPushConstant for PushConstant {
+    fn stage_flags() -> vk::ShaderStageFlags {
+        vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT
+    }
+}
 
 impl Frustum2 {
     pub fn new(
@@ -32,7 +42,8 @@ impl Frustum2 {
         view_camera: vk::DeviceAddress,
         cull_camera: vk::DeviceAddress,
     ) -> Self {
-        let pipeline_layout = create_pipeline_layout(vk, descriptor_set_layout);
+        let pipeline_layout =
+            gpu::create_pipeline_layout(vk, descriptor_set_layout, PushConstant::range());
         let pipeline_solid = create_graphics_pipeline(
             &vk,
             pipeline_layout,
@@ -66,7 +77,7 @@ impl Frustum2 {
 
     pub fn record(&self, command_buffer: vk::CommandBuffer, extent: vk::Extent2D) {
         let vk = &self.vk;
-        let pc = PushConstants {
+        let pc = PushConstant {
             view_camera: self.view_camera,
             cull_camera: self.cull_camera,
             edges_color: self.edges_color.into(),
@@ -88,7 +99,7 @@ impl Frustum2 {
             vk.cmd_push_constants(
                 command_buffer,
                 self.pipeline_layout,
-                get_push_constants_stage_flags(),
+                PushConstant::stage_flags(),
                 0,
                 pc.data(),
             );
@@ -266,43 +277,5 @@ impl std::ops::Drop for Frustum2 {
             vk.destroy_pipeline(self.pipeline_wireframe, None);
             vk.destroy_pipeline_layout(self.pipeline_layout, None);
         }
-    }
-}
-
-impl PushConstants {
-    pub fn data(&self) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(
-                (self as *const PushConstants) as *const u8,
-                std::mem::size_of::<PushConstants>(),
-            )
-        }
-    }
-}
-
-fn get_push_constants_stage_flags() -> vk::ShaderStageFlags {
-    vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT
-}
-
-fn get_push_constants_range() -> [vk::PushConstantRange; 1] {
-    [vk::PushConstantRange {
-        stage_flags: get_push_constants_stage_flags(),
-        offset: 0,
-        size: std::mem::size_of::<PushConstants>() as u32,
-    }]
-}
-
-fn create_pipeline_layout(
-    vk: &ash::Device,
-    descriptor_set_layout: vk::DescriptorSetLayout,
-) -> vk::PipelineLayout {
-    let set_layouts = [descriptor_set_layout];
-    let push_constants_range = get_push_constants_range();
-    let create_info = vk::PipelineLayoutCreateInfo::default()
-        .set_layouts(&set_layouts)
-        .push_constant_ranges(&push_constants_range);
-    unsafe {
-        vk.create_pipeline_layout(&create_info, None)
-            .expect("Failed to create pipeline layout")
     }
 }

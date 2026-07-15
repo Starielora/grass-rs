@@ -2,25 +2,6 @@ use ash::vk;
 
 use crate::vkutils::shaders;
 
-pub fn create_pipeline_layout(
-    vk: &ash::Device,
-    descriptor_set_layout: vk::DescriptorSetLayout,
-    push_constant_range: vk::PushConstantRange,
-) -> vk::PipelineLayout {
-    let set_layouts = [descriptor_set_layout];
-    let push_constant_ranges = [push_constant_range];
-    let create_info = vk::PipelineLayoutCreateInfo::default()
-        .set_layouts(&set_layouts)
-        .push_constant_ranges(&push_constant_ranges);
-
-    let pipeline_layout = unsafe {
-        vk.create_pipeline_layout(&create_info, None)
-            .expect("Failed to create pipeline layout")
-    };
-
-    pipeline_layout
-}
-
 pub fn create_pipeline(
     vk: &ash::Device,
     pipeline_layout: vk::PipelineLayout,

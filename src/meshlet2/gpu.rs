@@ -75,60 +75,23 @@ pub struct GeometryBuildData {
     pub meshlet_instances: std::vec::Vec<MeshletInstance>,
 }
 
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct PushConstants {
-    pub view_camera: vk::DeviceAddress,
-    pub vertices: vk::DeviceAddress,
-    pub meshlet_vertices: vk::DeviceAddress,
-    pub meshlet_triangles: vk::DeviceAddress,
-    pub meshes: vk::DeviceAddress,
-    pub meshlets: vk::DeviceAddress,
-    pub mesh_instances: vk::DeviceAddress,
-    pub meshlet_instances: vk::DeviceAddress,
-    pub visible_meshlet_instances: vk::DeviceAddress,
-    pub visible_meshlet_instances_count: vk::DeviceAddress,
-    pub mesh_instances_count: u32,
-}
-
-const _: () = assert!(std::mem::size_of::<PushConstants>() <= 128);
-
-impl PushConstants {
-    pub fn data(&self) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(
-                (self as *const PushConstants) as *const u8,
-                std::mem::size_of::<PushConstants>(),
-            )
-        }
-    }
-}
-
-pub fn get_push_constants_stage_flags() -> vk::ShaderStageFlags {
-    vk::ShaderStageFlags::MESH_EXT | vk::ShaderStageFlags::TASK_EXT | vk::ShaderStageFlags::FRAGMENT
-}
-
-pub fn get_push_constant_range() -> [vk::PushConstantRange; 1] {
-    [vk::PushConstantRange {
-        stage_flags: get_push_constants_stage_flags(),
-        offset: 0,
-        size: std::mem::size_of::<PushConstants>() as u32,
-    }]
-}
-
-pub(super) fn create_pipeline_layout(
+pub fn create_pipeline_layout(
     vk: &ash::Device,
     descriptor_set_layout: vk::DescriptorSetLayout,
+    push_constant_range: vk::PushConstantRange,
 ) -> vk::PipelineLayout {
     let set_layouts = [descriptor_set_layout];
-    let push_constants_range = get_push_constant_range();
+    let push_constant_ranges = [push_constant_range];
     let create_info = vk::PipelineLayoutCreateInfo::default()
         .set_layouts(&set_layouts)
-        .push_constant_ranges(&push_constants_range);
-    unsafe {
+        .push_constant_ranges(&push_constant_ranges);
+
+    let pipeline_layout = unsafe {
         vk.create_pipeline_layout(&create_info, None)
             .expect("Failed to create pipeline layout")
-    }
+    };
+
+    pipeline_layout
 }
 
 pub fn task_dispatch_2d(instance_count: u32, subgroup_size: u32, max_dim: u32) -> (u32, u32) {
@@ -137,4 +100,25 @@ pub fn task_dispatch_2d(instance_count: u32, subgroup_size: u32, max_dim: u32) -
     let group_y = (total_groups + max_dim - 1) / max_dim;
 
     (group_x, group_y)
+}
+
+pub trait CPUPushConstant: Sized + Copy {
+    fn stage_flags() -> vk::ShaderStageFlags;
+
+    fn range() -> vk::PushConstantRange {
+        vk::PushConstantRange {
+            stage_flags: Self::stage_flags(),
+            offset: 0,
+            size: std::mem::size_of::<Self>() as u32,
+        }
+    }
+
+    fn data(&self) -> &[u8] {
+        unsafe {
+            std::slice::from_raw_parts(
+                (self as *const Self) as *const u8,
+                std::mem::size_of::<Self>(),
+            )
+        }
+    }
 }

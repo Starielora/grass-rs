@@ -1,6 +1,12 @@
 use ash::vk;
 
-use crate::{meshlet2::compute::pipeline, vkutils::shaders};
+use crate::{
+    meshlet2::{
+        compute::pipeline,
+        gpu::{self, CPUPushConstant},
+    },
+    vkutils::shaders,
+};
 
 pub struct Pipeline {
     vk: ash::Device,
@@ -9,9 +15,17 @@ pub struct Pipeline {
     push_constant: PushConstant,
 }
 
+#[derive(Copy, Clone)]
+#[repr(C)]
 pub struct PushConstant {
     pub _visible_meshlet_instances_count: vk::DeviceAddress,
     pub _draw_mesh_tasks_commands: vk::DeviceAddress,
+}
+
+impl gpu::CPUPushConstant for PushConstant {
+    fn stage_flags() -> vk::ShaderStageFlags {
+        vk::ShaderStageFlags::COMPUTE
+    }
 }
 
 impl std::ops::Drop for Pipeline {
@@ -33,7 +47,7 @@ impl Pipeline {
         draw_mesh_tasks_commands_bda: vk::DeviceAddress,
     ) -> Self {
         let pipeline_layout =
-            pipeline::create_pipeline_layout(vk, descriptor_set_layout, PushConstant::get_range());
+            gpu::create_pipeline_layout(vk, descriptor_set_layout, PushConstant::range());
         let pipeline = pipeline::create_pipeline(
             vk,
             pipeline_layout,
@@ -70,25 +84,6 @@ impl Pipeline {
             );
 
             vk.cmd_dispatch(command_buffer, 1, 1, 1);
-        }
-    }
-}
-
-impl PushConstant {
-    pub fn data(&self) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(
-                (self as *const PushConstant) as *const u8,
-                std::mem::size_of::<PushConstant>(),
-            )
-        }
-    }
-
-    pub fn get_range() -> vk::PushConstantRange {
-        vk::PushConstantRange {
-            stage_flags: vk::ShaderStageFlags::COMPUTE,
-            offset: 0,
-            size: std::mem::size_of::<Self>() as u32,
         }
     }
 }
