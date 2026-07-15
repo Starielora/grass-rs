@@ -119,27 +119,6 @@ impl GeometryBuffers {
             visible_meshlets_instances_count: visible_meshlets_instances_count_buffer,
         }
     }
-
-    pub fn push_constants(
-        &self,
-        view_camera: vk::DeviceAddress,
-        meshlet_instances_draws: vk::DeviceAddress,
-        draws_count_buffer: vk::DeviceAddress,
-    ) -> PushConstant {
-        PushConstant {
-            view_camera,
-            vertices: self.vertices.device_address.unwrap(),
-            meshlet_vertices: self.meshlet_vertices.device_address.unwrap(),
-            meshlet_triangles: self.meshlet_triangles.device_address.unwrap(),
-            meshes: self.meshes.device_address.unwrap(),
-            meshlets: self.meshlets.device_address.unwrap(),
-            mesh_instances: self.mesh_instances.device_address.unwrap(),
-            meshlet_instances: self.meshlet_instances.device_address.unwrap(),
-            visible_meshlet_instances: meshlet_instances_draws,
-            visible_meshlet_instances_count: draws_count_buffer,
-            mesh_instances_count: self.mesh_instances_count,
-        }
-    }
 }
 
 impl vkutils::vk_destroy::VkDestroy for GeometryBuffers {
@@ -234,17 +213,25 @@ impl GraphicsPipeline {
             vk.cmd_set_viewport(command_buffer, 0, &[viewport]);
             vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
 
-            let pc = geometry_data.push_constants(
-                self.view_camera_bda,
-                geometry_data
+            let pc = PushConstant {
+                view_camera: self.view_camera_bda,
+                vertices: geometry_data.vertices.device_address.unwrap(),
+                meshlet_vertices: geometry_data.meshlet_vertices.device_address.unwrap(),
+                meshlet_triangles: geometry_data.meshlet_triangles.device_address.unwrap(),
+                meshes: geometry_data.meshes.device_address.unwrap(),
+                meshlets: geometry_data.meshlets.device_address.unwrap(),
+                mesh_instances: geometry_data.mesh_instances.device_address.unwrap(),
+                meshlet_instances: geometry_data.meshlet_instances.device_address.unwrap(),
+                visible_meshlet_instances: geometry_data
                     .visible_meshlets_instances
                     .device_address
                     .unwrap(),
-                geometry_data
+                visible_meshlet_instances_count: geometry_data
                     .visible_meshlets_instances_count
                     .device_address
                     .unwrap(),
-            );
+                mesh_instances_count: geometry_data.mesh_instances_count,
+            };
 
             vk.cmd_push_constants(
                 command_buffer,
