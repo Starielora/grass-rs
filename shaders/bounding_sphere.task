@@ -22,7 +22,6 @@ Sphere get_mesh_instance_bounding_sphere(uint mesh_instance_index) {
 }
 
 Sphere get_meshlet_instance_bounding_sphere(MeshletInstance meshlet_instance) {
-    // MeshletInstance meshlet_instance = push_constants.meshlet_instances.items[meshlet_instance_index];
     Meshlet meshlet = push_constants.meshlets.items[meshlet_instance.meshlet_index];
     MeshInstance mesh_instance = push_constants.mesh_instances.items[meshlet_instance.mesh_instance_index];
 
@@ -47,11 +46,10 @@ void main() {
     bool accept = valid;
 
     uvec4 ballot = subgroupBallot(accept);
-    uint slot = subgroupBallotExclusiveBitCount(ballot); // compact index for survivors
+    uint slot = subgroupBallotExclusiveBitCount(ballot);
     if (accept) {
         Sphere s;
         #if MESHLET_BOUNDING_SPHERE
-            // uint meshlet_instance_index = push_constants.meshlet_instances_draws.meshlet_instance_index[mi];
             MeshletInstance meshlet_instance = push_constants.visible_meshlet_instances.items[mi];
             s = get_meshlet_instance_bounding_sphere(meshlet_instance);
         #else
@@ -59,7 +57,7 @@ void main() {
         #endif
         payload.spheres[slot] = s;
     }
-    uint count = subgroupBallotBitCount(ballot); // uniform across the subgroup
+    uint count = subgroupBallotBitCount(ballot);
 
     EmitMeshTasksEXT(count, 1, 1);
 }

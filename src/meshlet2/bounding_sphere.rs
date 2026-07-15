@@ -105,14 +105,7 @@ impl BoundingSphere {
 
                 (self.pipeline_mesh, group_x, group_y)
             }
-            DrawMode::MESHLET => {
-                let (group_x, group_y) = task_dispatch_2d(
-                    geometry_data.meshlet_instances_count,
-                    self.subgroup_size,
-                    self.max_task_workgroup_count[0],
-                );
-                (self.pipeline_meshlet, group_x, group_y)
-            }
+            DrawMode::MESHLET => (self.pipeline_meshlet, 0, 0),
         };
 
         unsafe {
@@ -131,7 +124,6 @@ impl BoundingSphere {
             vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
 
             let pc = geometry_data.push_constants(
-                0,
                 self.view_camera_bda,
                 geometry_data
                     .visible_meshlets_instances

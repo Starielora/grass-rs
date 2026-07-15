@@ -15,17 +15,15 @@ void main() {
     uint wg = gl_WorkGroupID.x + gl_WorkGroupID.y * gl_NumWorkGroups.x; // 2D dispatch, because I'm hitting 65535 limit quickly with meshlet-instance-count dispatches
     uint mi = wg * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
 
-    // bool accept = mi < push_constants.draws_count;
     bool accept = mi < push_constants.visible_meshlet_instances_count.count;
 
     uvec4 ballot = subgroupBallot(accept);
-    uint slot = subgroupBallotExclusiveBitCount(ballot); // compact index for survivors
+    uint slot = subgroupBallotExclusiveBitCount(ballot);
     if (accept) {
-        // uint meshlet_instance_index = push_constants.meshlet_instances_draws.meshlet_instance_index[mi];
         MeshletInstance meshlet_instance = push_constants.visible_meshlet_instances.items[mi];
         task_payload.meshlet_instances[slot] = meshlet_instance;
     }
-    uint count = subgroupBallotBitCount(ballot); // uniform across the subgroup
+    uint count = subgroupBallotBitCount(ballot);
 
     EmitMeshTasksEXT(count, 1, 1);
 }

@@ -21,7 +21,7 @@ pub struct GeometryBuffers {
     pub mesh_instances: vkutils::buffer::Buffer,
     pub mesh_instances_count: u32,
     pub meshlet_instances: vkutils::buffer::Buffer,
-    pub meshlet_instances_count: u32,
+    pub _meshlet_instances_count: u32,
     pub visible_meshlets_instances: vkutils::buffer::Buffer,
     pub visible_meshlets_instances_count: vkutils::buffer::Buffer,
 }
@@ -88,7 +88,7 @@ impl GeometryBuffers {
             mesh_instances: mesh_instances_buffer,
             mesh_instances_count: data.mesh_instances.len() as u32,
             meshlet_instances: meshlet_instances_buffer,
-            meshlet_instances_count: data.meshlet_instances.len() as u32,
+            _meshlet_instances_count: data.meshlet_instances.len() as u32,
             visible_meshlets_instances: visible_meshlets_instances_buffer,
             visible_meshlets_instances_count: visible_meshlets_instances_count_buffer,
         }
@@ -96,7 +96,6 @@ impl GeometryBuffers {
 
     pub fn push_constants(
         &self,
-        task_dispatches: vk::DeviceAddress,
         view_camera: vk::DeviceAddress,
         meshlet_instances_draws: vk::DeviceAddress,
         draws_count_buffer: vk::DeviceAddress,
@@ -110,11 +109,9 @@ impl GeometryBuffers {
             meshlets: self.meshlets.device_address.unwrap(),
             mesh_instances: self.mesh_instances.device_address.unwrap(),
             meshlet_instances: self.meshlet_instances.device_address.unwrap(),
-            draw_mesh_tasks_commands: task_dispatches,
             visible_meshlet_instances: meshlet_instances_draws,
             visible_meshlet_instances_count: draws_count_buffer,
             mesh_instances_count: self.mesh_instances_count,
-            meshlet_instances_count: self.meshlet_instances_count,
         }
     }
 }
@@ -140,7 +137,6 @@ pub struct GraphicsPipeline {
     pipeline_layout: vk::PipelineLayout,
     view_camera_bda: vk::DeviceAddress,
     draw_mesh_tasks_command_buf: vk::Buffer,
-    draw_mesh_tasks_command_bda: vk::DeviceAddress,
     pub lod: u32,
 }
 
@@ -163,7 +159,6 @@ impl GraphicsPipeline {
         depth_format: vk::Format,
         view_camera: vk::DeviceAddress,
         draw_mesh_tasks_command_buf: vk::Buffer,
-        draw_mesh_tasks_command_bda: vk::DeviceAddress,
         subgroup_size: u32,
     ) -> Self {
         let (pipeline, pipeline_layout) = pipeline::create_pipeline(
@@ -181,7 +176,6 @@ impl GraphicsPipeline {
             pipeline_layout,
             view_camera_bda: view_camera,
             draw_mesh_tasks_command_buf,
-            draw_mesh_tasks_command_bda,
             lod: 0,
         }
     }
@@ -215,7 +209,6 @@ impl GraphicsPipeline {
             vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
 
             let pc = geometry_data.push_constants(
-                self.draw_mesh_tasks_command_bda,
                 self.view_camera_bda,
                 geometry_data
                     .visible_meshlets_instances

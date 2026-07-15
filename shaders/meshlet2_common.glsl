@@ -15,11 +15,9 @@ layout(push_constant) uniform constants
     MeshletsBuf meshlets;
     MeshInstanceBuf mesh_instances;
     MeshletInstanceBuf meshlet_instances;
-    DrawMeshTasksCommandBuf draw_mesh_tasks_commands;
     VisibleMeshletInstancesBuf visible_meshlet_instances;
     VisibleMeshletInstancesCountBuf visible_meshlet_instances_count;
     uint mesh_instances_count;
-    uint meshlet_instances_count;
 } push_constants;
 
 

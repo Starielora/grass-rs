@@ -146,13 +146,7 @@ impl Renderer2 {
 
         let geometry_data = meshlet2::GeometryBuffers::new(&ctx, &geometry_builder.geometry_data);
         let subgroup_size = ctx.physical_device.subgroup_size;
-        let max_task_workgroup_count = ctx.physical_device.max_task_workgroup_count;
-        let draw_mesh_tasks_command_buf = create_draw_mesh_tasks_command_buf(
-            &ctx,
-            &geometry_data,
-            subgroup_size,
-            max_task_workgroup_count[0],
-        );
+        let draw_mesh_tasks_command_buf = create_draw_mesh_tasks_command_buf(&ctx);
         let meshlet_pipeline = meshlet2::GraphicsPipeline::new(
             &ctx.device,
             &ctx.mesh_shader_device,
@@ -161,7 +155,6 @@ impl Renderer2 {
             ctx.depth_format,
             view_camera_data_buffer.device_address.unwrap(),
             draw_mesh_tasks_command_buf.handle,
-            draw_mesh_tasks_command_buf.device_address.unwrap(),
             subgroup_size,
         );
 
@@ -568,20 +561,12 @@ impl Renderer2 {
 
 fn create_draw_mesh_tasks_command_buf(
     ctx: &&mut vkutils::context::VulkanContext,
-    geometry_data: &meshlet2::GeometryBuffers,
-    subgroup_size: u32,
-    max_dim: u32,
 ) -> vkutils::buffer::Buffer {
-    let (group_count_x, group_count_y) = meshlet2::gpu::task_dispatch_2d(
-        geometry_data.meshlet_instances_count,
-        subgroup_size,
-        max_dim,
-    );
     let draws: std::vec::Vec<vk::DrawMeshTasksIndirectCommandEXT> =
         vec![vk::DrawMeshTasksIndirectCommandEXT {
-            group_count_x,
-            group_count_y,
-            group_count_z: 1,
+            group_count_x: 0,
+            group_count_y: 0,
+            group_count_z: 0,
         }];
 
     let buffer = ctx.upload_buffer(
