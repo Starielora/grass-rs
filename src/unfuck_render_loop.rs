@@ -283,7 +283,7 @@ impl Renderer2 {
                 self.compute_visible_meshlets_pipeline.record(
                     command_buffer,
                     &self.geometry_data,
-                    self.view_camera_data_buffer.device_address.unwrap(),
+                    self.cull_camera_data_buffer.device_address.unwrap(),
                 );
 
                 let barrier = vk::MemoryBarrier::default()
