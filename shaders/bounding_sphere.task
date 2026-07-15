@@ -4,7 +4,6 @@
 #extension GL_ARB_shader_draw_parameters: require
 #extension GL_GOOGLE_include_directive : enable
 
-#include "meshlet2_common.glsl"
 #include "bounding_sphere_common.glsl"
 
 Sphere world_sphere(mat4 transform, vec3 center, float radius) {

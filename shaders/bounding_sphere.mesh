@@ -1,7 +1,6 @@
 #version 450 core
 #extension GL_EXT_mesh_shader : require
 
-#include "meshlet2_common.glsl"
 #include "bounding_sphere_common.glsl"
 
 #define SEGMENTS 20

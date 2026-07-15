@@ -31,13 +31,9 @@ pub struct BoundingSphere {
 #[repr(C)]
 struct PushConstant {
     pub view_camera: vk::DeviceAddress,
-    pub vertices: vk::DeviceAddress,
-    pub meshlet_vertices: vk::DeviceAddress,
-    pub meshlet_triangles: vk::DeviceAddress,
     pub meshes: vk::DeviceAddress,
     pub meshlets: vk::DeviceAddress,
     pub mesh_instances: vk::DeviceAddress,
-    pub meshlet_instances: vk::DeviceAddress,
     pub visible_meshlet_instances: vk::DeviceAddress,
     pub visible_meshlet_instances_count: vk::DeviceAddress,
     pub mesh_instances_count: u32,
@@ -45,15 +41,11 @@ struct PushConstant {
 
 const _: () = assert!(std::mem::size_of::<PushConstant>() <= 128);
 
-fn get_push_constants_stage_flags() -> vk::ShaderStageFlags {
-    vk::ShaderStageFlags::MESH_EXT | vk::ShaderStageFlags::TASK_EXT | vk::ShaderStageFlags::FRAGMENT
-}
-
-fn get_push_constant_range() -> vk::PushConstantRange {
-    vk::PushConstantRange {
-        stage_flags: get_push_constants_stage_flags(),
-        offset: 0,
-        size: std::mem::size_of::<PushConstant>() as u32,
+impl gpu::CPUPushConstant for PushConstant {
+    fn stage_flags() -> vk::ShaderStageFlags {
+        vk::ShaderStageFlags::TASK_EXT
+            | vk::ShaderStageFlags::MESH_EXT
+            | vk::ShaderStageFlags::FRAGMENT
     }
 }
 
@@ -70,7 +62,7 @@ impl BoundingSphere {
         task_dispatches_handle: vk::Buffer,
     ) -> Self {
         let pipeline_layout =
-            gpu::create_pipeline_layout(vk, descriptor_set_layout, get_push_constant_range());
+            gpu::create_pipeline_layout(vk, descriptor_set_layout, PushConstant::range());
         let pipeline_mesh = create_pipeline(
             vk,
             pipeline_layout,
@@ -154,22 +146,26 @@ impl BoundingSphere {
             vk.cmd_set_viewport(command_buffer, 0, &[viewport]);
             vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
 
-            let pc = geometry_data.push_constants(
-                self.view_camera_bda,
-                geometry_data
+            let pc = PushConstant {
+                view_camera: self.view_camera_bda,
+                meshes: geometry_data.meshes.device_address.unwrap(),
+                meshlets: geometry_data.meshlets.device_address.unwrap(),
+                mesh_instances: geometry_data.mesh_instances.device_address.unwrap(),
+                visible_meshlet_instances: geometry_data
                     .visible_meshlets_instances
                     .device_address
                     .unwrap(),
-                geometry_data
+                visible_meshlet_instances_count: geometry_data
                     .visible_meshlets_instances_count
                     .device_address
                     .unwrap(),
-            );
+                mesh_instances_count: geometry_data.mesh_instances_count,
+            };
 
             vk.cmd_push_constants(
                 command_buffer,
                 self.pipeline_layout,
-                get_push_constants_stage_flags(),
+                PushConstant::stage_flags(),
                 0,
                 pc.data(),
             );
