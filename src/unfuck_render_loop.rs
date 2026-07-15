@@ -25,7 +25,9 @@ pub struct Renderer2 {
     frustum_enabled: bool,
     bounding_sphere: meshlet2::bounding_sphere::BoundingSphere,
 
-    compute_prepass_pipeline: meshlet2::compute::ComputePrepassPipeline,
+    compute_visible_meshlets_pipeline: meshlet2::compute::compute_visible_meshlets::Pipeline,
+    prep_draw_mesh_tasks_command_pipeline:
+        meshlet2::compute::prep_draw_mesh_tasks_command::Pipeline,
     meshlet_pipeline: meshlet2::GraphicsPipeline,
     geometry_data: meshlet2::GeometryBuffers,
     draw_params_buf: vkutils::buffer::Buffer,
@@ -145,7 +147,7 @@ impl Renderer2 {
         let geometry_data = meshlet2::GeometryBuffers::new(&ctx, &geometry_builder.geometry_data);
         let subgroup_size = ctx.physical_device.subgroup_size;
         let max_task_workgroup_count = ctx.physical_device.max_task_workgroup_count;
-        let (draw_params_buf, draws_count) = create_draw_params_buf(
+        let draw_mesh_tasks_command_buf = create_draw_mesh_tasks_command_buf(
             &ctx,
             &geometry_data,
             subgroup_size,
@@ -158,8 +160,8 @@ impl Renderer2 {
             ctx.swapchain.surface_format.format,
             ctx.depth_format,
             view_camera_data_buffer.device_address.unwrap(),
-            draw_params_buf.handle,
-            draw_params_buf.device_address.unwrap(),
+            draw_mesh_tasks_command_buf.handle,
+            draw_mesh_tasks_command_buf.device_address.unwrap(),
             subgroup_size,
         );
 
@@ -172,14 +174,27 @@ impl Renderer2 {
             view_camera_data_buffer.device_address.unwrap(),
             ctx.physical_device.subgroup_size,
             ctx.physical_device.max_task_workgroup_count,
-            draw_params_buf.handle,
+            draw_mesh_tasks_command_buf.handle,
         );
 
-        let compute_prepass_pipeline = meshlet2::compute::ComputePrepassPipeline::new(
-            &ctx.device,
-            ctx.bindless_descriptor_set.layout,
-            ctx.physical_device.subgroup_size,
-        );
+        let compute_visible_meshlets_pipeline =
+            meshlet2::compute::compute_visible_meshlets::Pipeline::new(
+                &ctx.device,
+                ctx.bindless_descriptor_set.layout,
+                ctx.physical_device.subgroup_size,
+            );
+
+        let prep_draw_mesh_tasks_command_pipeline =
+            meshlet2::compute::prep_draw_mesh_tasks_command::Pipeline::new(
+                &ctx.device,
+                ctx.bindless_descriptor_set.layout,
+                ctx.physical_device.subgroup_size,
+                geometry_data
+                    .visible_meshlets_instances_count
+                    .device_address
+                    .unwrap(), // count IN: read by the shader to compute the dispatch dimensions
+                draw_mesh_tasks_command_buf.device_address.unwrap(), // command OUT: indirect buffer which cmd_draw_mesh_tasks_indirect reads later
+            );
 
         Self {
             vk: ctx.device.clone(),
@@ -193,11 +208,12 @@ impl Renderer2 {
             frustum,
             frustum_enabled: true,
             bounding_sphere,
-            compute_prepass_pipeline,
             meshlet_pipeline,
             geometry_data,
-            draw_params_buf,
+            draw_params_buf: draw_mesh_tasks_command_buf,
             render_finished_semaphore,
+            compute_visible_meshlets_pipeline,
+            prep_draw_mesh_tasks_command_pipeline,
         }
     }
 
@@ -280,12 +296,52 @@ impl Renderer2 {
             vk.begin_command_buffer(command_buffer, &begin_info)
                 .expect("Failed to begin command buffer");
 
-            self.compute_prepass_pipeline.record(
-                command_buffer,
-                &self.geometry_data,
-                self.view_camera_data_buffer.device_address.unwrap(),
-                self.draw_params_buf.device_address.unwrap(),
-            );
+            {
+                self.geometry_data
+                    .visible_meshlets_instances_count
+                    .update_contents(&[0 as u32]);
+
+                self.compute_visible_meshlets_pipeline.record(
+                    command_buffer,
+                    &self.geometry_data,
+                    self.view_camera_data_buffer.device_address.unwrap(),
+                );
+
+                let barrier = vk::MemoryBarrier::default()
+                    .src_access_mask(vk::AccessFlags::SHADER_WRITE)
+                    .dst_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE);
+
+                vk.cmd_pipeline_barrier(
+                    command_buffer,
+                    vk::PipelineStageFlags::COMPUTE_SHADER, // src: the prepass
+                    vk::PipelineStageFlags::COMPUTE_SHADER,
+                    vk::DependencyFlags::empty(),
+                    &[barrier],
+                    &[],
+                    &[],
+                );
+
+                self.prep_draw_mesh_tasks_command_pipeline
+                    .record(command_buffer);
+
+                let barrier = vk::MemoryBarrier::default()
+                    .src_access_mask(vk::AccessFlags::SHADER_WRITE)
+                    .dst_access_mask(
+                        vk::AccessFlags::INDIRECT_COMMAND_READ | vk::AccessFlags::SHADER_READ,
+                    );
+
+                vk.cmd_pipeline_barrier(
+                    command_buffer,
+                    vk::PipelineStageFlags::COMPUTE_SHADER,
+                    vk::PipelineStageFlags::DRAW_INDIRECT
+                        | vk::PipelineStageFlags::TASK_SHADER_EXT
+                        | vk::PipelineStageFlags::MESH_SHADER_EXT,
+                    vk::DependencyFlags::empty(),
+                    &[barrier],
+                    &[],
+                    &[],
+                );
+            }
 
             let color_clear_value = vk::ClearValue {
                 color: vk::ClearColorValue {
@@ -380,7 +436,6 @@ impl Renderer2 {
                 command_buffer,
                 vkctx.swapchain.extent,
                 &self.geometry_data,
-                self.meshlet_pipeline.lod,
             );
 
             if self.frustum_enabled {
@@ -511,12 +566,12 @@ impl Renderer2 {
     }
 }
 
-fn create_draw_params_buf(
+fn create_draw_mesh_tasks_command_buf(
     ctx: &&mut vkutils::context::VulkanContext,
     geometry_data: &meshlet2::GeometryBuffers,
     subgroup_size: u32,
     max_dim: u32,
-) -> (vkutils::buffer::Buffer, u32) {
+) -> vkutils::buffer::Buffer {
     let (group_count_x, group_count_y) = meshlet2::gpu::task_dispatch_2d(
         geometry_data.meshlet_instances_count,
         subgroup_size,
@@ -536,7 +591,7 @@ fn create_draw_params_buf(
             | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
     );
 
-    (buffer, draws.len() as u32)
+    buffer
 }
 
 fn create_render_target_image(ctx: &vkutils::context::VulkanContext) -> vkutils::image::Image {

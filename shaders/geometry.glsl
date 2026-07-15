@@ -1,3 +1,4 @@
+#extension GL_EXT_buffer_reference: require
 #extension GL_EXT_shader_8bit_storage : require
 
 struct Vertex {

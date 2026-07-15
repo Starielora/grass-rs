@@ -91,7 +91,6 @@ pub struct PushConstants {
     pub visible_meshlet_instances_count: vk::DeviceAddress,
     pub mesh_instances_count: u32,
     pub meshlet_instances_count: u32,
-    pub draws_count: u32,
 }
 
 const _: () = assert!(std::mem::size_of::<PushConstants>() <= 128);

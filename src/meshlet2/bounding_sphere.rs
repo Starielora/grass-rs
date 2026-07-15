@@ -85,7 +85,6 @@ impl BoundingSphere {
         command_buffer: vk::CommandBuffer,
         extent: vk::Extent2D,
         geometry_data: &GeometryBuffers,
-        lod: u32,
     ) {
         let vk = &self.vk;
         let vk_ext = &self.vk_ext;
@@ -131,14 +130,17 @@ impl BoundingSphere {
             vk.cmd_set_viewport(command_buffer, 0, &[viewport]);
             vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
 
-            let (draw_buf, dispatch_buf, _draws_count, elements_in_draw_buf) =
-                &geometry_data.per_lod_draws[lod as usize];
             let pc = geometry_data.push_constants(
                 0,
                 self.view_camera_bda,
-                lod,
-                geometry_data.draws_buffer.device_address.unwrap(),
-                geometry_data.draws_count_buffer.device_address.unwrap(),
+                geometry_data
+                    .visible_meshlets_instances
+                    .device_address
+                    .unwrap(),
+                geometry_data
+                    .visible_meshlets_instances_count
+                    .device_address
+                    .unwrap(),
             );
 
             vk.cmd_push_constants(
@@ -168,13 +170,6 @@ impl BoundingSphere {
                         1,
                         std::mem::size_of::<vk::DrawMeshTasksIndirectCommandEXT>() as u32,
                     );
-                    // vk_ext.cmd_draw_mesh_tasks_indirect(
-                    //     command_buffer,
-                    //     dispatch_buf.handle,
-                    //     0,
-                    //     *elements_in_draw_buf,
-                    //     std::mem::size_of::<vk::DrawMeshTasksIndirectCommandEXT>() as u32,
-                    // );
                 }
             }
         }

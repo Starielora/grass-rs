@@ -20,7 +20,6 @@ layout(push_constant) uniform constants
     VisibleMeshletInstancesCountBuf visible_meshlet_instances_count;
     uint mesh_instances_count;
     uint meshlet_instances_count;
-    uint draws_count;
 } push_constants;
 
 

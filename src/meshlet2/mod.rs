@@ -22,9 +22,8 @@ pub struct GeometryBuffers {
     pub mesh_instances_count: u32,
     pub meshlet_instances: vkutils::buffer::Buffer,
     pub meshlet_instances_count: u32,
-    pub per_lod_draws: std::vec::Vec<(vkutils::buffer::Buffer, vkutils::buffer::Buffer, u32, u32)>, // TODO this is temporary to test LOD. Meshlet instances will be set in compute prepass with according LOD
-    pub draws_buffer: vkutils::buffer::Buffer,
-    pub draws_count_buffer: vkutils::buffer::Buffer,
+    pub visible_meshlets_instances: vkutils::buffer::Buffer,
+    pub visible_meshlets_instances_count: vkutils::buffer::Buffer,
 }
 
 impl GeometryBuffers {
@@ -60,11 +59,9 @@ impl GeometryBuffers {
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
 
-        let per_lod_draws = create_meshlets_to_draw_buffer(ctx, data);
-
         // stub - is overwritten in compute prepass
-        let mut draws_data: std::vec::Vec<gpu::MeshletInstance> = vec![];
-        draws_data.resize(
+        let mut visible_meshlets_instances: std::vec::Vec<gpu::MeshletInstance> = vec![];
+        visible_meshlets_instances.resize(
             data.meshlet_instances.len(),
             MeshletInstance {
                 mesh_instance_index: 0,
@@ -72,12 +69,12 @@ impl GeometryBuffers {
                 lod_index: 0,
             },
         );
-        let draws_buffer = ctx.upload_buffer(
-            &draws_data,
+        let visible_meshlets_instances_buffer = ctx.upload_buffer(
+            &visible_meshlets_instances,
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
 
-        let draws_count_buffer = ctx.create_bar_buffer(
+        let visible_meshlets_instances_count_buffer = ctx.create_bar_buffer(
             std::mem::size_of::<u32>(),
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
@@ -92,9 +89,8 @@ impl GeometryBuffers {
             mesh_instances_count: data.mesh_instances.len() as u32,
             meshlet_instances: meshlet_instances_buffer,
             meshlet_instances_count: data.meshlet_instances.len() as u32,
-            per_lod_draws,
-            draws_buffer,
-            draws_count_buffer,
+            visible_meshlets_instances: visible_meshlets_instances_buffer,
+            visible_meshlets_instances_count: visible_meshlets_instances_count_buffer,
         }
     }
 
@@ -102,7 +98,6 @@ impl GeometryBuffers {
         &self,
         task_dispatches: vk::DeviceAddress,
         view_camera: vk::DeviceAddress,
-        lod: u32,
         meshlet_instances_draws: vk::DeviceAddress,
         draws_count_buffer: vk::DeviceAddress,
     ) -> gpu::PushConstants {
@@ -120,51 +115,8 @@ impl GeometryBuffers {
             visible_meshlet_instances_count: draws_count_buffer,
             mesh_instances_count: self.mesh_instances_count,
             meshlet_instances_count: self.meshlet_instances_count,
-            draws_count: self.per_lod_draws[lod as usize].2,
         }
     }
-}
-
-fn create_meshlets_to_draw_buffer(
-    ctx: &vkutils::context::VulkanContext,
-    data: &GeometryBuildData,
-) -> std::vec::Vec<(vkutils::buffer::Buffer, vkutils::buffer::Buffer, u32, u32)> {
-    let mut per_lod_buf: std::vec::Vec<std::vec::Vec<MeshletInstance>> = vec![];
-    per_lod_buf.resize(gpu::MAX_LODS, vec![]);
-
-    for (meshlet_instance_index, meshlet_instance) in data.meshlet_instances.iter().enumerate() {
-        let buf = &mut per_lod_buf[meshlet_instance.lod_index as usize];
-        buf.push(meshlet_instance.clone());
-    }
-
-    let mut out: std::vec::Vec<(vkutils::buffer::Buffer, vkutils::buffer::Buffer, u32, u32)> =
-        vec![];
-    for buf in &per_lod_buf {
-        let (dx, dy) = gpu::task_dispatch_2d(
-            buf.len() as u32,
-            ctx.physical_device.subgroup_size,
-            ctx.physical_device.max_task_workgroup_count[0],
-        );
-        let dispatch = vk::DrawMeshTasksIndirectCommandEXT {
-            group_count_x: dx,
-            group_count_y: dy,
-            group_count_z: 1,
-        };
-        let dispatch_buf = ctx.upload_buffer(
-            &vec![dispatch],
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::INDIRECT_BUFFER,
-        );
-        out.push((
-            ctx.upload_buffer(
-                &buf,
-                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-            ),
-            dispatch_buf,
-            buf.len() as u32,
-            1,
-        ));
-    }
-    out
 }
 
 impl vkutils::vk_destroy::VkDestroy for GeometryBuffers {
@@ -176,13 +128,8 @@ impl vkutils::vk_destroy::VkDestroy for GeometryBuffers {
         self.meshlets.vk_destroy();
         self.mesh_instances.vk_destroy();
         self.meshlet_instances.vk_destroy();
-
-        for (buf1, buf2, _, _) in &self.per_lod_draws {
-            buf1.vk_destroy();
-            buf2.vk_destroy();
-        }
-        self.draws_buffer.vk_destroy();
-        self.draws_count_buffer.vk_destroy();
+        self.visible_meshlets_instances.vk_destroy();
+        self.visible_meshlets_instances_count.vk_destroy();
     }
 }
 
@@ -192,8 +139,8 @@ pub struct GraphicsPipeline {
     pipeline: vk::Pipeline,
     pipeline_layout: vk::PipelineLayout,
     view_camera_bda: vk::DeviceAddress,
-    task_dispatches_handle: vk::Buffer,
-    task_dispatches_bda: vk::DeviceAddress,
+    draw_mesh_tasks_command_buf: vk::Buffer,
+    draw_mesh_tasks_command_bda: vk::DeviceAddress,
     pub lod: u32,
 }
 
@@ -215,8 +162,8 @@ impl GraphicsPipeline {
         swapchain_format: vk::Format,
         depth_format: vk::Format,
         view_camera: vk::DeviceAddress,
-        draw_params_handle: vk::Buffer,
-        draw_params_bda: vk::DeviceAddress,
+        draw_mesh_tasks_command_buf: vk::Buffer,
+        draw_mesh_tasks_command_bda: vk::DeviceAddress,
         subgroup_size: u32,
     ) -> Self {
         let (pipeline, pipeline_layout) = pipeline::create_pipeline(
@@ -233,8 +180,8 @@ impl GraphicsPipeline {
             pipeline,
             pipeline_layout,
             view_camera_bda: view_camera,
-            task_dispatches_handle: draw_params_handle,
-            task_dispatches_bda: draw_params_bda,
+            draw_mesh_tasks_command_buf,
+            draw_mesh_tasks_command_bda,
             lod: 0,
         }
     }
@@ -247,10 +194,6 @@ impl GraphicsPipeline {
     ) {
         let vk = &self.vk;
         let vk_ext = &self.vk_ext;
-
-        geometry_data
-            .draws_count_buffer
-            .update_contents(&[0 as u32]);
 
         unsafe {
             vk.cmd_bind_pipeline(
@@ -272,11 +215,16 @@ impl GraphicsPipeline {
             vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
 
             let pc = geometry_data.push_constants(
-                self.task_dispatches_bda,
+                self.draw_mesh_tasks_command_bda,
                 self.view_camera_bda,
-                self.lod,
-                geometry_data.draws_buffer.device_address.unwrap(),
-                geometry_data.draws_count_buffer.device_address.unwrap(),
+                geometry_data
+                    .visible_meshlets_instances
+                    .device_address
+                    .unwrap(),
+                geometry_data
+                    .visible_meshlets_instances_count
+                    .device_address
+                    .unwrap(),
             );
 
             vk.cmd_push_constants(
@@ -289,7 +237,7 @@ impl GraphicsPipeline {
 
             vk_ext.cmd_draw_mesh_tasks_indirect(
                 command_buffer,
-                self.task_dispatches_handle,
+                self.draw_mesh_tasks_command_buf,
                 0,
                 1,
                 std::mem::size_of::<vk::DrawMeshTasksIndirectCommandEXT>() as u32,

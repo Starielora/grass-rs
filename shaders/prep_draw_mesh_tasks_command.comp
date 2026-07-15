@@ -1,7 +1,12 @@
 #version 460 core
 #extension GL_GOOGLE_include_directive : enable
 
-#include "prepass_common.glsl"
+#include "geometry.glsl"
+
+layout(push_constant) uniform constant {
+    VisibleMeshletInstancesCountBuf visible_meshlet_instances_count;
+    DrawMeshTasksCommandBuf draw_mesh_tasks_commands;
+} push_constants;
 
 layout(local_size_x=1,local_size_y=1,local_size_z=1) in;
 void main() {
