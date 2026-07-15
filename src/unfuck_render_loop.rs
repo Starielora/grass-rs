@@ -2,7 +2,7 @@ use crate::assets::gltf_asset;
 use crate::camera::GPUCameraData;
 use crate::frustum2::Frustum2;
 use crate::grid2::Grid2;
-use crate::meshlet2::{self, gpu};
+use crate::meshlet2::{self};
 use crate::skybox2::Skybox2;
 use crate::vkutils::{self, vk_destroy::VkDestroy};
 use ash::vk;
@@ -216,20 +216,6 @@ impl Renderer2 {
 
     pub fn toggle_bounding_sphere_mode(&mut self) {
         self.bounding_sphere.toggle_mode();
-    }
-
-    pub fn incr_lod(&mut self) {
-        if self.meshlet_pipeline.lod < (gpu::MAX_LODS as u32 - 1) {
-            self.meshlet_pipeline.lod += 1;
-            println!("Current lod: {}", self.meshlet_pipeline.lod);
-        }
-    }
-
-    pub fn decr_lod(&mut self) {
-        if self.meshlet_pipeline.lod > 0 {
-            self.meshlet_pipeline.lod -= 1;
-            println!("Current lod: {}", self.meshlet_pipeline.lod);
-        }
     }
 
     // TODO make type safe - don't rely on tuple indices - easy to mix

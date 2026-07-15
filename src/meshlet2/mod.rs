@@ -142,7 +142,6 @@ pub struct GraphicsPipeline {
     pipeline_layout: vk::PipelineLayout,
     view_camera_bda: vk::DeviceAddress,
     draw_mesh_tasks_command_buf: vk::Buffer,
-    pub lod: u32,
 }
 
 impl std::ops::Drop for GraphicsPipeline {
@@ -181,7 +180,6 @@ impl GraphicsPipeline {
             pipeline_layout,
             view_camera_bda: view_camera,
             draw_mesh_tasks_command_buf,
-            lod: 0,
         }
     }
 
