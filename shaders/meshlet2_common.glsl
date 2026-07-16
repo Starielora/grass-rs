@@ -8,6 +8,7 @@
 layout(push_constant) uniform constants
 {
     CameraDataBuf view_camera;
+    CameraDataBuf cull_camera;
     VertexBuf vertices;
     MeshletsVerticesBuf meshlets_vertices;
     MeshletsTrianglesBuf meshlets_triangles;

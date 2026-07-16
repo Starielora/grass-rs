@@ -156,6 +156,7 @@ impl Renderer2 {
             ctx.swapchain.surface_format.format,
             ctx.depth_format,
             view_camera_data_buffer.device_address.unwrap(),
+            cull_camera_data_buffer.device_address.unwrap(),
             draw_mesh_tasks_command_buf.handle,
             subgroup_size,
         );

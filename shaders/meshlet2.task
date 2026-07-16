@@ -22,7 +22,25 @@ void main() {
     uint wg = gl_WorkGroupID.x + gl_WorkGroupID.y * gl_NumWorkGroups.x; // 2D dispatch, because I'm hitting 65535 limit quickly with meshlet-instance-count dispatches
     uint mi = wg * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
 
-    bool accept = mi < push_constants.visible_meshlet_instances_count.count;
+    bool valid = mi < push_constants.visible_meshlet_instances_count.count;
+    bool accept = false;
+
+    if (valid) {
+        MeshletInstance meshlet_instance = push_constants.visible_meshlet_instances.items[mi];
+        Meshlet meshlet = push_constants.meshlets.items[meshlet_instance.meshlet_index];
+        mat4 transform = push_constants.mesh_instances.items[meshlet_instance.mesh_instance_index].transform;
+        vec4 pos_world = compute_pos_world(transform, meshlet.bounding_sphere_center);
+        float radius_world = compute_radius_world(transform, meshlet.bounding_sphere_radius);
+        vec3 cone_axis_world = normalize(transpose(inverse(mat3(transform))) * meshlet.cone_axis);
+
+        vec3 camera_pos = push_constants.cull_camera.position.xyz;
+
+        accept = !cluster_cull(pos_world.xyz, radius_world, cone_axis_world, meshlet.cone_cutoff, camera_pos);
+        if (accept) {
+            mat4 projview = push_constants.cull_camera.projview;
+            accept = accept && !frustum_cull(projview, pos_world.xyz, radius_world);
+        }
+    }
 
     uvec4 ballot = subgroupBallot(accept);
     uint slot = subgroupBallotExclusiveBitCount(ballot);
