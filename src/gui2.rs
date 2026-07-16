@@ -99,6 +99,7 @@ impl Gui2 {
 const BUDGET_OK: [f32; 4] = [0.4, 1.0, 0.4, 1.0]; // < 60 fps budget
 const BUDGET_WARN: [f32; 4] = [1.0, 1.0, 0.4, 1.0]; // < 30 fps budget
 const BUDGET_OVER: [f32; 4] = [1.0, 0.4, 0.4, 1.0];
+const COST_BAR: [f32; 4] = [0.26, 0.59, 0.98, 0.35];
 
 fn frame_budget_color(ms: f64) -> [f32; 4] {
     if ms < 1000.0 / 60.0 {
@@ -113,7 +114,7 @@ fn frame_budget_color(ms: f64) -> [f32; 4] {
 fn build_stats_table(ui: &imgui::Ui, stats: &[stats::StatRow]) {
     let Some(_table) = ui.begin_table_with_flags(
         "stats-table",
-        5,
+        6,
         imgui::TableFlags::SIZING_FIXED_FIT | imgui::TableFlags::ROW_BG,
     ) else {
         return;
@@ -124,6 +125,7 @@ fn build_stats_table(ui: &imgui::Ui, stats: &[stats::StatRow]) {
     ui.table_setup_column("min");
     ui.table_setup_column("max");
     ui.table_setup_column("% frame");
+    ui.table_setup_column("history");
     ui.table_headers_row();
 
     // avg (ns) of the enclosing time scope per depth; None for non-time rows
@@ -168,9 +170,42 @@ fn build_stats_table(ui: &imgui::Ui, stats: &[stats::StatRow]) {
                 ui.text_colored(frame_budget_color(ns / 1e6), format!("{:>7.0} fps", 1e9 / ns));
             }
             (Some(ns), Some(parent)) if parent > 0.0 => {
-                ui.text(format!("{:>7.1}%", 100.0 * ns / parent));
+                let pct = 100.0 * ns / parent;
+                let text = format!("{pct:.1}%");
+
+                let pos = ui.cursor_screen_pos();
+                let cell_width = ui.content_region_avail()[0];
+
+                // relative-cost bar across the whole cell (100% == full cell width)
+                let bar_width = cell_width * (pct / 100.0).clamp(0.0, 1.0) as f32;
+                ui.get_window_draw_list()
+                    .add_rect(
+                        pos,
+                        [pos[0] + bar_width, pos[1] + ui.text_line_height()],
+                        COST_BAR,
+                    )
+                    .filled(true)
+                    .build();
+
+                // center the value in the cell so it doesn't sit on the bar's edge
+                let text_width = ui.calc_text_size(&text)[0];
+                let cursor = ui.cursor_pos();
+                ui.set_cursor_pos([
+                    cursor[0] + ((cell_width - text_width) * 0.5).max(0.0),
+                    cursor[1],
+                ]);
+                ui.text(text);
             }
             _ => {}
+        }
+
+        ui.table_next_column();
+        let history = row.history();
+        if history.len() >= 2 {
+            ui.plot_lines(format!("##history-{}", row.name), history)
+                .graph_size([120.0, ui.text_line_height()])
+                .scale_min(0.0)
+                .build();
         }
     }
 }

@@ -56,7 +56,7 @@ impl App {
             renderer: Option::None,
             renderer2: Option::None,
             gpu_profiler: Option::None,
-            stats: stats::StatsAggregator::new(std::time::Duration::from_millis(1000)),
+            stats: stats::StatsAggregator::new(std::time::Duration::from_millis(250)),
             vkctx: Option::None,
             window: Option::None,
             last_frame: std::time::Instant::now(),

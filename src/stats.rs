@@ -49,6 +49,9 @@ impl StatValue {
     }
 }
 
+// flushed snapshots kept per stat for sparklines (at 1s flush interval = 1 minute)
+const HISTORY_LEN: usize = 60;
+
 pub struct StatRow {
     pub name: &'static str,
     pub depth: u8,
@@ -56,6 +59,7 @@ pub struct StatRow {
     avg: f64,
     min: f64,
     max: f64,
+    history: std::vec::Vec<f32>,
 }
 
 impl StatRow {
@@ -69,6 +73,12 @@ impl StatRow {
 
     pub fn max(&self) -> StatValue {
         StatValue::compose(self.kind, self.max)
+    }
+
+    /// Flushed averages, oldest first. Time stats are in milliseconds,
+    /// the rest in their natural unit.
+    pub fn history(&self) -> &[f32] {
+        &self.history
     }
 }
 
@@ -87,6 +97,8 @@ pub struct StatsAggregator {
     // push order defines display order
     pending: std::vec::Vec<Accum>,
     snapshot: std::vec::Vec<StatRow>,
+    // outlives snapshots so sparklines survive across flushes
+    histories: std::vec::Vec<(&'static str, std::vec::Vec<f32>)>,
     last_flush: std::time::Instant,
 }
 
@@ -96,6 +108,7 @@ impl StatsAggregator {
             interval,
             pending: std::vec::Vec::new(),
             snapshot: std::vec::Vec::new(),
+            histories: std::vec::Vec::new(),
             last_flush: std::time::Instant::now(),
         }
     }
@@ -132,13 +145,36 @@ impl StatsAggregator {
         self.snapshot = self
             .pending
             .iter()
-            .map(|a| StatRow {
-                name: a.name,
-                depth: a.depth,
-                kind: a.kind,
-                avg: a.sum / a.count as f64,
-                min: a.min,
-                max: a.max,
+            .map(|a| {
+                let avg = a.sum / a.count as f64;
+
+                // sparkline sample in display units (ms for time stats)
+                let sample = match a.kind {
+                    Kind::Time => (avg / 1e6) as f32,
+                    Kind::Count | Kind::Float => avg as f32,
+                };
+                let index = match self.histories.iter().position(|(name, _)| *name == a.name) {
+                    Some(i) => i,
+                    None => {
+                        self.histories.push((a.name, std::vec::Vec::new()));
+                        self.histories.len() - 1
+                    }
+                };
+                let history = &mut self.histories[index].1;
+                history.push(sample);
+                if history.len() > HISTORY_LEN {
+                    history.remove(0);
+                }
+
+                StatRow {
+                    name: a.name,
+                    depth: a.depth,
+                    kind: a.kind,
+                    avg,
+                    min: a.min,
+                    max: a.max,
+                    history: history.clone(),
+                }
             })
             .collect();
 
