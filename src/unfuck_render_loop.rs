@@ -112,7 +112,7 @@ impl Renderer2 {
         {
             let mut rng = rand::rng();
 
-            for _i in 0..1000 {
+            for _i in 0..10 {
                 let tx: f32 = rng.random_range(-10.0f32..10.0f32);
                 let ty: f32 = rng.random_range(-10.0f32..10.0f32);
                 let tz: f32 = rng.random_range(-10.0f32..10.0f32);

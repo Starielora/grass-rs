@@ -6,8 +6,15 @@
 
 #include "meshlet2_common.glsl"
 #include "meshlet2_payload.glsl"
+#include "frustum_cull2.glsl"
 
 taskPayloadSharedEXT TaskPayload task_payload;
+
+bool cluster_cull(vec3 center, float radius, vec3 cone_axis, float cone_cutoff, vec3 camera_position) {
+    if (cone_cutoff >= 1.0) return false; // meshopt signals -1.0 is uncullable; use >= 1.0 as safe upper guard too
+    if (cone_cutoff < -0.999) return false; // can't cone-cull this meshlet
+    return dot(center - camera_position, cone_axis) > cone_cutoff * length(center - camera_position) + radius;
+}
 
 // pulls id 0 from layout(constant_id = 0) which happens to be SUBGROUP_SIZE
 layout(local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;

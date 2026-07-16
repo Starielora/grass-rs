@@ -3,6 +3,7 @@
 
 #include "camera_data.glsl"
 #include "geometry.glsl"
+#include "frustum_cull2.glsl"
 
 layout(push_constant) uniform constants
 {
@@ -13,6 +14,8 @@ layout(push_constant) uniform constants
     VisibleMeshletInstancesCountBuf visible_meshlet_instances_count;
     uint mesh_instances_count;
 } push_constants;
+
+bool frustum_cull(mat4 projview, vec3 bounding_sphere_center, float bounding_sphere_radius);
 
 layout(local_size_x=64,local_size_y=1,local_size_z=1) in;
 void main()
@@ -25,9 +28,15 @@ void main()
     MeshInstance mesh_instance = push_constants.mesh_instances.items[mi];
     Mesh mesh = push_constants.meshes.items[mesh_instance.mesh_index];
 
-    vec4 mesh_pos = mesh_instance.transform * vec4(mesh.bounding_sphere_center, 1.0);
+    vec4 pos_world = compute_pos_world(mesh_instance.transform, mesh.bounding_sphere_center);
+    float radius_world = compute_radius_world(mesh_instance.transform, mesh.bounding_sphere_radius);
 
-    float dist_to_camera = length(mesh_pos - push_constants.view_camera.position);
+    // TODO scale radius with mesh scale
+    if (frustum_cull(push_constants.view_camera.projview, pos_world.xyz, radius_world)) {
+        return;
+    }
+
+    float dist_to_camera = length(pos_world - push_constants.view_camera.position);
 
     uint lod = uint(clamp(dist_to_camera, 0.0, 50.0f) / (50.0f/float(mesh.lod_count)));
 
