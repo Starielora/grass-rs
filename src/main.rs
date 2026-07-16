@@ -6,7 +6,6 @@ mod assets;
 mod camera;
 mod dir_light;
 mod fps_window;
-mod frame_times;
 mod frustum;
 mod frustum2;
 mod grid;
@@ -20,6 +19,7 @@ mod overlay_drawable;
 mod renderer;
 mod skybox;
 mod skybox2;
+mod stats;
 mod unfuck_render_loop;
 mod vkutils;
 

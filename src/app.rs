@@ -6,12 +6,12 @@ use winit::keyboard::PhysicalKey;
 
 use crate::camera;
 use crate::fps_window;
-use crate::frame_times::FrameTimes;
 use crate::gui;
 use crate::gui2;
 use crate::gui_scene_node::GuiCameraNode;
 use crate::gui_scene_node::GuiSceneNode;
 use crate::renderer;
+use crate::stats;
 use crate::unfuck_render_loop;
 use crate::vkutils;
 
@@ -29,6 +29,8 @@ pub struct App {
     gui2: Option<gui2::Gui2>,
     renderer: Option<renderer::Renderer>,
     renderer2: Option<unfuck_render_loop::Renderer2>,
+    gpu_profiler: Option<vkutils::gpu_profiler::GpuProfiler>,
+    stats: stats::StatsAggregator,
     vkctx: Option<vkutils::context::VulkanContext>,
     window: Option<std::rc::Rc<winit::window::Window>>,
     last_frame: std::time::Instant,
@@ -53,6 +55,8 @@ impl App {
             cameras: [const { Option::None }; NUM_CAMERAS],
             renderer: Option::None,
             renderer2: Option::None,
+            gpu_profiler: Option::None,
+            stats: stats::StatsAggregator::new(std::time::Duration::from_millis(1000)),
             vkctx: Option::None,
             window: Option::None,
             last_frame: std::time::Instant::now(),
@@ -105,6 +109,7 @@ impl ApplicationHandler for App {
         let mut vkctx = vkutils::context::VulkanContext::new(&window);
         let renderer = renderer::Renderer::new(&mut vkctx);
         let renderer2 = unfuck_render_loop::Renderer2::new(&mut vkctx);
+        let gpu_profiler = vkutils::gpu_profiler::GpuProfiler::new(&vkctx, 32);
         for camera in &mut self.cameras {
             camera
                 .insert(camera::Camera::new(
@@ -122,6 +127,7 @@ impl ApplicationHandler for App {
         self.vkctx = Some(vkctx);
         self.renderer = Some(renderer);
         self.renderer2 = Some(renderer2);
+        self.gpu_profiler = Some(gpu_profiler);
         // self.gui = Some(gui);
         self.gui2 = Some(gui2);
         self.window = Some(window);
@@ -267,19 +273,25 @@ impl ApplicationHandler for App {
                 (cull_camera_pos, cull_camera_projview, cull_camera_view),
             );
             let gui2 = self.gui2.as_mut().unwrap();
-            gui2.prepare_frame();
-            let mut timestamp_queries = vkutils::timestamp_query::TimestampQuery::new(&vkctx, 2);
-            let frame_outcome = renderer.draw(vkctx, gui2, &mut timestamp_queries);
+            gui2.prepare_frame(self.stats.snapshot());
+            let profiler = self.gpu_profiler.as_mut().unwrap();
+            let frame_outcome = renderer.draw(vkctx, gui2, profiler);
+
+            let current_timestamp = std::time::Instant::now();
+            let cpu_duration = current_timestamp - self.previous_frame_timestamp;
+            self.previous_frame_timestamp = current_timestamp;
 
             match frame_outcome {
                 unfuck_render_loop::FrameOutcome::Presented => {
-                    let period = timestamp_queries.timestamp_period() as u64;
-                    let results = timestamp_queries.get_results(true);
-                    let mut frame_times = FrameTimes::default();
-                    let t1 = results[0] * period;
-                    let t2 = results[1] * period;
-                    frame_times.gpu_total = t2 - t1; // TODO fragile af with indices, think of better system
-                    gui2.set_last_frame_times(frame_times);
+                    if self.frame_number > 0 {
+                        self.stats
+                            .push("cpu_total", 0, stats::StatValue::Time(cpu_duration));
+                    }
+                    for (name, depth, duration) in profiler.collect() {
+                        self.stats
+                            .push(name, depth, stats::StatValue::Time(duration));
+                    }
+                    self.stats.tick();
                 }
                 unfuck_render_loop::FrameOutcome::RebuildSwapchain => {
                     self.rebuild_swapchain = true;

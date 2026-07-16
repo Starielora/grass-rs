@@ -1,15 +1,12 @@
 use ash::vk;
 
-use crate::{frame_times::FrameTimes, vkutils};
+use crate::{stats, vkutils};
 
 pub struct Gui2 {
     platform: imgui_winit_support::WinitPlatform,
     imguictx: imgui::Context,
     imgui_renderer: imgui_rs_vulkan_renderer::Renderer,
     window: std::rc::Rc<winit::window::Window>,
-    last_frame_times: FrameTimes,
-
-    smoothed_gpu_total_ms: f32,
 }
 
 impl Gui2 {
@@ -53,8 +50,6 @@ impl Gui2 {
             imguictx,
             imgui_renderer,
             window,
-            last_frame_times: FrameTimes::default(),
-            smoothed_gpu_total_ms: 0.0f32,
         }
     }
 
@@ -67,8 +62,6 @@ impl Gui2 {
         window_id: winit::window::WindowId,
         event: &winit::event::WindowEvent,
     ) {
-        // handle_window_event is private so I have to wrap this shit, even though handle_event
-        // calls only handle_window_event
         let ev: winit::event::Event<_> = winit::event::Event::WindowEvent {
             window_id,
             event: event.clone(),
@@ -78,47 +71,22 @@ impl Gui2 {
             .handle_event::<()>(self.imguictx.io_mut(), &self.window, &ev);
     }
 
-    pub fn set_last_frame_times(&mut self, frame_times: FrameTimes) {
-        let x = frame_times.gpu_total().as_secs_f32() * 1000.0;
-        self.smoothed_gpu_total_ms += (x - self.smoothed_gpu_total_ms) * 0.05;
-
-        self.last_frame_times = frame_times;
-    }
-
-    pub fn prepare_frame(self: &mut Self) {
+    pub fn prepare_frame(self: &mut Self, stats: &[stats::StatRow]) {
         let ui = self.imguictx.frame();
 
-        let gpu_total = self.smoothed_gpu_total_ms;
-        let gpu_total_fps = 1f32 / (gpu_total / 1000f32);
         ui.window("Stats")
             .size([300.0, 150.0], imgui::Condition::FirstUseEver)
             .position([0.0, 0.0], imgui::Condition::FirstUseEver)
             .title_bar(false)
             .build(|| {
-                ui.text(format!(
-                    "CPU frame time: {}",
-                    self.last_frame_times.cpu_total
-                ));
-                ui.text(format!(
-                    "GPU Frame time: {:.2} (fps: {:.0})",
-                    gpu_total, gpu_total_fps
-                ));
-                ui.text(format!(
-                    "\tcompute_visible_meshlets: {}",
-                    self.last_frame_times.compute_visible_meshlets
-                ));
-                ui.text(format!(
-                    "\tprep_draw_mesh_tasks_command: {}",
-                    self.last_frame_times.prep_draw_mesh_tasks_command
-                ));
-                ui.text(format!(
-                    "\tdraw_mesh_tasks_indirect: {}",
-                    self.last_frame_times.draw_mesh_tasks
-                ));
-                ui.text(format!(
-                    "\tMSAA resolve: {}",
-                    self.last_frame_times.msaa_resolve
-                ));
+                for row in stats {
+                    ui.text(format!(
+                        "{}{}: {}",
+                        "\t".repeat(row.depth as usize),
+                        row.format_value(),
+                        row.name,
+                    ));
+                }
             });
 
         // let mut show = true;

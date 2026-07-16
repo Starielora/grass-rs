@@ -1,12 +1,11 @@
 use crate::assets::gltf_asset;
 use crate::camera::GPUCameraData;
-use crate::frame_times::FrameTimes;
 use crate::frustum2::Frustum2;
 use crate::grid2::Grid2;
 use crate::gui2;
 use crate::meshlet2::{self};
 use crate::skybox2::Skybox2;
-use crate::vkutils::timestamp_query;
+use crate::vkutils::gpu_profiler::GpuProfiler;
 use crate::vkutils::{self, vk_destroy::VkDestroy};
 use ash::vk;
 use glm;
@@ -113,7 +112,7 @@ impl Renderer2 {
         {
             let mut rng = rand::rng();
 
-            for _i in 0..10 {
+            for _i in 0..1000 {
                 let tx: f32 = rng.random_range(-10.0f32..10.0f32);
                 let ty: f32 = rng.random_range(-10.0f32..10.0f32);
                 let tz: f32 = rng.random_range(-10.0f32..10.0f32);
@@ -256,7 +255,7 @@ impl Renderer2 {
         &self,
         vkctx: &mut vkutils::context::VulkanContext,
         gui: &mut gui2::Gui2,
-        timestamp_queries: &mut timestamp_query::TimestampQuery,
+        profiler: &mut GpuProfiler,
     ) -> FrameOutcome {
         let (acquire_result, acquire_semaphore) =
             vkctx.swapchain.acquire_next_image(!0, vk::Fence::null());
@@ -272,7 +271,6 @@ impl Renderer2 {
         let queue = vkctx.graphics_present_queue;
         let command_buffer = self.command_buffers[image_index];
         let vk = &self.vk;
-        let mut frame_times = FrameTimes::default();
 
         unsafe {
             vk.reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
@@ -284,18 +282,21 @@ impl Renderer2 {
             vk.begin_command_buffer(command_buffer, &begin_info)
                 .expect("Failed to begin command buffer");
 
-            timestamp_queries.cmd_write(0, vk::PipelineStageFlags::TOP_OF_PIPE, command_buffer);
+            profiler.begin_frame(command_buffer);
+            let gpu_total_scope = profiler.begin(command_buffer, "gpu_total");
 
             {
                 self.geometry_data
                     .visible_meshlets_instances_count
                     .update_contents(&[0 as u32]);
 
+                let scope = profiler.begin(command_buffer, "compute_visible_meshlets");
                 self.compute_visible_meshlets_pipeline.record(
                     command_buffer,
                     &self.geometry_data,
                     self.cull_camera_data_buffer.device_address.unwrap(),
                 );
+                profiler.end(command_buffer, scope);
 
                 let barrier = vk::MemoryBarrier::default()
                     .src_access_mask(vk::AccessFlags::SHADER_WRITE)
@@ -311,8 +312,10 @@ impl Renderer2 {
                     &[],
                 );
 
+                let scope = profiler.begin(command_buffer, "prep_draw_mesh_tasks_command");
                 self.prep_draw_mesh_tasks_command_pipeline
                     .record(command_buffer);
+                profiler.end(command_buffer, scope);
 
                 let barrier = vk::MemoryBarrier::default()
                     .src_access_mask(vk::AccessFlags::SHADER_WRITE)
@@ -414,11 +417,13 @@ impl Renderer2 {
                 vk.cmd_begin_rendering(command_buffer, &rendering_info);
             }
 
+            let scope = profiler.begin(command_buffer, "draw_mesh_tasks");
             self.meshlet_pipeline.record(
                 command_buffer,
                 vkctx.swapchain.extent,
                 &self.geometry_data,
             );
+            profiler.end(command_buffer, scope);
 
             self.skybox.record(command_buffer, vkctx.swapchain.extent);
 
@@ -474,6 +479,7 @@ impl Renderer2 {
                 );
 
                 // MSAA resolve
+                let scope = profiler.begin(command_buffer, "msaa_resolve");
                 let subresource = vk::ImageSubresourceLayers::default()
                     .aspect_mask(vk::ImageAspectFlags::COLOR)
                     .mip_level(0)
@@ -497,6 +503,7 @@ impl Renderer2 {
                     vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                     &[resolve_region],
                 );
+                profiler.end(command_buffer, scope);
 
                 // transition to presentable
                 vkutils::image_barrier(
@@ -517,7 +524,7 @@ impl Renderer2 {
                 );
             }
 
-            timestamp_queries.cmd_write(1, vk::PipelineStageFlags::BOTTOM_OF_PIPE, command_buffer);
+            profiler.end(command_buffer, gpu_total_scope);
 
             vk.end_command_buffer(command_buffer)
                 .expect("Failed to end command buffer");

@@ -8,6 +8,7 @@ pub mod device_memory;
 pub mod device_queue;
 pub mod embedded_textures;
 pub mod fence;
+pub mod gpu_profiler;
 pub mod image;
 pub mod instance;
 mod load_cubemap_texture;
