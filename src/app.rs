@@ -6,7 +6,9 @@ use winit::keyboard::PhysicalKey;
 
 use crate::camera;
 use crate::fps_window;
+use crate::frame_times::FrameTimes;
 use crate::gui;
+use crate::gui2;
 use crate::gui_scene_node::GuiCameraNode;
 use crate::gui_scene_node::GuiSceneNode;
 use crate::renderer;
@@ -24,6 +26,7 @@ pub struct App {
     frustum_planes_color: [f32; 4],
     frustum_edges_color: [f32; 4],
     gui: Option<gui::Gui>,
+    gui2: Option<gui2::Gui2>,
     renderer: Option<renderer::Renderer>,
     renderer2: Option<unfuck_render_loop::Renderer2>,
     vkctx: Option<vkutils::context::VulkanContext>,
@@ -40,6 +43,7 @@ impl App {
     pub fn new() -> App {
         Self {
             gui: Option::None,
+            gui2: Option::None,
             current_view_camera_index: 0,
             current_control_camera_index: 0,
             current_cull_camera_index: 0,
@@ -112,12 +116,14 @@ impl ApplicationHandler for App {
         // TODO I don't quite like this dependency gui->renderer->gui
         // i.e. first gui gets nodes from renderer, and then renderer uses gui to render imgui,
         // but atm I don't have any better idea
-        let gui = gui::Gui::new(window.clone(), &vkctx, renderer.gui_scene_nodes.clone());
+        // let gui = gui::Gui::new(window.clone(), &vkctx, renderer.gui_scene_nodes.clone());
+        let gui2 = gui2::Gui2::new(window.clone(), &vkctx);
 
         self.vkctx = Some(vkctx);
         self.renderer = Some(renderer);
         self.renderer2 = Some(renderer2);
-        self.gui = Some(gui);
+        // self.gui = Some(gui);
+        self.gui2 = Some(gui2);
         self.window = Some(window);
         self.last_frame = std::time::Instant::now();
     }
@@ -260,10 +266,21 @@ impl ApplicationHandler for App {
                 (camera_pos, camera_projview, camera_view),
                 (cull_camera_pos, cull_camera_projview, cull_camera_view),
             );
-            let frame_outcome = renderer.draw(vkctx);
+            let gui2 = self.gui2.as_mut().unwrap();
+            gui2.prepare_frame();
+            let mut timestamp_queries = vkutils::timestamp_query::TimestampQuery::new(&vkctx, 2);
+            let frame_outcome = renderer.draw(vkctx, gui2, &mut timestamp_queries);
 
             match frame_outcome {
-                unfuck_render_loop::FrameOutcome::Presented => {}
+                unfuck_render_loop::FrameOutcome::Presented => {
+                    let period = timestamp_queries.timestamp_period() as u64;
+                    let results = timestamp_queries.get_results(true);
+                    let mut frame_times = FrameTimes::default();
+                    let t1 = results[0] * period;
+                    let t2 = results[1] * period;
+                    frame_times.gpu_total = t2 - t1; // TODO fragile af with indices, think of better system
+                    gui2.set_last_frame_times(frame_times);
+                }
                 unfuck_render_loop::FrameOutcome::RebuildSwapchain => {
                     self.rebuild_swapchain = true;
                 }
@@ -278,13 +295,18 @@ impl ApplicationHandler for App {
         _event_loop: &winit::event_loop::ActiveEventLoop,
         _cause: winit::event::StartCause,
     ) {
+        let now = std::time::Instant::now();
         if self.gui.is_some() {
-            let now = std::time::Instant::now();
             self.gui
                 .as_mut()
                 .unwrap()
                 .update_delta_time(now - self.last_frame);
-            self.last_frame = now;
+            self.last_frame = now.clone();
+        }
+
+        if let Some(gui2) = self.gui2.as_mut() {
+            gui2.update_delta_time(now - self.last_frame);
+            self.last_frame = now.clone();
         }
     }
 
@@ -326,9 +348,11 @@ impl ApplicationHandler for App {
             .as_mut()
             .unwrap();
         let window = self.window.as_ref().unwrap();
-        let gui = self.gui.as_mut().unwrap();
+        // let gui = self.gui.as_mut().unwrap();
+        let gui2 = self.gui2.as_mut().unwrap();
 
-        gui.handle_winit_window_event(window_id, &event);
+        // gui.handle_winit_window_event(window_id, &event);
+        gui2.handle_winit_window_event(window_id, &event);
 
         match event {
             winit::event::WindowEvent::CloseRequested => {

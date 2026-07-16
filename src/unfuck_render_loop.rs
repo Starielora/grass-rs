@@ -1,9 +1,12 @@
 use crate::assets::gltf_asset;
 use crate::camera::GPUCameraData;
+use crate::frame_times::FrameTimes;
 use crate::frustum2::Frustum2;
 use crate::grid2::Grid2;
+use crate::gui2;
 use crate::meshlet2::{self};
 use crate::skybox2::Skybox2;
+use crate::vkutils::timestamp_query;
 use crate::vkutils::{self, vk_destroy::VkDestroy};
 use ash::vk;
 use glm;
@@ -249,7 +252,12 @@ impl Renderer2 {
         self.depth_image = depth_image;
     }
 
-    pub fn draw(&self, vkctx: &mut vkutils::context::VulkanContext) -> FrameOutcome {
+    pub fn draw(
+        &self,
+        vkctx: &mut vkutils::context::VulkanContext,
+        gui: &mut gui2::Gui2,
+        timestamp_queries: &mut timestamp_query::TimestampQuery,
+    ) -> FrameOutcome {
         let (acquire_result, acquire_semaphore) =
             vkctx.swapchain.acquire_next_image(!0, vk::Fence::null());
 
@@ -264,6 +272,7 @@ impl Renderer2 {
         let queue = vkctx.graphics_present_queue;
         let command_buffer = self.command_buffers[image_index];
         let vk = &self.vk;
+        let mut frame_times = FrameTimes::default();
 
         unsafe {
             vk.reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
@@ -274,6 +283,8 @@ impl Renderer2 {
             };
             vk.begin_command_buffer(command_buffer, &begin_info)
                 .expect("Failed to begin command buffer");
+
+            timestamp_queries.cmd_write(0, vk::PipelineStageFlags::TOP_OF_PIPE, command_buffer);
 
             {
                 self.geometry_data
@@ -422,6 +433,8 @@ impl Renderer2 {
             }
             self.grid.record(command_buffer, vkctx.swapchain.extent);
 
+            gui.record(command_buffer);
+
             vk.cmd_end_rendering(command_buffer);
 
             {
@@ -503,6 +516,8 @@ impl Renderer2 {
                     color_subresource_range,
                 );
             }
+
+            timestamp_queries.cmd_write(1, vk::PipelineStageFlags::BOTTOM_OF_PIPE, command_buffer);
 
             vk.end_command_buffer(command_buffer)
                 .expect("Failed to end command buffer");
