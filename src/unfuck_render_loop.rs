@@ -7,7 +7,7 @@ use crate::meshlet2::{self};
 use crate::skybox2::Skybox2;
 use crate::vkutils::gpu_profiler::GpuProfiler;
 use crate::vkutils::{self, vk_destroy::VkDestroy};
-use ash::vk;
+use ash::vk::{self, GeometryInstanceFlagsKHR};
 use glm;
 use rand::RngExt;
 
@@ -287,9 +287,13 @@ impl Renderer2 {
             let gpu_total_scope = profiler.begin(command_buffer, "gpu_total");
 
             {
-                self.geometry_data
-                    .visible_meshlets_instances_count
-                    .update_contents(&[0 as u32]);
+                vk.cmd_fill_buffer(
+                    command_buffer,
+                    self.geometry_data.visible_meshlets_instances_count.handle,
+                    0,
+                    std::mem::size_of::<u32>() as u64,
+                    0,
+                );
 
                 let scope = profiler.begin(command_buffer, "compute_visible_meshlets");
                 self.compute_visible_meshlets_pipeline.record(

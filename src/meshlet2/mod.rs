@@ -101,9 +101,11 @@ impl GeometryBuffers {
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
 
-        let visible_meshlets_instances_count_buffer = ctx.create_bar_buffer(
-            std::mem::size_of::<u32>(),
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+        let visible_meshlets_instances_count_buffer = ctx.upload_buffer(
+            &vec![0 as u32],
+            vk::BufferUsageFlags::STORAGE_BUFFER
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
+                | vk::BufferUsageFlags::TRANSFER_DST,
         );
 
         Self {
