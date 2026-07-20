@@ -268,14 +268,16 @@ impl ApplicationHandler for App {
                 (camera_pos, camera_projview, camera_view) =
                     camera_snapshot(&self.cameras, self.current_view_camera_index);
             }
+            let frame_in_flight = self.frame_number % 2; // TODO num_presentable_images?
             renderer.update_gpu_camera_data(
                 (camera_pos, camera_projview, camera_view),
                 (cull_camera_pos, cull_camera_projview, cull_camera_view),
+                frame_in_flight,
             );
             let gui2 = self.gui2.as_mut().unwrap();
             gui2.prepare_frame(self.stats.snapshot());
             let profiler = self.gpu_profiler.as_mut().unwrap();
-            let frame_outcome = renderer.draw(vkctx, gui2, profiler);
+            let frame_outcome = renderer.draw(vkctx, gui2, profiler, frame_in_flight);
 
             let current_timestamp = std::time::Instant::now();
             let cpu_duration = current_timestamp - self.previous_frame_timestamp;

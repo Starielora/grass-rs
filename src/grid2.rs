@@ -1,18 +1,26 @@
 use ash::vk;
 
-use crate::vkutils::shaders;
+use crate::{
+    meshlet2::gpu::{self, CPUPushConstant},
+    vkutils::shaders,
+};
 
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
-struct PushConstants {
+struct PushConstant {
     view_camera: vk::DeviceAddress,
+}
+
+impl gpu::CPUPushConstant for PushConstant {
+    fn stage_flags() -> vk::ShaderStageFlags {
+        vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT
+    }
 }
 
 pub struct Grid2 {
     vk: ash::Device,
     pipeline: vk::Pipeline,
     pipeline_layout: vk::PipelineLayout,
-    push_constants: PushConstants,
 }
 
 impl std::ops::Drop for Grid2 {
@@ -30,7 +38,6 @@ impl Grid2 {
         surface_format: vk::Format,
         depth_format: vk::Format,
         descriptor_set_layout: vk::DescriptorSetLayout,
-        view_camera: vk::DeviceAddress,
     ) -> Result<Grid2, Box<dyn std::error::Error>> {
         let pipeline_layout = create_pipeline_layout(vk, descriptor_set_layout);
 
@@ -150,22 +157,15 @@ impl Grid2 {
             vk: vk.clone(),
             pipeline: pipelines[0],
             pipeline_layout,
-            push_constants: PushConstants {
-                view_camera: view_camera,
-            },
         })
     }
 
-    fn push_constants_data(&self) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(
-                (&self.push_constants as *const PushConstants) as *const u8,
-                std::mem::size_of::<PushConstants>(),
-            )
-        }
-    }
-
-    pub fn record(&self, command_buffer: vk::CommandBuffer, extent: vk::Extent2D) {
+    pub fn record(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        extent: vk::Extent2D,
+        view_camera: vk::DeviceAddress,
+    ) {
         unsafe {
             let vk = &self.vk;
             let viewport = vk::Viewport {
@@ -185,14 +185,15 @@ impl Grid2 {
                 self.pipeline,
             );
 
+            let pc = PushConstant { view_camera };
             vk.cmd_set_viewport(command_buffer, 0, &[viewport]);
             vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
             vk.cmd_push_constants(
                 command_buffer,
                 self.pipeline_layout,
-                get_push_constans_stage_flags(),
+                PushConstant::stage_flags(),
                 0,
-                self.push_constants_data(),
+                pc.data(),
             );
 
             vk.cmd_draw(command_buffer, 6, 1, 0, 0);
@@ -204,20 +205,12 @@ fn get_push_constans_stage_flags() -> vk::ShaderStageFlags {
     vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT
 }
 
-fn get_push_constant_range() -> [vk::PushConstantRange; 1] {
-    [vk::PushConstantRange {
-        stage_flags: get_push_constans_stage_flags(),
-        offset: 0,
-        size: std::mem::size_of::<PushConstants>() as u32,
-    }]
-}
-
 fn create_pipeline_layout(
     vk: &ash::Device,
     descriptor_set_layout: vk::DescriptorSetLayout,
 ) -> vk::PipelineLayout {
     let set_layouts = [descriptor_set_layout];
-    let push_constants_range = get_push_constant_range();
+    let push_constants_range = [PushConstant::range()];
     let create_info = vk::PipelineLayoutCreateInfo::default()
         .set_layouts(&set_layouts)
         .push_constant_ranges(&push_constants_range);

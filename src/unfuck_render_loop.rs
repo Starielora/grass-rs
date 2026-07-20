@@ -11,6 +11,15 @@ use ash::vk::{self, GeometryInstanceFlagsKHR};
 use glm;
 use rand::RngExt;
 
+pub struct FrameSync {
+    command_buffers: [vk::CommandBuffer; 2],
+    view_camera_data_buffers: [vkutils::buffer::Buffer; 2],
+    cull_camera_data_buffers: [vkutils::buffer::Buffer; 2],
+    fences: [vk::Fence; 2],
+    acquire_semaphores: [vk::Fence; 2],
+    finished_semaphores: [vk::Fence; 2],
+}
+
 pub struct Renderer2 {
     vk: ash::Device,
     command_buffers: std::vec::Vec<vk::CommandBuffer>,
@@ -19,8 +28,8 @@ pub struct Renderer2 {
     depth_image: vkutils::image::Image,
 
     // TODO maybe don't spit such small buffers into multiple - use one backing memory
-    view_camera_data_buffer: vkutils::buffer::Buffer,
-    cull_camera_data_buffer: vkutils::buffer::Buffer,
+    view_camera_data_buffers: [vkutils::buffer::Buffer; 2], // per frame in flight
+    cull_camera_data_buffers: [vkutils::buffer::Buffer; 2],
     grid: Grid2,
     skybox: Skybox2,
     frustum: Frustum2,
@@ -44,8 +53,12 @@ impl std::ops::Drop for Renderer2 {
             self.draw_params_buf.vk_destroy();
             self.render_target.vk_destroy();
             self.depth_image.vk_destroy();
-            self.view_camera_data_buffer.vk_destroy();
-            self.cull_camera_data_buffer.vk_destroy();
+            for buf in &self.view_camera_data_buffers {
+                buf.vk_destroy();
+            }
+            for buf in &self.cull_camera_data_buffers {
+                buf.vk_destroy();
+            }
             self.geometry_data.vk_destroy();
             vk.destroy_semaphore(self.render_finished_semaphore, None);
         }
@@ -69,37 +82,42 @@ impl Renderer2 {
 
         let render_finished_semaphore = ctx.create_semaphore_vk();
 
-        let view_camera_data_buffer = ctx.create_bar_buffer(
+        let view_camera_data_buffer1 = ctx.create_bar_buffer(
             size_of::<GPUCameraData>(),
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
-        let cull_camera_data_buffer = ctx.create_bar_buffer(
+        let cull_camera_data_buffer1 = ctx.create_bar_buffer(
+            size_of::<GPUCameraData>(),
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+        );
+        let view_camera_data_buffer2 = ctx.create_bar_buffer(
+            size_of::<GPUCameraData>(),
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+        );
+        let cull_camera_data_buffer2 = ctx.create_bar_buffer(
             size_of::<GPUCameraData>(),
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
 
-        let view_camera_bda = view_camera_data_buffer.device_address.unwrap();
-        let cull_camera_bda = cull_camera_data_buffer.device_address.unwrap();
+        // TODO loop
+        let view_camera_data_buffers = [view_camera_data_buffer1, view_camera_data_buffer2];
+        let cull_camera_data_buffers = [cull_camera_data_buffer1, cull_camera_data_buffer2];
 
         let grid = Grid2::new(
             &ctx.device,
             ctx.swapchain.surface_format.format,
             ctx.depth_format,
             ctx.bindless_descriptor_set.layout,
-            view_camera_bda,
         )
         .expect("Failed to instantiate Grid object");
 
-        let skybox = Skybox2::new(&ctx, view_camera_data_buffer.device_address.unwrap())
-            .expect("Failed to instantiate skybox");
+        let skybox = Skybox2::new(&ctx).expect("Failed to instantiate skybox");
 
         let frustum = Frustum2::new(
             &ctx.device,
             ctx.bindless_descriptor_set.layout,
             ctx.swapchain.surface_format.format,
             ctx.depth_format,
-            view_camera_bda,
-            cull_camera_bda,
         );
 
         let brabon_data = gltf_asset::GltfAssetData::new(
@@ -155,8 +173,6 @@ impl Renderer2 {
             ctx.bindless_descriptor_set.layout,
             ctx.swapchain.surface_format.format,
             ctx.depth_format,
-            view_camera_data_buffer.device_address.unwrap(),
-            cull_camera_data_buffer.device_address.unwrap(),
             draw_mesh_tasks_command_buf.handle,
             subgroup_size,
         );
@@ -167,7 +183,6 @@ impl Renderer2 {
             ctx.bindless_descriptor_set.layout,
             ctx.swapchain.surface_format.format,
             ctx.depth_format,
-            view_camera_data_buffer.device_address.unwrap(),
             ctx.physical_device.subgroup_size,
             ctx.physical_device.max_task_workgroup_count,
             draw_mesh_tasks_command_buf.handle,
@@ -197,8 +212,8 @@ impl Renderer2 {
             command_buffers,
             render_target,
             depth_image,
-            view_camera_data_buffer,
-            cull_camera_data_buffer,
+            view_camera_data_buffers,
+            cull_camera_data_buffers,
             grid,
             skybox,
             frustum,
@@ -226,19 +241,18 @@ impl Renderer2 {
         &self,
         view_camera_data: (glm::Vec4, glm::Mat4, glm::Mat4),
         cull_camera_data: (glm::Vec4, glm::Mat4, glm::Mat4),
+        frame_in_flight: usize,
     ) {
-        self.view_camera_data_buffer
-            .update_contents(&[GPUCameraData {
-                pos: view_camera_data.0,
-                projview: view_camera_data.1,
-                view: view_camera_data.2,
-            }]);
-        self.cull_camera_data_buffer
-            .update_contents(&[GPUCameraData {
-                pos: cull_camera_data.0,
-                projview: cull_camera_data.1,
-                view: cull_camera_data.2,
-            }]);
+        self.view_camera_data_buffers[frame_in_flight].update_contents(&[GPUCameraData {
+            pos: view_camera_data.0,
+            projview: view_camera_data.1,
+            view: view_camera_data.2,
+        }]);
+        self.cull_camera_data_buffers[frame_in_flight].update_contents(&[GPUCameraData {
+            pos: cull_camera_data.0,
+            projview: cull_camera_data.1,
+            view: cull_camera_data.2,
+        }]);
     }
 
     pub fn resize(&mut self, ctx: &vkutils::context::VulkanContext) {
@@ -257,6 +271,7 @@ impl Renderer2 {
         vkctx: &mut vkutils::context::VulkanContext,
         gui: &mut gui2::Gui2,
         profiler: &mut GpuProfiler,
+        frame_in_flight: usize,
     ) -> FrameOutcome {
         let (acquire_result, acquire_semaphore) =
             vkctx.swapchain.acquire_next_image(!0, vk::Fence::null());
@@ -272,6 +287,13 @@ impl Renderer2 {
         let queue = vkctx.graphics_present_queue;
         let command_buffer = self.command_buffers[image_index];
         let vk = &self.vk;
+
+        let view_camera_bda = self.view_camera_data_buffers[frame_in_flight]
+            .device_address
+            .unwrap();
+        let cull_camera_bda = self.cull_camera_data_buffers[frame_in_flight]
+            .device_address
+            .unwrap();
 
         unsafe {
             vk.reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
@@ -299,7 +321,7 @@ impl Renderer2 {
                 self.compute_visible_meshlets_pipeline.record(
                     command_buffer,
                     &self.geometry_data,
-                    self.cull_camera_data_buffer.device_address.unwrap(),
+                    cull_camera_bda,
                 );
                 profiler.end(command_buffer, scope);
 
@@ -427,21 +449,31 @@ impl Renderer2 {
                 command_buffer,
                 vkctx.swapchain.extent,
                 &self.geometry_data,
+                view_camera_bda,
+                cull_camera_bda,
             );
             profiler.end(command_buffer, scope);
 
-            self.skybox.record(command_buffer, vkctx.swapchain.extent);
+            self.skybox
+                .record(command_buffer, vkctx.swapchain.extent, view_camera_bda);
 
             self.bounding_sphere.record(
                 command_buffer,
                 vkctx.swapchain.extent,
                 &self.geometry_data,
+                view_camera_bda,
             );
 
             if self.frustum_enabled {
-                self.frustum.record(command_buffer, vkctx.swapchain.extent);
+                self.frustum.record(
+                    command_buffer,
+                    vkctx.swapchain.extent,
+                    view_camera_bda,
+                    cull_camera_bda,
+                );
             }
-            self.grid.record(command_buffer, vkctx.swapchain.extent);
+            self.grid
+                .record(command_buffer, vkctx.swapchain.extent, view_camera_bda);
 
             gui.record(command_buffer);
 

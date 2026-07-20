@@ -143,8 +143,6 @@ pub struct GraphicsPipeline {
     vk_ext: ash::ext::mesh_shader::Device,
     pipeline: vk::Pipeline,
     pipeline_layout: vk::PipelineLayout,
-    view_camera_bda: vk::DeviceAddress,
-    cull_camera_bda: vk::DeviceAddress,
     draw_mesh_tasks_command_buf: vk::Buffer,
 }
 
@@ -165,8 +163,6 @@ impl GraphicsPipeline {
         descriptor_set_layout: vk::DescriptorSetLayout,
         swapchain_format: vk::Format,
         depth_format: vk::Format,
-        view_camera: vk::DeviceAddress,
-        cull_camera: vk::DeviceAddress,
         draw_mesh_tasks_command_buf: vk::Buffer,
         subgroup_size: u32,
     ) -> Self {
@@ -183,8 +179,6 @@ impl GraphicsPipeline {
             vk_ext: vk_ext.clone(),
             pipeline,
             pipeline_layout,
-            view_camera_bda: view_camera,
-            cull_camera_bda: cull_camera,
             draw_mesh_tasks_command_buf,
         }
     }
@@ -194,6 +188,8 @@ impl GraphicsPipeline {
         command_buffer: vk::CommandBuffer,
         extent: vk::Extent2D,
         geometry_data: &GeometryBuffers,
+        view_camera_bda: vk::DeviceAddress,
+        cull_camera_bda: vk::DeviceAddress,
     ) {
         let vk = &self.vk;
         let vk_ext = &self.vk_ext;
@@ -218,8 +214,8 @@ impl GraphicsPipeline {
             vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
 
             let pc = PushConstant {
-                view_camera: self.view_camera_bda,
-                cull_camera: self.cull_camera_bda,
+                view_camera: view_camera_bda,
+                cull_camera: cull_camera_bda,
                 vertices: geometry_data.vertices.device_address.unwrap(),
                 meshlet_vertices: geometry_data.meshlet_vertices.device_address.unwrap(),
                 meshlet_triangles: geometry_data.meshlet_triangles.device_address.unwrap(),

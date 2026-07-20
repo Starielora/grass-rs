@@ -20,7 +20,6 @@ pub struct BoundingSphere {
     pipeline_mesh: vk::Pipeline,
     pipeline_meshlet: vk::Pipeline,
     pipeline_layout: vk::PipelineLayout,
-    view_camera_bda: vk::DeviceAddress,
     subgroup_size: u32,
     max_task_workgroup_count: [u32; 3],
     draw_mode: DrawMode,
@@ -56,7 +55,6 @@ impl BoundingSphere {
         descriptor_set_layout: vk::DescriptorSetLayout,
         swapchain_format: vk::Format,
         depth_format: vk::Format,
-        view_camera: vk::DeviceAddress,
         subgroup_size: u32,
         max_task_workgroup_count: [u32; 3],
         task_dispatches_handle: vk::Buffer,
@@ -87,7 +85,6 @@ impl BoundingSphere {
             pipeline_mesh,
             pipeline_meshlet,
             pipeline_layout,
-            view_camera_bda: view_camera,
             subgroup_size,
             max_task_workgroup_count,
             draw_mode: DrawMode::NONE,
@@ -108,6 +105,7 @@ impl BoundingSphere {
         command_buffer: vk::CommandBuffer,
         extent: vk::Extent2D,
         geometry_data: &GeometryBuffers,
+        view_camera_bda: vk::DeviceAddress,
     ) {
         let vk = &self.vk;
         let vk_ext = &self.vk_ext;
@@ -147,7 +145,7 @@ impl BoundingSphere {
             vk.cmd_set_scissor(command_buffer, 0, &[scissors]);
 
             let pc = PushConstant {
-                view_camera: self.view_camera_bda,
+                view_camera: view_camera_bda,
                 meshes: geometry_data.meshes.device_address.unwrap(),
                 meshlets: geometry_data.meshlets.device_address.unwrap(),
                 mesh_instances: geometry_data.mesh_instances.device_address.unwrap(),

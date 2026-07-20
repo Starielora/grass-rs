@@ -1,22 +1,30 @@
 use ash::vk;
 
-use crate::vkutils::{self, embedded_textures, shaders, vk_destroy::VkDestroy};
+use crate::{
+    meshlet2::gpu::{self, CPUPushConstant},
+    vkutils::{self, embedded_textures, shaders, vk_destroy::VkDestroy},
+};
 
 pub struct Skybox2 {
     vk: ash::Device,
     pipeline: vk::Pipeline,
     pipeline_layout: vk::PipelineLayout,
     descriptor_set: vk::DescriptorSet,
-    push_constants: PushConstants,
     images: std::vec::Vec<vkutils::image::Image>,
     sampler: vkutils::sampler::Sampler,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
-struct PushConstants {
+struct PushConstant {
     view_camera: vk::DeviceAddress,
     current_texture_id: u32,
+}
+
+impl gpu::CPUPushConstant for PushConstant {
+    fn stage_flags() -> vk::ShaderStageFlags {
+        vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT
+    }
 }
 
 impl std::ops::Drop for Skybox2 {
@@ -33,10 +41,7 @@ impl std::ops::Drop for Skybox2 {
 }
 
 impl Skybox2 {
-    pub fn new(
-        ctx: &vkutils::context::VulkanContext,
-        view_camera: vk::DeviceAddress,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(ctx: &vkutils::context::VulkanContext) -> Result<Self, Box<dyn std::error::Error>> {
         let vk = &ctx.device.clone();
         let surface_format = ctx.swapchain.surface_format.format;
         let depth_format = ctx.depth_format;
@@ -81,23 +86,22 @@ impl Skybox2 {
                 .update_descriptor_sets(&descriptor_writes, &descriptor_copies)
         };
 
-        let push_constants = PushConstants {
-            view_camera,
-            current_texture_id: 0,
-        };
-
         Ok(Self {
             vk: vk.clone(),
             pipeline,
             pipeline_layout,
             descriptor_set: ctx.bindless_descriptor_set.handle,
-            push_constants,
             images: textures,
             sampler,
         })
     }
 
-    pub fn record(&self, command_buffer: vk::CommandBuffer, extent: vk::Extent2D) {
+    pub fn record(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        extent: vk::Extent2D,
+        view_camera: vk::DeviceAddress,
+    ) {
         unsafe {
             let vk = &self.vk;
             let viewport = vk::Viewport {
@@ -131,24 +135,20 @@ impl Skybox2 {
                 &dynamic_offsets,
             );
 
+            let pc = PushConstant {
+                view_camera,
+                current_texture_id: 0, // TODO
+            };
+
             vk.cmd_push_constants(
                 command_buffer,
                 self.pipeline_layout,
-                get_push_constants_stage_flags(),
+                PushConstant::stage_flags(),
                 0,
-                self.push_constants_data(),
+                pc.data(),
             );
 
             vk.cmd_draw(command_buffer, 36, 1, 0, 0);
-        }
-    }
-
-    fn push_constants_data(&self) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(
-                (&self.push_constants as *const PushConstants) as *const u8,
-                std::mem::size_of::<PushConstants>(),
-            )
         }
     }
 }
@@ -279,20 +279,12 @@ fn get_push_constants_stage_flags() -> vk::ShaderStageFlags {
     vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT
 }
 
-fn get_push_constant_range() -> [vk::PushConstantRange; 1] {
-    [vk::PushConstantRange {
-        stage_flags: get_push_constants_stage_flags(),
-        offset: 0,
-        size: std::mem::size_of::<PushConstants>() as u32,
-    }]
-}
-
 fn create_pipeline_layout(
     vk: &ash::Device,
     descriptor_set_layout: vk::DescriptorSetLayout,
 ) -> vk::PipelineLayout {
     let set_layouts = [descriptor_set_layout];
-    let push_constants_range = get_push_constant_range();
+    let push_constants_range = [PushConstant::range()];
     let create_info = vk::PipelineLayoutCreateInfo::default()
         .set_layouts(&set_layouts)
         .push_constant_ranges(&push_constants_range);

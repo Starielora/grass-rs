@@ -10,8 +10,6 @@ pub struct Frustum2 {
     pipeline_layout: vk::PipelineLayout,
     pipeline_solid: vk::Pipeline,
     pipeline_wireframe: vk::Pipeline,
-    view_camera: vk::DeviceAddress,
-    cull_camera: vk::DeviceAddress,
     pub planes_color: [f32; 4],
     pub edges_color: [f32; 4],
 }
@@ -39,8 +37,6 @@ impl Frustum2 {
         descriptor_set_layout: vk::DescriptorSetLayout,
         swapchain_format: vk::Format,
         depth_format: vk::Format,
-        view_camera: vk::DeviceAddress,
-        cull_camera: vk::DeviceAddress,
     ) -> Self {
         let pipeline_layout =
             gpu::create_pipeline_layout(vk, descriptor_set_layout, PushConstant::range());
@@ -68,18 +64,22 @@ impl Frustum2 {
             pipeline_layout,
             pipeline_solid,
             pipeline_wireframe,
-            view_camera,
-            cull_camera,
             planes_color: [1.0, 1.0, 1.0, 0.25],
             edges_color: [1.0, 1.0, 0.0, 1.0],
         }
     }
 
-    pub fn record(&self, command_buffer: vk::CommandBuffer, extent: vk::Extent2D) {
+    pub fn record(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        extent: vk::Extent2D,
+        view_camera: vk::DeviceAddress,
+        cull_camera: vk::DeviceAddress,
+    ) {
         let vk = &self.vk;
         let pc = PushConstant {
-            view_camera: self.view_camera,
-            cull_camera: self.cull_camera,
+            view_camera,
+            cull_camera,
             edges_color: self.edges_color.into(),
             planes_color: self.planes_color.into(),
         };

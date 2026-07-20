@@ -111,6 +111,18 @@ impl Swapchain {
         (result, self.acquire_semaphore)
     }
 
+    pub fn acquire_next_image2(
+        &self,
+        timeout: u64,
+        semaphore: vk::Semaphore,
+        fence: vk::Fence,
+    ) -> ash::prelude::VkResult<(u32, bool)> {
+        unsafe {
+            self.swapchain_device
+                .acquire_next_image(self.swapchain, timeout, semaphore, fence)
+        }
+    }
+
     pub fn present(
         &self,
         image_index: u32,
