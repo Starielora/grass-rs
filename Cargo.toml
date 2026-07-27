@@ -9,8 +9,6 @@ with_validation_layers = []
 old_renderer = []
 new_renderer = []
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 winit = "0.30.5"
 ash = "0.38.0"
@@ -24,3 +22,8 @@ stb_image_rust = "2.27.2"
 gltf = "1"
 meshopt = "0.6"
 rand = "0.10.1"
+
+# stb_image_rust calls free(NULL), which is valid C, but since Rust 1.96 it panics with UB
+# (rust-lang/rust#153251 made __rust_dealloc take NonNull<u8>)
+[profile.dev.package.stb_image_rust]
+debug-assertions = false

@@ -130,7 +130,9 @@ fn create_pipeline(
 ) -> vk::Pipeline {
     let shader_main = unsafe { std::ffi::CStr::from_bytes_with_nul_unchecked(b"main\0") };
 
-    let mut task_spv_file = std::fs::File::open("target/debug/meshlet.task.spv").unwrap();
+    let mut task_spv_file =
+        std::fs::File::open("target/debug/build/grass-rs-0ac09294362a3e2a/out/meshlet.task.spv")
+            .unwrap();
     let task_spv = ash::util::read_spv(&mut task_spv_file).unwrap();
     let task_module = unsafe {
         device
@@ -138,8 +140,10 @@ fn create_pipeline(
             .unwrap()
     };
 
-    let mut mesh_spv_file =
-        std::fs::File::open("target/debug/meshlet_bounds_sphere.mesh.spv").unwrap();
+    let mut mesh_spv_file = std::fs::File::open(
+        "target/debug/build/grass-rs-0ac09294362a3e2a/out/meshlet_bounds_sphere.mesh.spv",
+    )
+    .unwrap();
     let mesh_spv = ash::util::read_spv(&mut mesh_spv_file).unwrap();
     let mesh_module = unsafe {
         device
@@ -147,8 +151,10 @@ fn create_pipeline(
             .unwrap()
     };
 
-    let mut fs_spv_file =
-        std::fs::File::open("target/debug/meshlet_bounds_sphere.frag.spv").unwrap();
+    let mut fs_spv_file = std::fs::File::open(
+        "target/debug/build/grass-rs-0ac09294362a3e2a/out/meshlet_bounds_sphere.frag.spv",
+    )
+    .unwrap();
     let fs_spv = ash::util::read_spv(&mut fs_spv_file).unwrap();
     let fs_module = unsafe {
         device

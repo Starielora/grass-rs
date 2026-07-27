@@ -29,7 +29,9 @@ fn create_graphics_pipeline(
     depth_format: vk::Format,
 ) -> vk::Pipeline {
     // todo path lol
-    let mut vs_spv_file = std::fs::File::open("target/debug/skybox.vert.spv").unwrap();
+    let mut vs_spv_file =
+        std::fs::File::open("target/debug/build/grass-rs-0ac09294362a3e2a/out/skybox.vert.spv")
+            .unwrap();
     let vs_spv = ash::util::read_spv(&mut vs_spv_file).unwrap();
     let vs_shader_module_create_info = vk::ShaderModuleCreateInfo::default().code(&vs_spv);
     let vs_module = unsafe {
@@ -39,7 +41,9 @@ fn create_graphics_pipeline(
     };
     let shader_main = unsafe { std::ffi::CStr::from_bytes_with_nul_unchecked(b"main\0") };
 
-    let mut fs_spv_file = std::fs::File::open("target/debug/skybox.frag.spv").unwrap();
+    let mut fs_spv_file =
+        std::fs::File::open("target/debug/build/grass-rs-0ac09294362a3e2a/out/skybox.frag.spv")
+            .unwrap();
     let fs_spv = ash::util::read_spv(&mut fs_spv_file).unwrap();
     let fs_shader_module_create_info = vk::ShaderModuleCreateInfo::default().code(&fs_spv);
     let fs_module = unsafe {

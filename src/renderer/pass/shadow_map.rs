@@ -205,7 +205,9 @@ fn create_pipeline(
     depth_format: vk::Format,
 ) -> vk::Pipeline {
     // todo path lol
-    let mut vs_spv_file = std::fs::File::open("target/debug/cube.vert.spv").unwrap();
+    let mut vs_spv_file =
+        std::fs::File::open("target/debug/build/grass-rs-0ac09294362a3e2a/out/cube.vert.spv")
+            .unwrap();
     let vs_spv = ash::util::read_spv(&mut vs_spv_file).unwrap();
     let vs_shader_module_create_info = vk::ShaderModuleCreateInfo::default().code(&vs_spv);
     let vs_module = unsafe {
