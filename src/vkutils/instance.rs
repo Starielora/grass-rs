@@ -1,4 +1,3 @@
-use super::debug_utils;
 use ash::vk;
 
 pub fn create(entry: &ash::Entry, window_required_extensions: &[*const i8]) -> ash::Instance {
@@ -11,7 +10,16 @@ pub fn create(entry: &ash::Entry, window_required_extensions: &[*const i8]) -> a
         .engine_version(0)
         .api_version(vk::make_api_version(0, 1, 3, 0));
 
-    #[cfg(feature = "with_validation_layers")]
+    let mut extensions: Vec<*const i8> = vec![ash::ext::debug_utils::NAME.as_ptr()];
+    extensions.extend(window_required_extensions.iter().copied());
+
+    cfg_select! {
+    feature="without_validations" => {
+    let create_info = vk::InstanceCreateInfo::default()
+        .application_info(&app_info)
+        .enabled_extension_names(&extensions);
+    }
+    _ => {
     let layers_str = [std::ffi::CString::new("VK_LAYER_KHRONOS_validation").unwrap()];
     let layers = layers_str
         .iter()
@@ -21,18 +29,15 @@ pub fn create(entry: &ash::Entry, window_required_extensions: &[*const i8]) -> a
     let enabled = [vk::ValidationFeatureEnableEXT::SYNCHRONIZATION_VALIDATION];
     let mut validation_features =
         vk::ValidationFeaturesEXT::default().enabled_validation_features(&enabled);
-
-    let mut extensions: Vec<*const i8> = vec![ash::ext::debug_utils::NAME.as_ptr()];
-    extensions.extend(window_required_extensions.iter().copied());
-
-    let mut debug = debug_utils::get_debug_utils_messenger_create_info();
-
+    let mut debug = super::debug_utils::get_debug_utils_messenger_create_info();
     let create_info = vk::InstanceCreateInfo::default()
         .push_next(&mut debug)
         .push_next(&mut validation_features)
         .application_info(&app_info)
         .enabled_layer_names(&layers)
         .enabled_extension_names(&extensions);
+    }
+    }
 
     unsafe { entry.create_instance(&create_info, None).expect("msg") }
 }
