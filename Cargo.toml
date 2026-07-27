@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["new_renderer"]
+default = ["new_renderer", "with_validation_layers"]
+with_validation_layers = []
 old_renderer = []
 new_renderer = []
 

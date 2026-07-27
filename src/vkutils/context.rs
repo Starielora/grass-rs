@@ -192,6 +192,19 @@ impl VulkanContext {
         )
     }
 
+    pub fn create_fence_vk(&self, signaled: bool) -> vk::Fence {
+        let mut create_info = vk::FenceCreateInfo::default();
+        if signaled {
+            create_info = create_info.flags(vk::FenceCreateFlags::SIGNALED)
+        }
+
+        unsafe {
+            self.device
+                .create_fence(&create_info, None)
+                .expect("Failed to create fence") // TODO no expect
+        }
+    }
+
     pub fn create_semaphore_vk(&self) -> vk::Semaphore {
         semaphore::new_vk(self.device.clone())
     }

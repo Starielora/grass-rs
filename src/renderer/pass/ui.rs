@@ -29,7 +29,6 @@ impl UiPass {
         ctx: &vkutils::context::VulkanContext,
         src_image: (vk::Image, vk::ImageView),
         resolve_image: (vk::Image, vk::ImageView),
-        gui: &mut gui::Gui,
     ) {
         let device = ctx.device.clone();
         let command_buffer = self.command_buffers[image_index as usize];
@@ -131,8 +130,6 @@ impl UiPass {
         unsafe {
             device.cmd_begin_rendering(command_buffer, &rendering_info);
         }
-
-        gui.cmd_draw(command_buffer);
 
         self.timestamp_query
             .cmd_write(1, vk::PipelineStageFlags::BOTTOM_OF_PIPE, command_buffer);

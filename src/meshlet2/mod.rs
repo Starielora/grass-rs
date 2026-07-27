@@ -1,7 +1,7 @@
 use ash::vk;
 
 use crate::{
-    meshlet2::gpu::{CPUPushConstant, GeometryBuildData, MeshletInstance},
+    meshlet2::gpu::{CPUPushConstant, GeometryBuildData},
     vkutils::{self},
 };
 
@@ -21,9 +21,7 @@ pub struct GeometryBuffers {
     pub mesh_instances: vkutils::buffer::Buffer,
     pub mesh_instances_count: u32,
     pub meshlet_instances: vkutils::buffer::Buffer,
-    pub _meshlet_instances_count: u32,
-    pub visible_meshlets_instances: vkutils::buffer::Buffer,
-    pub visible_meshlets_instances_count: vkutils::buffer::Buffer,
+    pub meshlet_instances_count: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -86,28 +84,6 @@ impl GeometryBuffers {
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
         );
 
-        // stub - is overwritten in compute prepass
-        let mut visible_meshlets_instances: std::vec::Vec<gpu::MeshletInstance> = vec![];
-        visible_meshlets_instances.resize(
-            data.meshlet_instances.len(),
-            MeshletInstance {
-                mesh_instance_index: 0,
-                meshlet_index: 0,
-                lod_index: 0,
-            },
-        );
-        let visible_meshlets_instances_buffer = ctx.upload_buffer(
-            &visible_meshlets_instances,
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-        );
-
-        let visible_meshlets_instances_count_buffer = ctx.upload_buffer(
-            &vec![0 as u32],
-            vk::BufferUsageFlags::STORAGE_BUFFER
-                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
-                | vk::BufferUsageFlags::TRANSFER_DST,
-        );
-
         Self {
             vertices: vertex_buffer,
             meshlet_vertices: meshlets_vertices_buffer,
@@ -117,9 +93,7 @@ impl GeometryBuffers {
             mesh_instances: mesh_instances_buffer,
             mesh_instances_count: data.mesh_instances.len() as u32,
             meshlet_instances: meshlet_instances_buffer,
-            _meshlet_instances_count: data.meshlet_instances.len() as u32,
-            visible_meshlets_instances: visible_meshlets_instances_buffer,
-            visible_meshlets_instances_count: visible_meshlets_instances_count_buffer,
+            meshlet_instances_count: data.meshlet_instances.len() as u32,
         }
     }
 }
@@ -133,8 +107,6 @@ impl vkutils::vk_destroy::VkDestroy for GeometryBuffers {
         self.meshlets.vk_destroy();
         self.mesh_instances.vk_destroy();
         self.meshlet_instances.vk_destroy();
-        self.visible_meshlets_instances.vk_destroy();
-        self.visible_meshlets_instances_count.vk_destroy();
     }
 }
 
@@ -190,6 +162,8 @@ impl GraphicsPipeline {
         geometry_data: &GeometryBuffers,
         view_camera_bda: vk::DeviceAddress,
         cull_camera_bda: vk::DeviceAddress,
+        visible_meshlet_instances_bda: vk::DeviceAddress,
+        visible_meshlet_instances_count_bda: vk::DeviceAddress,
     ) {
         let vk = &self.vk;
         let vk_ext = &self.vk_ext;
@@ -223,14 +197,8 @@ impl GraphicsPipeline {
                 meshlets: geometry_data.meshlets.device_address.unwrap(),
                 mesh_instances: geometry_data.mesh_instances.device_address.unwrap(),
                 meshlet_instances: geometry_data.meshlet_instances.device_address.unwrap(),
-                visible_meshlet_instances: geometry_data
-                    .visible_meshlets_instances
-                    .device_address
-                    .unwrap(),
-                visible_meshlet_instances_count: geometry_data
-                    .visible_meshlets_instances_count
-                    .device_address
-                    .unwrap(),
+                visible_meshlet_instances: visible_meshlet_instances_bda,
+                visible_meshlet_instances_count: visible_meshlet_instances_count_bda,
                 mesh_instances_count: geometry_data.mesh_instances_count,
             };
 

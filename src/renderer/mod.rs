@@ -271,12 +271,7 @@ impl Renderer {
         }
     }
 
-    pub fn record_passes(
-        &self,
-        image_index: u32,
-        ctx: &vkutils::context::VulkanContext,
-        gui: &mut gui::Gui,
-    ) {
+    pub fn record_passes(&self, image_index: u32, ctx: &vkutils::context::VulkanContext) {
         let idx = image_index as usize;
         let skybox = self.skybox.borrow();
         let skybox_overlay = &*skybox as &dyn crate::overlay_drawable::OverlayDrawable;
@@ -339,7 +334,7 @@ impl Renderer {
 
         self.passes
             .ui
-            .record(image_index, ctx, src_image, swapchain_image, gui);
+            .record(image_index, ctx, src_image, swapchain_image);
     }
 
     pub fn submit(

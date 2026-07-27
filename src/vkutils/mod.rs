@@ -23,6 +23,8 @@ pub mod vk_destroy;
 
 use ash::vk;
 
+pub const FRAMES_IN_FLIGHT: usize = 2;
+
 pub fn image_barrier(
     device: &ash::Device,
     command_buffer: vk::CommandBuffer,

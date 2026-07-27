@@ -7,29 +7,43 @@ use crate::meshlet2::{self};
 use crate::skybox2::Skybox2;
 use crate::vkutils::gpu_profiler::GpuProfiler;
 use crate::vkutils::{self, vk_destroy::VkDestroy};
-use ash::vk::{self, GeometryInstanceFlagsKHR};
+use ash::vk;
 use glm;
 use rand::RngExt;
+use vkutils::FRAMES_IN_FLIGHT;
 
-pub struct FrameSync {
-    command_buffers: [vk::CommandBuffer; 2],
-    view_camera_data_buffers: [vkutils::buffer::Buffer; 2],
-    cull_camera_data_buffers: [vkutils::buffer::Buffer; 2],
-    fences: [vk::Fence; 2],
-    acquire_semaphores: [vk::Fence; 2],
-    finished_semaphores: [vk::Fence; 2],
+struct PerFrameData {
+    vk: ash::Device,
+    command_buffer: vk::CommandBuffer,
+    fence: vk::Fence,
+    acquire_semaphore: vk::Semaphore,
+    view_camera: vkutils::buffer::Buffer,
+    cull_camera: vkutils::buffer::Buffer,
+    render_target: vkutils::image::Image,
+    depth_image: vkutils::image::Image,
+    visible_count: vkutils::buffer::Buffer,
+    visible_instances: vkutils::buffer::Buffer,
+}
+
+impl VkDestroy for PerFrameData {
+    fn vk_destroy(&self) {
+        let vk = &self.vk;
+        unsafe {
+            vk.destroy_fence(self.fence, None);
+            vk.destroy_semaphore(self.acquire_semaphore, None);
+        }
+        self.view_camera.vk_destroy();
+        self.cull_camera.vk_destroy();
+        self.render_target.vk_destroy();
+        self.depth_image.vk_destroy();
+        self.visible_count.vk_destroy();
+        self.visible_instances.vk_destroy();
+    }
 }
 
 pub struct Renderer2 {
     vk: ash::Device,
-    command_buffers: std::vec::Vec<vk::CommandBuffer>,
 
-    render_target: vkutils::image::Image,
-    depth_image: vkutils::image::Image,
-
-    // TODO maybe don't spit such small buffers into multiple - use one backing memory
-    view_camera_data_buffers: [vkutils::buffer::Buffer; 2], // per frame in flight
-    cull_camera_data_buffers: [vkutils::buffer::Buffer; 2],
     grid: Grid2,
     skybox: Skybox2,
     frustum: Frustum2,
@@ -43,24 +57,21 @@ pub struct Renderer2 {
     geometry_data: meshlet2::GeometryBuffers,
     draw_params_buf: vkutils::buffer::Buffer,
 
-    render_finished_semaphore: vk::Semaphore,
+    frames: [PerFrameData; vkutils::FRAMES_IN_FLIGHT],
+    finished_semaphores: std::vec::Vec<vk::Semaphore>,
 }
 
 impl std::ops::Drop for Renderer2 {
     fn drop(&mut self) {
-        let vk = &self.vk;
-        unsafe {
-            self.draw_params_buf.vk_destroy();
-            self.render_target.vk_destroy();
-            self.depth_image.vk_destroy();
-            for buf in &self.view_camera_data_buffers {
-                buf.vk_destroy();
+        self.draw_params_buf.vk_destroy();
+        self.geometry_data.vk_destroy();
+        for f in &self.frames {
+            f.vk_destroy();
+        }
+        for s in &self.finished_semaphores {
+            unsafe {
+                self.vk.destroy_semaphore(*s, None);
             }
-            for buf in &self.cull_camera_data_buffers {
-                buf.vk_destroy();
-            }
-            self.geometry_data.vk_destroy();
-            vk.destroy_semaphore(self.render_finished_semaphore, None);
         }
     }
 }
@@ -74,34 +85,8 @@ impl Renderer2 {
     pub fn new(ctx: &mut vkutils::context::VulkanContext) -> Renderer2 {
         let command_buffers = ctx.graphics_command_pool.allocate_command_buffers(
             vk::CommandBufferLevel::PRIMARY,
-            ctx.swapchain.images.len().try_into().unwrap(),
+            FRAMES_IN_FLIGHT.try_into().unwrap(),
         );
-
-        let render_target = create_render_target_image(&ctx);
-        let depth_image = create_depth_image(&ctx);
-
-        let render_finished_semaphore = ctx.create_semaphore_vk();
-
-        let view_camera_data_buffer1 = ctx.create_bar_buffer(
-            size_of::<GPUCameraData>(),
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-        );
-        let cull_camera_data_buffer1 = ctx.create_bar_buffer(
-            size_of::<GPUCameraData>(),
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-        );
-        let view_camera_data_buffer2 = ctx.create_bar_buffer(
-            size_of::<GPUCameraData>(),
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-        );
-        let cull_camera_data_buffer2 = ctx.create_bar_buffer(
-            size_of::<GPUCameraData>(),
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-        );
-
-        // TODO loop
-        let view_camera_data_buffers = [view_camera_data_buffer1, view_camera_data_buffer2];
-        let cull_camera_data_buffers = [cull_camera_data_buffer1, cull_camera_data_buffer2];
 
         let grid = Grid2::new(
             &ctx.device,
@@ -130,7 +115,7 @@ impl Renderer2 {
         {
             let mut rng = rand::rng();
 
-            for _i in 0..10 {
+            for _i in 0..200 {
                 let tx: f32 = rng.random_range(-10.0f32..10.0f32);
                 let ty: f32 = rng.random_range(-10.0f32..10.0f32);
                 let tz: f32 = rng.random_range(-10.0f32..10.0f32);
@@ -200,20 +185,72 @@ impl Renderer2 {
                 &ctx.device,
                 ctx.bindless_descriptor_set.layout,
                 ctx.physical_device.subgroup_size,
-                geometry_data
-                    .visible_meshlets_instances_count
-                    .device_address
-                    .unwrap(), // count IN: read by the shader to compute the dispatch dimensions
-                draw_mesh_tasks_command_buf.device_address.unwrap(), // command OUT: indirect buffer which cmd_draw_mesh_tasks_indirect reads later
             );
+
+        let finished_semaphores = (0..ctx.swapchain.images.len())
+            .map(|_| ctx.create_semaphore_vk())
+            .collect();
+
+        let mut command_buffer_id = 0;
+        let per_frame_data = std::array::from_fn(|_| {
+            let command_buffer = command_buffers[command_buffer_id];
+            command_buffer_id += 1;
+            let view_camera = ctx.create_bar_buffer(
+                size_of::<GPUCameraData>(),
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            );
+            let cull_camera = ctx.create_bar_buffer(
+                size_of::<GPUCameraData>(),
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            );
+
+            let fence = ctx.create_fence_vk(true);
+            let acquire_semaphore = ctx.create_semaphore_vk();
+
+            let render_target = create_render_target_image(&ctx);
+            let depth_image = create_depth_image(&ctx);
+
+            // stub - is overwritten in compute prepass
+            let mut visible_meshlets_instances: std::vec::Vec<meshlet2::gpu::MeshletInstance> =
+                vec![];
+            visible_meshlets_instances.resize(
+                geometry_data.meshlet_instances_count as usize,
+                meshlet2::gpu::MeshletInstance {
+                    mesh_instance_index: 0,
+                    meshlet_index: 0,
+                    lod_index: 0,
+                },
+            );
+            let visible_meshlets_instances_buffer = ctx.upload_buffer(
+                &visible_meshlets_instances,
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+            );
+
+            let visible_meshlets_instances_count_buffer = ctx.upload_buffer(
+                &vec![0 as u32],
+                vk::BufferUsageFlags::STORAGE_BUFFER
+                    | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
+                    | vk::BufferUsageFlags::TRANSFER_DST,
+            );
+
+            let frame = PerFrameData {
+                vk: ctx.device.clone(),
+                command_buffer,
+                fence,
+                acquire_semaphore,
+                view_camera,
+                cull_camera,
+                render_target,
+                depth_image,
+                visible_count: visible_meshlets_instances_count_buffer,
+                visible_instances: visible_meshlets_instances_buffer,
+            };
+
+            frame
+        });
 
         Self {
             vk: ctx.device.clone(),
-            command_buffers,
-            render_target,
-            depth_image,
-            view_camera_data_buffers,
-            cull_camera_data_buffers,
             grid,
             skybox,
             frustum,
@@ -222,9 +259,10 @@ impl Renderer2 {
             meshlet_pipeline,
             geometry_data,
             draw_params_buf: draw_mesh_tasks_command_buf,
-            render_finished_semaphore,
             compute_visible_meshlets_pipeline,
             prep_draw_mesh_tasks_command_pipeline,
+            frames: per_frame_data,
+            finished_semaphores,
         }
     }
 
@@ -243,27 +281,40 @@ impl Renderer2 {
         cull_camera_data: (glm::Vec4, glm::Mat4, glm::Mat4),
         frame_in_flight: usize,
     ) {
-        self.view_camera_data_buffers[frame_in_flight].update_contents(&[GPUCameraData {
-            pos: view_camera_data.0,
-            projview: view_camera_data.1,
-            view: view_camera_data.2,
-        }]);
-        self.cull_camera_data_buffers[frame_in_flight].update_contents(&[GPUCameraData {
-            pos: cull_camera_data.0,
-            projview: cull_camera_data.1,
-            view: cull_camera_data.2,
-        }]);
+        self.frames[frame_in_flight]
+            .view_camera
+            .update_contents(&[GPUCameraData {
+                pos: view_camera_data.0,
+                projview: view_camera_data.1,
+                view: view_camera_data.2,
+            }]);
+        self.frames[frame_in_flight]
+            .cull_camera
+            .update_contents(&[GPUCameraData {
+                pos: cull_camera_data.0,
+                projview: cull_camera_data.1,
+                view: cull_camera_data.2,
+            }]);
     }
 
     pub fn resize(&mut self, ctx: &vkutils::context::VulkanContext) {
-        let render_target = create_render_target_image(&ctx);
-        let depth_image = create_depth_image(&ctx);
+        for frame in &mut self.frames {
+            frame.render_target.vk_destroy();
+            frame.depth_image.vk_destroy();
 
-        self.render_target.vk_destroy();
-        self.depth_image.vk_destroy();
+            frame.render_target = create_render_target_image(&ctx);
+            frame.depth_image = create_depth_image(&ctx);
+        }
+    }
 
-        self.render_target = render_target;
-        self.depth_image = depth_image;
+    // TODO unsure if must be outside
+    pub fn wait_fences(&self, frame_in_flight: usize) {
+        // TODO protect against acquire returning the same image twice in a row
+        unsafe {
+            self.vk
+                .wait_for_fences(&[self.frames[frame_in_flight].fence], true, !0)
+                .expect("Failed wait for fences");
+        }
     }
 
     pub fn draw(
@@ -273,8 +324,15 @@ impl Renderer2 {
         profiler: &mut GpuProfiler,
         frame_in_flight: usize,
     ) -> FrameOutcome {
-        let (acquire_result, acquire_semaphore) =
-            vkctx.swapchain.acquire_next_image(!0, vk::Fence::null());
+        let vk = &self.vk;
+        let frame = &self.frames[frame_in_flight];
+
+        let acq_sem = frame.acquire_semaphore;
+        let fence = frame.fence;
+
+        let acquire_result = vkctx
+            .swapchain
+            .acquire_next_image2(!0, acq_sem, vk::Fence::null());
 
         let (image_index, is_swapchain_suboptimal) = match acquire_result {
             Ok(v) => v,
@@ -284,16 +342,15 @@ impl Renderer2 {
 
         let image_index: usize = image_index.try_into().unwrap();
 
-        let queue = vkctx.graphics_present_queue;
-        let command_buffer = self.command_buffers[image_index];
-        let vk = &self.vk;
+        let fin_sem = self.finished_semaphores[image_index];
 
-        let view_camera_bda = self.view_camera_data_buffers[frame_in_flight]
-            .device_address
-            .unwrap();
-        let cull_camera_bda = self.cull_camera_data_buffers[frame_in_flight]
-            .device_address
-            .unwrap();
+        let queue = vkctx.graphics_present_queue;
+        let command_buffer = frame.command_buffer;
+
+        let view_camera_bda = frame.view_camera.device_address.unwrap();
+        let cull_camera_bda = frame.cull_camera.device_address.unwrap();
+        let visible_meshlet_instances_bda = frame.visible_instances.device_address.unwrap();
+        let visible_meshlet_instances_count_bda = frame.visible_count.device_address.unwrap();
 
         unsafe {
             vk.reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
@@ -305,13 +362,13 @@ impl Renderer2 {
             vk.begin_command_buffer(command_buffer, &begin_info)
                 .expect("Failed to begin command buffer");
 
-            profiler.begin_frame(command_buffer);
+            profiler.begin_frame(command_buffer, frame_in_flight);
             let gpu_total_scope = profiler.begin(command_buffer, "gpu_total");
 
             {
                 vk.cmd_fill_buffer(
                     command_buffer,
-                    self.geometry_data.visible_meshlets_instances_count.handle,
+                    frame.visible_count.handle,
                     0,
                     std::mem::size_of::<u32>() as u64,
                     0,
@@ -322,6 +379,8 @@ impl Renderer2 {
                     command_buffer,
                     &self.geometry_data,
                     cull_camera_bda,
+                    visible_meshlet_instances_bda,
+                    visible_meshlet_instances_count_bda,
                 );
                 profiler.end(command_buffer, scope);
 
@@ -331,7 +390,7 @@ impl Renderer2 {
 
                 vk.cmd_pipeline_barrier(
                     command_buffer,
-                    vk::PipelineStageFlags::COMPUTE_SHADER, // src: the prepass
+                    vk::PipelineStageFlags::COMPUTE_SHADER, // src: compute prepass
                     vk::PipelineStageFlags::COMPUTE_SHADER,
                     vk::DependencyFlags::empty(),
                     &[barrier],
@@ -340,8 +399,11 @@ impl Renderer2 {
                 );
 
                 let scope = profiler.begin(command_buffer, "prep_draw_mesh_tasks_command");
-                self.prep_draw_mesh_tasks_command_pipeline
-                    .record(command_buffer);
+                self.prep_draw_mesh_tasks_command_pipeline.record(
+                    command_buffer,
+                    self.draw_params_buf.device_address.unwrap(),
+                    visible_meshlet_instances_count_bda,
+                );
                 profiler.end(command_buffer, scope);
 
                 let barrier = vk::MemoryBarrier::default()
@@ -376,9 +438,11 @@ impl Renderer2 {
                 },
             };
 
-            let (color_image, color_image_view) =
-                (self.render_target.handle, self.render_target.view);
-            let (depth_image, depth_image_view) = (self.depth_image.handle, self.depth_image.view);
+            let render_target = &frame.render_target;
+            let depth_image = &frame.depth_image;
+
+            let (color_image, color_image_view) = (render_target.handle, render_target.view);
+            let (depth_image, depth_image_view) = (depth_image.handle, depth_image.view);
 
             let color_subresource_range = vkutils::color_subresource_range();
 
@@ -451,6 +515,8 @@ impl Renderer2 {
                 &self.geometry_data,
                 view_camera_bda,
                 cull_camera_bda,
+                visible_meshlet_instances_bda,
+                visible_meshlet_instances_count_bda,
             );
             profiler.end(command_buffer, scope);
 
@@ -462,6 +528,8 @@ impl Renderer2 {
                 vkctx.swapchain.extent,
                 &self.geometry_data,
                 view_camera_bda,
+                visible_meshlet_instances_bda,
+                visible_meshlet_instances_count_bda,
             );
 
             if self.frustum_enabled {
@@ -498,6 +566,7 @@ impl Renderer2 {
                     ),
                     color_subresource_range,
                 );
+
                 vkutils::image_barrier(
                     vk,
                     command_buffer,
@@ -505,7 +574,7 @@ impl Renderer2 {
                     (
                         vk::ImageLayout::UNDEFINED,
                         vk::AccessFlags::NONE,
-                        vk::PipelineStageFlags::TOP_OF_PIPE,
+                        vk::PipelineStageFlags::TRANSFER,
                     ),
                     (
                         vk::ImageLayout::TRANSFER_DST_OPTIMAL,
@@ -566,27 +635,24 @@ impl Renderer2 {
             vk.end_command_buffer(command_buffer)
                 .expect("Failed to end command buffer");
 
-            let render_finished_semaphore = self.render_finished_semaphore;
-            let acquire_sem = [acquire_semaphore];
-            let signal_sem = [render_finished_semaphore];
+            let acquire_sem = [acq_sem];
+            let signal_sem = [fin_sem];
             let command_buffers = [command_buffer];
 
             let submits = [vk::SubmitInfo::default()
                 .wait_semaphores(&acquire_sem)
                 .command_buffers(&command_buffers)
                 .signal_semaphores(&signal_sem)
-                .wait_dst_stage_mask(&[vk::PipelineStageFlags::BOTTOM_OF_PIPE])];
+                .wait_dst_stage_mask(&[vk::PipelineStageFlags::TRANSFER])];
 
-            vk.queue_submit(queue, &submits, vk::Fence::null())
+            vk.reset_fences(&[fence]).expect("Failed fence reset");
+            vk.queue_submit(queue, &submits, fence)
                 .expect("Failed to submit");
 
-            let present_result = vkctx.swapchain.present(
-                image_index.try_into().unwrap(),
-                &[render_finished_semaphore],
-                queue,
-            );
-
-            vkctx.device.device_wait_idle().expect("Failed to wait");
+            let present_result =
+                vkctx
+                    .swapchain
+                    .present(image_index.try_into().unwrap(), &[fin_sem], queue);
 
             match present_result {
                 Ok(false) => {

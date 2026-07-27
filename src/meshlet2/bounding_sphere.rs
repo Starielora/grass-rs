@@ -106,6 +106,8 @@ impl BoundingSphere {
         extent: vk::Extent2D,
         geometry_data: &GeometryBuffers,
         view_camera_bda: vk::DeviceAddress,
+        visible_meshlet_instances_bda: vk::DeviceAddress,
+        visible_meshlet_instances_count_bda: vk::DeviceAddress,
     ) {
         let vk = &self.vk;
         let vk_ext = &self.vk_ext;
@@ -149,14 +151,8 @@ impl BoundingSphere {
                 meshes: geometry_data.meshes.device_address.unwrap(),
                 meshlets: geometry_data.meshlets.device_address.unwrap(),
                 mesh_instances: geometry_data.mesh_instances.device_address.unwrap(),
-                visible_meshlet_instances: geometry_data
-                    .visible_meshlets_instances
-                    .device_address
-                    .unwrap(),
-                visible_meshlet_instances_count: geometry_data
-                    .visible_meshlets_instances_count
-                    .device_address
-                    .unwrap(),
+                visible_meshlet_instances: visible_meshlet_instances_bda,
+                visible_meshlet_instances_count: visible_meshlet_instances_count_bda,
                 mesh_instances_count: geometry_data.mesh_instances_count,
             };
 

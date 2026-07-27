@@ -201,10 +201,6 @@ impl Grid2 {
     }
 }
 
-fn get_push_constans_stage_flags() -> vk::ShaderStageFlags {
-    vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT
-}
-
 fn create_pipeline_layout(
     vk: &ash::Device,
     descriptor_set_layout: vk::DescriptorSetLayout,

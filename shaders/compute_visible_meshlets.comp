@@ -37,8 +37,20 @@ void main()
     }
 
     float dist_to_camera = length(pos_world - push_constants.view_camera.position);
+     float d = max(length(pos_world.xyz - push_constants.view_camera.position.xyz), 1e-4);
 
-    uint lod = uint(clamp(dist_to_camera, 0.0, 50.0f) / (50.0f/float(mesh.lod_count)));
+  // Angular size of the bounds. One LOD step per halving of screen coverage.
+  // Raise LOD0_RATIO to drop LODs sooner; lower it to hold lod0 longer.
+  const float LOD0_RATIO = 0.1;
+  float lod_f = log2(LOD0_RATIO * d / max(radius_world, 1e-6));
+
+  uint max_lod = min(mesh.lod_count, 8u);
+  if (max_lod == 0u)
+      return;                       // mesh has no LODs: skip, don't index garbage
+  uint lod = uint(clamp(lod_f, 0.0, float(max_lod - 1u)));
+
+
+    // uint lod = uint(clamp(dist_to_camera, 0.0, 50.0f) / (50.0f/float(mesh.lod_count - 1)));
 
     // uint lod = uint(clamp(dist_to_camera, 0.0, float(mesh.lod_count - 1)));
     MeshLod mesh_lod = mesh.lod[lod];

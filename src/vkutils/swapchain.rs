@@ -2,7 +2,10 @@ use super::vk_destroy;
 use ash::vk;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
+#[cfg(debug_assertions)]
 const PRESENT_MODE: vk::PresentModeKHR = vk::PresentModeKHR::FIFO;
+#[cfg(not(debug_assertions))]
+const PRESENT_MODE: vk::PresentModeKHR = vk::PresentModeKHR::MAILBOX;
 
 pub struct Swapchain {
     device: ash::Device,

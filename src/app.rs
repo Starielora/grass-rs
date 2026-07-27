@@ -5,7 +5,6 @@ use winit::keyboard::KeyCode;
 use winit::keyboard::PhysicalKey;
 
 use crate::camera;
-use crate::fps_window;
 use crate::gui;
 use crate::gui2;
 use crate::gui_scene_node::GuiCameraNode;
@@ -78,6 +77,14 @@ impl App {
         } else {
             self.current_view_camera_index = cam_id;
             self.current_control_camera_index = cam_id;
+        }
+    }
+}
+
+impl std::ops::Drop for App {
+    fn drop(&mut self) {
+        if let Some(vkctx) = self.vkctx.as_ref() {
+            unsafe { vkctx.device.device_wait_idle() }.expect("Failed to wait idle on shutdown");
         }
     }
 }
@@ -218,28 +225,12 @@ impl ApplicationHandler for App {
             let cpu_duration = current_timestamp - self.previous_frame_timestamp;
             self.previous_frame_timestamp = current_timestamp;
 
-            // Take gui so self has no live borrows - is that a smell?
-            let mut gui = self.gui.take().unwrap();
-            gui.prepare_frame(
-                self,
-                fps_window::FrameDurations {
-                    cpu: cpu_duration,
-                    gpu: shadow_map_render_duration + scene_render_duration,
-                    shadow_map: shadow_map_render_duration,
-                    color_pass: scene_render_duration,
-                    meshlet_pass: meshlet_render_duration,
-                    ui: ui_render_duration,
-                },
-            );
-            self.gui = Some(gui);
-
             let renderer = self.renderer.as_mut().unwrap();
-            let gui = self.gui.as_mut().unwrap();
             let vkctx = self.vkctx.as_mut().unwrap();
             renderer.frustum.enabled = self.cull_camera_frustum_visible;
             renderer.frustum.planes_color = self.frustum_planes_color;
             renderer.frustum.edges_color = self.frustum_edges_color;
-            renderer.record_passes(image_index, &vkctx, gui);
+            renderer.record_passes(image_index, &vkctx);
 
             let queue = vkctx.graphics_present_queue;
             let render_finished_semaphore =
@@ -268,7 +259,20 @@ impl ApplicationHandler for App {
                 (camera_pos, camera_projview, camera_view) =
                     camera_snapshot(&self.cameras, self.current_view_camera_index);
             }
-            let frame_in_flight = self.frame_number % 2; // TODO num_presentable_images?
+
+            let frame_in_flight = self.frame_number % vkutils::FRAMES_IN_FLIGHT;
+
+            renderer.wait_fences(frame_in_flight);
+
+            {
+                let profiler = self.gpu_profiler.as_mut().unwrap();
+                let timings = profiler.collect(frame_in_flight);
+                for (name, depth, duration) in timings {
+                    self.stats
+                        .push(name, depth, stats::StatValue::Time(duration));
+                }
+            }
+
             renderer.update_gpu_camera_data(
                 (camera_pos, camera_projview, camera_view),
                 (cull_camera_pos, cull_camera_projview, cull_camera_view),
@@ -288,10 +292,6 @@ impl ApplicationHandler for App {
                     if self.frame_number > 0 {
                         self.stats
                             .push("cpu_total", 0, stats::StatValue::Time(cpu_duration));
-                    }
-                    for (name, depth, duration) in profiler.collect() {
-                        self.stats
-                            .push(name, depth, stats::StatValue::Time(duration));
                     }
                     self.stats.tick();
                 }
@@ -362,10 +362,8 @@ impl ApplicationHandler for App {
             .as_mut()
             .unwrap();
         let window = self.window.as_ref().unwrap();
-        // let gui = self.gui.as_mut().unwrap();
         let gui2 = self.gui2.as_mut().unwrap();
 
-        // gui.handle_winit_window_event(window_id, &event);
         gui2.handle_winit_window_event(window_id, &event);
 
         match event {
@@ -459,7 +457,6 @@ impl GuiSceneNode for App {
     fn update(self: &mut Self, ui: &imgui::Ui) {
         let camera_label = |i: usize| format!("Cam {}", i);
 
-        // Per-camera selection and visibility table
         if let Some(_table) = ui.begin_table("##camera_vis", 5) {
             ui.table_setup_column("Cam");
             ui.table_setup_column("View");

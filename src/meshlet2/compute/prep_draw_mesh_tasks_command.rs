@@ -12,7 +12,6 @@ pub struct Pipeline {
     vk: ash::Device,
     pipeline: vk::Pipeline,
     pipeline_layout: vk::PipelineLayout,
-    push_constant: PushConstant,
 }
 
 #[derive(Copy, Clone)]
@@ -43,8 +42,6 @@ impl Pipeline {
         vk: &ash::Device,
         descriptor_set_layout: vk::DescriptorSetLayout,
         subgroup_size: u32,
-        visible_meshlet_instances_count_bda: vk::DeviceAddress,
-        draw_mesh_tasks_commands_bda: vk::DeviceAddress,
     ) -> Self {
         let pipeline_layout =
             gpu::create_pipeline_layout(vk, descriptor_set_layout, PushConstant::range());
@@ -59,14 +56,15 @@ impl Pipeline {
             vk: vk.clone(),
             pipeline,
             pipeline_layout,
-            push_constant: PushConstant {
-                _visible_meshlet_instances_count: visible_meshlet_instances_count_bda,
-                _draw_mesh_tasks_commands: draw_mesh_tasks_commands_bda,
-            },
         }
     }
 
-    pub fn record(&self, command_buffer: vk::CommandBuffer) {
+    pub fn record(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        draw_mesh_tasks_commands_bda: vk::DeviceAddress,
+        visible_meshlet_instances_count_bda: vk::DeviceAddress,
+    ) {
         let vk = &self.vk;
         unsafe {
             vk.cmd_bind_pipeline(
@@ -75,12 +73,17 @@ impl Pipeline {
                 self.pipeline,
             );
 
+            let push_constant = PushConstant {
+                _visible_meshlet_instances_count: visible_meshlet_instances_count_bda,
+                _draw_mesh_tasks_commands: draw_mesh_tasks_commands_bda,
+            };
+
             vk.cmd_push_constants(
                 command_buffer,
                 self.pipeline_layout,
                 vk::ShaderStageFlags::COMPUTE,
                 0,
-                self.push_constant.data(),
+                push_constant.data(),
             );
 
             vk.cmd_dispatch(command_buffer, 1, 1, 1);

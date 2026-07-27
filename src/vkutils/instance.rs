@@ -11,14 +11,15 @@ pub fn create(entry: &ash::Entry, window_required_extensions: &[*const i8]) -> a
         .engine_version(0)
         .api_version(vk::make_api_version(0, 1, 3, 0));
 
+    #[cfg(feature = "with_validation_layers")]
     let layers_str = [std::ffi::CString::new("VK_LAYER_KHRONOS_validation").unwrap()];
     let layers = layers_str
         .iter()
         .map(|str| str.as_ptr())
         .collect::<Vec<_>>();
 
-    let enabled = [vk::ValidationFeatureEnableEXT::GPU_ASSISTED];
-    let mut _validation_features =
+    let enabled = [vk::ValidationFeatureEnableEXT::SYNCHRONIZATION_VALIDATION];
+    let mut validation_features =
         vk::ValidationFeaturesEXT::default().enabled_validation_features(&enabled);
 
     let mut extensions: Vec<*const i8> = vec![ash::ext::debug_utils::NAME.as_ptr()];
@@ -28,7 +29,7 @@ pub fn create(entry: &ash::Entry, window_required_extensions: &[*const i8]) -> a
 
     let create_info = vk::InstanceCreateInfo::default()
         .push_next(&mut debug)
-        // .push_next(&mut validation_features)
+        .push_next(&mut validation_features)
         .application_info(&app_info)
         .enabled_layer_names(&layers)
         .enabled_extension_names(&extensions);

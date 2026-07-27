@@ -275,10 +275,6 @@ fn create_graphics_pipeline(
     Ok(pipelines[0])
 }
 
-fn get_push_constants_stage_flags() -> vk::ShaderStageFlags {
-    vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT
-}
-
 fn create_pipeline_layout(
     vk: &ash::Device,
     descriptor_set_layout: vk::DescriptorSetLayout,

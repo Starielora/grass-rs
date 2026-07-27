@@ -68,16 +68,15 @@ impl Pipeline {
         &self,
         data: &meshlet2::GeometryBuffers,
         camera_bda: vk::DeviceAddress,
+        visible_meshlet_instances_bda: vk::DeviceAddress,
+        visible_meshlet_instances_count_bda: vk::DeviceAddress,
     ) -> PushConstant {
         PushConstant {
             view_camera: camera_bda,
             meshes: data.meshes.device_address.unwrap(),
             mesh_instances: data.mesh_instances.device_address.unwrap(),
-            visible_meshlet_instances: data.visible_meshlets_instances.device_address.unwrap(),
-            visible_meshlet_instances_count: data
-                .visible_meshlets_instances_count
-                .device_address
-                .unwrap(),
+            visible_meshlet_instances: visible_meshlet_instances_bda,
+            visible_meshlet_instances_count: visible_meshlet_instances_count_bda,
             mesh_instances_count: data.mesh_instances_count,
         }
     }
@@ -87,6 +86,8 @@ impl Pipeline {
         command_buffer: vk::CommandBuffer,
         geometry_data: &meshlet2::GeometryBuffers,
         camera_bda: vk::DeviceAddress,
+        visible_meshlet_instances_bda: vk::DeviceAddress,
+        visible_meshlet_instances_count_bda: vk::DeviceAddress,
     ) {
         let vk = &self.vk;
         unsafe {
@@ -96,7 +97,12 @@ impl Pipeline {
                 self.pipeline,
             );
 
-            let pc = self.push_constant(&geometry_data, camera_bda);
+            let pc = self.push_constant(
+                &geometry_data,
+                camera_bda,
+                visible_meshlet_instances_bda,
+                visible_meshlet_instances_count_bda,
+            );
 
             vk.cmd_push_constants(
                 command_buffer,
